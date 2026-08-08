@@ -3,6 +3,9 @@ import type { RequestContext } from "./server.js";
 import { json, readBody } from "./server.js";
 import { memoryContextFromQuery, mergeBodyContext } from "./scope-context.js";
 import { openSqliteDatabase } from "../system/sqlite.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 /**
  * Routes for the Console control plane:
@@ -18,6 +21,20 @@ export async function handleConsoleRoutes(
   path: string,
   url: URL,
 ): Promise<void> {
+  // GET /v1/docs (2026-08-09): serve the README markdown for the console
+  // "帮助文档" page. Resolved relative to this file so it works both from
+  // src/http (dev) and dist/http (npm package).
+  if (path === "/v1/docs" && req.method === "GET") {
+    try {
+      const here = dirname(fileURLToPath(import.meta.url));
+      const readme = readFileSync(join(here, "..", "..", "README.md"), "utf8");
+      json(res, 200, { markdown: readme });
+    } catch {
+      json(res, 200, { markdown: "# LeafMem\n\n帮助文档暂不可用。" });
+    }
+    return;
+  }
+
   // GET /v1/stats
   if (path === "/v1/stats" && req.method === "GET") {
     const memories = await ctx.platform.listMemories({

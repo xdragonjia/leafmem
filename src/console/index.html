@@ -186,6 +186,32 @@
     box-shadow:0 8px 24px rgba(16,24,40,.25);animation:tin .18s ease;max-width:380px}
   .toast.err{background:var(--err)}
   @keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  /* ===== 帮助文档 ===== */
+  .doc-body{padding:8px 26px 26px;line-height:1.75;font-size:14px}
+  .doc-body h1{font-size:24px;margin:18px 0 12px;padding-bottom:10px;border-bottom:2px solid var(--line)}
+  .doc-body h2{font-size:19px;margin:26px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);color:var(--brand2)}
+  .doc-body h3{font-size:16px;margin:20px 0 10px}
+  .doc-body h4{font-size:14.5px;margin:14px 0 8px}
+  .doc-body p{margin:8px 0}
+  .doc-body a{color:var(--brand)}
+  .doc-body ul{margin:8px 0 8px 22px}
+  .doc-body li{margin:4px 0}
+  .doc-body blockquote{margin:10px 0;padding:8px 14px;border-left:4px solid var(--brand);background:#f0f9f4;border-radius:0 8px 8px 0;color:var(--ink2)}
+  .doc-table{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}
+  .doc-table th,.doc-table td{padding:8px 10px;border:1px solid var(--line);text-align:left}
+  .doc-table th{background:#f8fafc;font-weight:600}
+  .doc-code,.doc-mermaid{position:relative;margin:12px 0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .doc-code pre,.doc-mermaid pre{margin:0;padding:12px 14px;background:#0f172a;color:#e2e8f0;font-family:var(--mono);font-size:12.5px;line-height:1.6;overflow-x:auto;white-space:pre}
+  .doc-mermaid pre{background:#fffbe6;color:#5b4a12}
+  .doc-code-lang{position:absolute;top:6px;right:10px;font-size:10.5px;color:#94a3b8;font-family:var(--mono);text-transform:uppercase}
+  .doc-mermaid .doc-code-lang{color:#b45309}
+  .doc-flash{animation:docflash 1.2s ease}
+  @keyframes docflash{0%{background:#dcfce7}100%{background:transparent}}
+  #docs-toc{display:flex;flex-direction:column;gap:2px}
+  #docs-toc a{display:block;padding:6px 10px;border-radius:6px;font-size:12.5px;color:var(--ink2);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #docs-toc a:hover{background:#f1f5f9;color:var(--brand2)}
+  #docs-toc a.doc-toc-l1{font-weight:700;color:var(--ink);margin-top:8px}
+  #docs-toc a.doc-toc-l2{padding-left:22px}
   ::-webkit-scrollbar{width:10px;height:10px}
   ::-webkit-scrollbar-thumb{background:#cfd8e3;border-radius:5px;border:2px solid transparent;background-clip:content-box}
   ::-webkit-scrollbar-track{background:transparent}
@@ -227,6 +253,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
       宿主接入
     </button>
+    <button data-page="docs" onclick="goPage('docs')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+      帮助文档
+    </button>
   </nav>
   <div class="foot">
     <div class="row"><span class="dot" id="conn-dot"></span><span id="conn-label">未连接</span></div>
@@ -259,7 +289,7 @@ const API_BASE = window.location.origin;
 const _q = new URLSearchParams(window.location.search);
 const state = {
   apiKey: _q.get('apiKey') || localStorage.getItem('leafmem_api_key') || '',
-  page: ['dashboard','explorer','recall','insights','events','graph','agents'].includes(_q.get('page')) ? _q.get('page') : 'dashboard',
+  page: ['dashboard','explorer','recall','insights','events','graph','agents','docs'].includes(_q.get('page')) ? _q.get('page') : 'dashboard',
   connected: false,
   scope: _q.get('scope') || localStorage.getItem('leafmem_scope') || 'shared',
   agentIds: [],
@@ -338,7 +368,7 @@ function chrome() {
   }
   const T = { dashboard:['仪表盘','存储健康与活动概览'], explorer:['记忆浏览','检索、筛选与管理记忆'],
     recall:['召回检查','模拟智能体实际检索到的内容'], insights:['洞察','蒸馏原则与用户画像'],
-    events:['事件日志','记忆操作审计流水'], graph:['知识图谱','实体关联力导向图'], agents:['宿主接入','各智能体宿主的安装与导入状态'] };
+    events:['事件日志','记忆操作审计流水'], graph:['知识图谱','实体关联力导向图'], agents:['宿主接入','各智能体宿主的安装与导入状态'], docs:['帮助文档','LeafMem 完整使用手册'] };
   document.getElementById('page-title').textContent = T[state.page][0];
   document.getElementById('page-sub').textContent = T[state.page][1];
   document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('on', b.dataset.page === state.page));
@@ -363,7 +393,7 @@ function renderPage() {
   closeDrawer();
   if (!state.connected) return renderConnect();
   ({ dashboard: renderDashboard, explorer: renderExplorer, recall: renderRecall,
-     insights: renderInsights, events: renderEvents, graph: renderGraph, agents: renderAgents })[state.page](el);
+     insights: renderInsights, events: renderEvents, graph: renderGraph, agents: renderAgents, docs: renderDocs })[state.page](el);
 }
 
 function renderConnect() {
@@ -969,6 +999,129 @@ async function runMutation(fn, agent) {
     toast(`操作失败：${err.message}`, true);
     btns.forEach(b => b.disabled = false);
   }
+}
+
+
+// ================================================================ 帮助文档（零依赖 Markdown 渲染 + TOC + 搜索）
+async function renderDocs(el) {
+  el.innerHTML = '<div class="loading">正在加载帮助文档…</div>';
+  try {
+    const d = await api('/v1/docs');
+    const md = d.markdown || '# LeafMem\n\n文档暂不可用。';
+    const rendered = mdToHtml(md);
+    el.innerHTML = `<div style="display:flex;gap:16px;align-items:flex-start;max-width:1280px;margin:0 auto">
+      <aside style="width:220px;flex-shrink:0;position:sticky;top:10px;max-height:calc(100vh - 120px);overflow-y:auto">
+        <div class="card plain" style="padding:12px">
+          <input class="input" id="docs-search" placeholder="🔍 搜索文档…" oninput="docsSearch(this.value)" style="width:100%;margin-bottom:10px">
+          <nav id="docs-toc">${rendered.toc}</nav>
+        </div>
+      </aside>
+      <div class="card" style="flex:1;min-width:0;max-width:860px">
+        <div class="doc-body" id="docs-body">${rendered.html}</div>
+      </div>
+    </div>`;
+  } catch (err) {
+    el.innerHTML = `<div class="empty"><div class="glyph">⚠</div><div class="msg">${esc(err.message)}</div></div>`;
+  }
+}
+
+function mdInline(text) {
+  // text is already HTML-escaped; add inline markdown
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code style="background:#f1f3f5;padding:1px 5px;border-radius:4px;font-family:var(--mono);font-size:0.9em">$1</code>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, t, href) => {
+      if (/^https?:/i.test(href)) return `<a href="${href}" target="_blank" rel="noopener">${t}</a>`;
+      return `<span title="${esc(href)}">${t}</span>`; // 仓库内相对链接在 console 内不跳转
+    });
+}
+
+function mdToHtml(md) {
+  const lines = md.replace(/\r\n/g, '\n').split('\n');
+  let html = '', toc = '', slugCount = {};
+  let inCode = false, codeLang = '', codeBuf = [];
+  let inTable = false, tableRows = [];
+  let inList = false;
+
+  const slugOf = (text) => {
+    const base = text.toLowerCase().replace(/[^\w\u4e00-\u9fa5]+/g, '-').replace(/^-+|-+$/g, '') || 'section';
+    slugCount[base] = (slugCount[base] ?? 0) + 1;
+    return slugCount[base] > 1 ? `${base}-${slugCount[base]}` : base;
+  };
+  const flushTable = () => {
+    if (!inTable) return;
+    const [head, ...body] = tableRows;
+    html += '<table class="doc-table"><thead><tr>' + head.map(c => `<th>${mdInline(c)}</th>`).join('') + '</tr></thead><tbody>' +
+      body.map(r => '<tr>' + r.map(c => `<td>${mdInline(c)}</td>`).join('') + '</tr>').join('') + '</tbody></table>';
+    tableRows = []; inTable = false;
+  };
+  const flushList = () => { if (inList) { html += '</ul>'; inList = false; } };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith('```')) {
+      if (!inCode) { inCode = true; codeLang = line.slice(3).trim(); codeBuf = []; }
+      else {
+        inCode = false;
+        const isMermaid = codeLang === 'mermaid';
+        html += `<div class="${isMermaid ? 'doc-mermaid' : 'doc-code'}"><div class="doc-code-lang">${esc(codeLang || 'code')}</div><pre>${esc(codeBuf.join('\n'))}</pre></div>`;
+      }
+      continue;
+    }
+    if (inCode) { codeBuf.push(line); continue; }
+
+    // 表格
+    if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+      const cells = line.trim().slice(1, -1).split('|').map(c => c.trim());
+      if (cells.every(c => /^:?-+:?$/.test(c))) continue; // 分隔行
+      if (!inTable) { inTable = true; tableRows = []; }
+      tableRows.push(cells);
+      continue;
+    } else flushTable();
+
+    // 标题
+    const h = line.match(/^(#{1,4})\s+(.*)$/);
+    if (h) {
+      flushList();
+      const level = h[1].length;
+      const text = h[2].replace(/\*\*/g, '').trim();
+      const slug = slugOf(text);
+      html += `<h${level} id="${slug}">${mdInline(esc(text))}</h${level}>`;
+      if (level <= 2) toc += `<a class="doc-toc-l${level}" href="#${slug}" onclick="return docsJump('${slug}')">${esc(text)}</a>`;
+      continue;
+    }
+    // 引用
+    if (line.startsWith('> ')) { flushList(); html += `<blockquote>${mdInline(esc(line.slice(2)))}</blockquote>`; continue; }
+    // 分隔线 / 对齐占位
+    if (/^-{3,}$/.test(line.trim()) || /^<p align/.test(line.trim()) || /^<\/p/.test(line.trim()) || /^<img /.test(line.trim()) || /^<sub>/.test(line.trim())) { flushList(); continue; }
+    // 列表
+    const li = line.match(/^[-*]\s+(.*)$/);
+    if (li) { if (!inList) { html += '<ul>'; inList = true; } html += `<li>${mdInline(esc(li[1]))}</li>`; continue; }
+    flushList();
+    // 空行
+    if (!line.trim()) continue;
+    // 段落
+    html += `<p>${mdInline(esc(line))}</p>`;
+  }
+  flushTable(); flushList();
+  return { html, toc };
+}
+
+function docsJump(slug) {
+  const el = document.getElementById(slug);
+  if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.classList.add('doc-flash'); setTimeout(() => el.classList.remove('doc-flash'), 1200); }
+  return false;
+}
+
+function docsSearch(q) {
+  const items = document.querySelectorAll('#docs-toc a');
+  const query = q.trim().toLowerCase();
+  // 正文高亮前先清除
+  const body = document.getElementById('docs-body');
+  body.querySelectorAll('.doc-hit').forEach(m => { m.outerHTML = m.textContent; });
+  items.forEach(a => { a.style.display = ''; });
+  if (!query) return;
+  items.forEach(a => { a.style.display = a.textContent.toLowerCase().includes(query) ? '' : 'none'; });
 }
 
 // ================================================================ 工具
