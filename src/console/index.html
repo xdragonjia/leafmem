@@ -665,6 +665,16 @@ function evPill(t) { return { recall:'b', memory_written:'g', memory_updated:'y'
 
 // ================================================================ 知识图谱
 const KIND_COLOR = { person:'#dc2626', project:'#2563eb', tech:'#7c3aed', tool:'#d97706', org:'#0d9488' };
+const graphFilter = { kind: null };
+function toggleGraphFilter(kind) {
+  graphFilter.kind = graphFilter.kind === kind ? null : kind;
+  document.querySelectorAll('.graph-legend-pill').forEach(p => {
+    const on = p.dataset.kind === graphFilter.kind;
+    p.style.outline = on ? '2px solid ' + (KIND_COLOR[graphFilter.kind] || '#64748b') : 'none';
+    p.style.opacity = (!graphFilter.kind || on) ? 1 : .35;
+  });
+  if (window.__graphRedraw) window.__graphRedraw();
+}
 async function renderGraph(el) {
   el.innerHTML = '<div class="loading">正在加载图谱…</div>';
   try {
@@ -675,12 +685,13 @@ async function renderGraph(el) {
       .map(e => ({ s: idx.get(e.source_entity_id), t: idx.get(e.target_entity_id), rel: e.relation }));
     if (!nodes.length) { el.innerHTML = '<div class="empty"><div class="glyph">⬡</div><div class="msg">暂无实体数据，写入记忆时会自动抽取实体</div></div>'; return; }
     const kinds = [...new Set(nodes.map(n => n.kind))];
+    graphFilter.kind = null;
     el.innerHTML = `<div class="inner">
       <div class="card plain" style="position:relative">
-        <div style="position:absolute;top:14px;left:20px;z-index:2;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div style="position:absolute;top:14px;left:20px;z-index:2;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <span class="mono-sm">${nodes.length} 实体 · ${edges.length} 实体间关联 · ${d.totalMemoryLinks ?? 0} 记忆链接</span>
-          ${kinds.map(k => `<span class="pill" style="background:${(KIND_COLOR[k]||'#64748b')}18;color:${KIND_COLOR[k]||'#64748b'}">● ${esc(k)}</span>`).join('')}
-          <span class="mono-sm" style="color:var(--ink2)">点击节点查看详情</span>
+          ${kinds.map(k => `<span class="pill graph-legend-pill" data-kind="${esc(k)}" onclick="toggleGraphFilter('${esc(k)}')" title="点击过滤 ${esc(k)}" style="cursor:pointer;background:${(KIND_COLOR[k]||'#64748b')}18;color:${KIND_COLOR[k]||'#64748b'}">● ${esc(k)}</span>`).join('')}
+          <span class="mono-sm" style="color:var(--ink2)">点击图例过滤 · 点击节点看详情 · 拖拽移动</span>
         </div>
         <canvas id="graph-canvas" style="width:100%;height:640px;display:block;cursor:grab"></canvas>
       </div>
@@ -698,149 +709,166 @@ function startForceLayout(canvas, nodes, edges) {
   const W = () => canvas.width / dpr, H = () => canvas.height / dpr;
   const maxLink = Math.max(...nodes.map(n => n.link_count || 1), 1);
   const radius = n => 5 + 9 * Math.sqrt((n.link_count || 1) / maxLink);
-  // 布局分组（2026-08-08 修正）：中心力导向布局的对象是"有实体间关联"的节点；
-  // 只有记忆链接、无实体间关联的节点也放入外环——但外环半径按 link_count
-  // 排布且全部参与 hover/点击，统计数字用记忆链接口径。
   const degree = new Array(nodes.length).fill(0);
   edges.forEach(e => { degree[e.s]++; degree[e.t]++; });
   const connected = [], isolated = [];
   nodes.forEach((n, i) => (degree[i] ? connected.push(n) : isolated.push(n)));
+  // 外环：无实体关联的节点，按记忆链接数排布在大环上（内侧留给有实体关联的）
   isolated.sort((a, b) => (b.link_count || 0) - (a.link_count || 0));
   isolated.forEach((n, i) => {
-    const deg = (i / Math.max(isolated.length, 1)) * Math.PI * 2 - Math.PI / 2;
-    const rx = W() / 2 - 46, ry = H() / 2 - 46;
-    n.x = W() / 2 + Math.cos(deg) * rx;
-    n.y = H() / 2 + Math.sin(deg) * ry;
+    const ang = (i / Math.max(isolated.length, 1)) * Math.PI * 2 - Math.PI / 2;
+    n.x = W() / 2 + Math.cos(ang) * (W() / 2 - 52);
+    n.y = H() / 2 + Math.sin(ang) * (H() / 2 - 52);
     n._iso = true;
   });
-  // 连通节点圆环种子
   connected.forEach((n, i) => {
-    const deg = (i / Math.max(connected.length, 1)) * Math.PI * 2;
-    const ring = 90 + (i % 4) * 45;
-    n.x = W() / 2 + Math.cos(deg) * ring + (Math.random() - 0.5) * 24;
-    n.y = H() / 2 + Math.sin(deg) * ring + (Math.random() - 0.5) * 24;
+    const ang = (i / Math.max(connected.length, 1)) * Math.PI * 2;
+    const ring = 70 + (i % 3) * 40;
+    n.x = W() / 2 + Math.cos(ang) * ring;
+    n.y = H() / 2 + Math.sin(ang) * ring;
   });
+
   let hovered = null, selected = null, dragNode = null, mouseX = 0, mouseY = 0;
-  [...nodes].sort((a,b)=>(b.link_count||0)-(a.link_count||0)).slice(0,12).forEach(n=>n._labelAlways=true);
-
-  canvas.addEventListener('mousemove', (ev) => {
-    const r = canvas.getBoundingClientRect();
-    mouseX = ev.clientX - r.left; mouseY = ev.clientY - r.top;
-    if (dragNode) { dragNode.x = mouseX; dragNode.y = mouseY; dragNode.vx = 0; dragNode.vy = 0; return; }
-    hovered = null;
-    for (const n of nodes) {
-      if (Math.hypot(n.x - mouseX, n.y - mouseY) < radius(n) + 4) { hovered = n; break; }
-    }
-    canvas.style.cursor = hovered ? 'pointer' : 'grab';
-  });
-  canvas.addEventListener('mousedown', () => { dragNode = hovered; });
-  window.addEventListener('mouseup', (ev) => {
-    const wasClick = dragNode && !dragMoved;
-    dragNode = null;
-    if (wasClick) {
-      selected = dragNodeWasHover;
-      if (selected) showEntityDetail(selected);
-    } else if (!dragNodeWasHover && !dragMoved) {
-      selected = null; showEntityDetail(null);
-    }
-  });
   let dragMoved = false, dragNodeWasHover = null;
-  canvas.addEventListener('mousedown', () => { dragMoved = false; dragNodeWasHover = hovered; });
-  canvas.addEventListener('mousemove', () => { if (dragNode) dragMoved = true; });
+  const visible = n => !graphFilter.kind || n.kind === graphFilter.kind;
 
-  let alpha = 1;
-  function tick() {
-    alpha = Math.max(0.03, alpha * 0.99);
-    // 斥力（仅连通节点，n^2 无压力）
+  // 单步物理（alpha 给定），供预模拟与动画共用
+  function step(alpha) {
     for (let i = 0; i < connected.length; i++) {
       for (let j = i + 1; j < connected.length; j++) {
         const a = connected[i], b = connected[j];
-        let dx = a.x - b.x, dy = a.y - b.y;
-        let d2 = dx * dx + dy * dy || 1;
+        const dx = a.x - b.x, dy = a.y - b.y;
+        const d2 = dx * dx + dy * dy || 1;
         if (d2 < 90000) {
-          const f = 2600 * alpha / d2;
+          const f = 2400 * alpha / d2;
           a.vx += dx * f; a.vy += dy * f; b.vx -= dx * f; b.vy -= dy * f;
         }
       }
     }
-    // 弹簧（目标边长 110）
     for (const e of edges) {
       const a = nodes[e.s], b = nodes[e.t];
       if (a._iso || b._iso) continue;
       const dx = b.x - a.x, dy = b.y - a.y;
       const d = Math.hypot(dx, dy) || 1;
-      const f = (d - 110) * 0.012 * alpha;
+      const f = (d - 95) * 0.014 * alpha;
       a.vx += (dx / d) * f; a.vy += (dy / d) * f;
       b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
     }
-    // 向心 + 积分（孤立节点冻结）
     for (const n of connected) {
       if (n === dragNode) continue;
-      n.vx += (W() / 2 - n.x) * 0.012 * alpha;
-      n.vy += (H() / 2 - n.y) * 0.012 * alpha;
-      n.vx *= 0.6; n.vy *= 0.6;
+      n.vx += (W() / 2 - n.x) * 0.02 * alpha;
+      n.vy += (H() / 2 - n.y) * 0.02 * alpha;
+      n.vx *= 0.55; n.vy *= 0.55;
       n.x += n.vx; n.y += n.vy;
-      n.x = Math.max(30, Math.min(W() - 30, n.x));
-      n.y = Math.max(30, Math.min(H() - 30, n.y));
+      const pad = 60;
+      n.x = Math.max(pad, Math.min(W() - pad, n.x));
+      n.y = Math.max(pad, Math.min(H() - pad, n.y));
     }
-    draw();
-    requestAnimationFrame(tick);
   }
+
+  // 预模拟：进场前同步收敛 260 步，消除"抽搐"抖动
+  for (let i = 0; i < 260; i++) step(Math.max(0.05, 1 - i / 220));
+
+  function neighborSet(node) {
+    const s = new Set([node]);
+    for (const e of edges) {
+      if (nodes[e.s] === node) s.add(nodes[e.t]);
+      if (nodes[e.t] === node) s.add(nodes[e.s]);
+    }
+    return s;
+  }
+  let neighbors = null;
 
   function draw() {
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W(), H());
-    // 边
-    ctx.strokeStyle = 'rgba(100,116,139,.28)';
-    ctx.lineWidth = 1;
+    // 边：hover 邻接高亮加粗，其余按过滤/悬停态淡化
     for (const e of edges) {
-      ctx.beginPath();
-      ctx.moveTo(nodes[e.s].x, nodes[e.s].y);
-      ctx.lineTo(nodes[e.t].x, nodes[e.t].y);
-      ctx.stroke();
+      const a = nodes[e.s], b = nodes[e.t];
+      if (!visible(a) || !visible(b)) { ctx.globalAlpha = 0.05; ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1; }
+      else if (hovered && (a === hovered || b === hovered)) { ctx.globalAlpha = 0.95; ctx.strokeStyle = '#16a34a'; ctx.lineWidth = 2; }
+      else if (hovered) { ctx.globalAlpha = 0.08; ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1; }
+      else { ctx.globalAlpha = 0.3; ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1; }
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
+    ctx.globalAlpha = 1;
     // 节点
     for (const n of nodes) {
+      const isHl = hovered && neighbors?.has(n);
       ctx.beginPath();
       ctx.arc(n.x, n.y, radius(n), 0, Math.PI * 2);
       ctx.fillStyle = KIND_COLOR[n.kind] || '#64748b';
-      ctx.globalAlpha = hovered && hovered !== n ? 0.45 : 0.92;
+      ctx.globalAlpha = !visible(n) ? 0.07 : hovered ? (isHl ? 1 : 0.15) : 0.92;
       ctx.fill();
       ctx.globalAlpha = 1;
-      if (n === hovered || n === selected) { ctx.strokeStyle = '#1a2332'; ctx.lineWidth = 2; ctx.stroke(); }
+      if (n === hovered || n === selected) { ctx.strokeStyle = '#1a2332'; ctx.lineWidth = 2.5; ctx.stroke(); }
+      else if (isHl) { ctx.strokeStyle = '#16a34a'; ctx.lineWidth = 1.5; ctx.stroke(); }
     }
-    // 标签：hover 节点 + 大节点常显
+    // 标签：全显；hover 邻接/选中加深，其余按态淡化
     ctx.font = '10px -apple-system, "PingFang SC", sans-serif';
     ctx.textAlign = 'center';
     for (const n of nodes) {
-      if (true) { // 84 节点量级全显标签（参考 weknora 图谱），hover/选中加深
-        ctx.fillStyle = (n === hovered || n === selected) ? '#1a2332' : 'rgba(26,35,50,.6)';
-        ctx.fillText(n.name, n.x, n.y + radius(n) + 13);
-      }
+      if (!visible(n)) continue;
+      const isHl = hovered && neighbors?.has(n);
+      ctx.fillStyle = (n === hovered || n === selected || isHl) ? '#1a2332' : hovered ? 'rgba(26,35,50,.2)' : 'rgba(26,35,50,.62)';
+      ctx.fillText(n.name, n.x, n.y + radius(n) + 12);
     }
-    // hover 详情
+    // hover 浮窗
     if (hovered) {
       const rel = edges.filter(e => nodes[e.s] === hovered || nodes[e.t] === hovered);
       const lines = rel.slice(0, 5).map(e => {
         const other = nodes[e.s] === hovered ? nodes[e.t] : nodes[e.s];
-        return `— ${e.rel} → ${other.name}`;
+        return '— ' + e.rel + ' → ' + other.name;
       });
       ctx.textAlign = 'left';
-      ctx.fillStyle = 'rgba(255,255,255,.96)';
-      const bx = Math.min(mouseX + 14, W() - 240), by = Math.min(mouseY + 10, H() - 20 - lines.length * 16);
-      ctx.fillRect(bx, by, 230, 26 + lines.length * 16);
-      ctx.strokeStyle = '#e5e9f0'; ctx.strokeRect(bx, by, 230, 26 + lines.length * 16);
+      ctx.fillStyle = 'rgba(255,255,255,.97)';
+      const bw = 240, bh = 26 + lines.length * 16;
+      const bx = Math.min(mouseX + 14, W() - bw - 8), by = Math.min(mouseY + 10, H() - bh - 8);
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.strokeStyle = '#e5e9f0'; ctx.strokeRect(bx, by, bw, bh);
       ctx.fillStyle = '#1a2332';
       ctx.font = 'bold 12px -apple-system, "PingFang SC", sans-serif';
-      ctx.fillText(`${hovered.name}（${hovered.kind} · ${hovered.link_count} 条记忆链接）`, bx + 10, by + 17);
+      ctx.fillText(hovered.name + '（' + hovered.kind + ' · ' + hovered.link_count + ' 条记忆链接）', bx + 10, by + 17);
       ctx.font = '11px -apple-system, "PingFang SC", sans-serif';
       ctx.fillStyle = '#5b6675';
       lines.forEach((l, i) => ctx.fillText(l, bx + 10, by + 34 + i * 16));
     }
     ctx.restore();
   }
-  tick();
+  window.__graphRedraw = draw;
+
+  canvas.addEventListener('mousemove', (ev) => {
+    const r = canvas.getBoundingClientRect();
+    mouseX = ev.clientX - r.left; mouseY = ev.clientY - r.top;
+    if (dragNode) { dragMoved = true; dragNode.x = mouseX; dragNode.y = mouseY; dragNode.vx = 0; dragNode.vy = 0; return; }
+    hovered = null;
+    for (const n of nodes) {
+      if (visible(n) && Math.hypot(n.x - mouseX, n.y - mouseY) < radius(n) + 4) { hovered = n; break; }
+    }
+    neighbors = hovered ? neighborSet(hovered) : null;
+    canvas.style.cursor = hovered ? 'pointer' : 'grab';
+    draw();
+  });
+  canvas.addEventListener('mousedown', () => { dragMoved = false; dragNodeWasHover = hovered; dragNode = hovered; });
+  window.addEventListener('mouseup', () => {
+    const wasClick = dragNode && !dragMoved;
+    dragNode = null;
+    if (wasClick && dragNodeWasHover) { selected = dragNodeWasHover; showEntityDetail(selected); }
+    else if (wasClick && !dragNodeWasHover) { selected = null; showEntityDetail(null); }
+    draw();
+  });
+
+  // 动画：从低 alpha 起步微调，视觉平稳
+  let alpha = 0.06;
+  function tick() {
+    alpha = Math.max(0.015, alpha * 0.995);
+    step(alpha);
+    draw();
+    requestAnimationFrame(tick);
+  }
+  draw();
+  requestAnimationFrame(tick);
 }
 
 async function showEntityDetail(node) {

@@ -74,6 +74,30 @@ function loadControlledVocab(path: string | undefined): VocabEntry[] {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// Mention/name validation (2026-08-08 noise fixes)
+// ---------------------------------------------------------------------------
+// @mentions were producing garbage entities: version numbers from
+// "pkg@0.1.1", domains from emails/URLs ("@qq.com"), bare digits from dates.
+const VERSION_RE = /^\d+(\.\d+)+$/;          // 0.1.1 / 1.2.3.4
+const BARE_NUMBER_RE = /^\d+$/;                 // 3 / 21
+const DOMAIN_RE = /^[a-z0-9-]+(\.[a-z]{2,})+$/i; // qq.com / agent.qq.com
+const GENERIC_MENTIONS = new Set([
+  "media", "rest", "www", "http", "https", "com", "cn", "org", "net", "localhost",
+]);
+
+function isNoiseMention(name: string): boolean {
+  const n = name.trim();
+  return (
+    VERSION_RE.test(n) || BARE_NUMBER_RE.test(n) || GENERIC_MENTIONS.has(n.toLowerCase())
+  );
+}
+
+function isDomainLike(name: string): boolean {
+  return DOMAIN_RE.test(name.trim()) && !/\s/.test(name);
+}
+
 export class RuleBasedEntityExtractor implements EntityExtractor {
   private readonly vocab: VocabEntry[];
 
@@ -124,13 +148,18 @@ export class RuleBasedEntityExtractor implements EntityExtractor {
       }
     }
 
-    // 3. @mentions → person
+    // 3. @mentions → person (with noise guards: versions/domains/digits are
+    //    not people; domain-like mentions become org instead)
     for (const match of text.matchAll(MENTION_RE)) {
       const name = match[1]!;
       const key = name.toLowerCase();
-      if (!entities.has(key) && !KNOWN_TECH.has(key) && !KNOWN_TOOLS.has(key)) {
-        entities.set(key, { name, kind: "person" });
+      if (entities.has(key) || KNOWN_TECH.has(key) || KNOWN_TOOLS.has(key)) continue;
+      if (isNoiseMention(name)) continue;
+      if (isDomainLike(name)) {
+        entities.set(key, { name, kind: "org" });
+        continue;
       }
+      entities.set(key, { name, kind: "person" });
     }
 
     if (this.strict) {
@@ -142,7 +171,13 @@ export class RuleBasedEntityExtractor implements EntityExtractor {
     for (const match of text.matchAll(QUOTED_RE)) {
       const name = match[1]!.trim();
       const key = name.toLowerCase();
-      if (name.length >= 2 && name.length <= 40 && !entities.has(key)) {
+      if (
+        name.length >= 2 &&
+        name.length <= 40 &&
+        !entities.has(key) &&
+        !VERSION_RE.test(name) &&
+        !BARE_NUMBER_RE.test(name)
+      ) {
         entities.set(key, { name, kind: "project" });
       }
     }
