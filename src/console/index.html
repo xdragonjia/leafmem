@@ -349,7 +349,14 @@ function setScope(v) {
   state.explorerCache = null;
   chrome(); if (state.connected) renderPage();
 }
-function goPage(p) { state.page = p; chrome(); state.connected ? renderPage() : renderConnect(); }
+function goPage(p) {
+  // 修复：离开页面即视为一次会话结束，召回检查的查询词不跨页残留——
+  // 否则每次切回「召回检查」都会因残留的 recallQuery 自动重跑一次检索。
+  if (p !== state.page) state.recallQuery = '';
+  state.page = p;
+  chrome();
+  state.connected ? renderPage() : renderConnect();
+}
 
 function renderPage() {
   const el = document.getElementById('page');
