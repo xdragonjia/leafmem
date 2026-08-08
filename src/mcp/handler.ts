@@ -1,4 +1,5 @@
 import type { LeafMem } from "../core/memory.js";
+import type { InspectEventStore } from "../inspect/types.js";
 import {
   MEMORY_SCOPE_TYPES,
   parseMemoryScopeType,
@@ -32,6 +33,7 @@ export function createMemoryToolSet(params: {
   runtime?: MemoryRuntime;
   defaultScopes?: MemoryScope[];
   onMemoryChanged?: () => Promise<void>;
+  events?: InspectEventStore;
 }): MemoryToolDefinition[] {
   const runtime =
     params.runtime ??
@@ -92,21 +94,25 @@ export function createMemoryToolSet(params: {
         }
         if (action === "write") {
           const scope = requireScope(args, params.defaultScopes);
-          return {
-            record: await params.memory.remember({
-              scope,
-              kind: optionalString(args.kind) ?? "note",
-              content: expectString(args.content, "content"),
-              summary: optionalString(args.summary),
-              confidence: expectNumber(args.confidence),
-              importance: expectNumber(args.importance),
-              source: optionalString(args.source),
-              tags: Array.isArray(args.tags)
-                ? args.tags.filter((entry): entry is string => typeof entry === "string")
-                : undefined,
-              metadata: asRecord(args.metadata) ?? undefined,
-            }),
-          };
+          const written = await params.memory.remember({
+            scope,
+            kind: optionalString(args.kind) ?? "note",
+            content: expectString(args.content, "content"),
+            summary: optionalString(args.summary),
+            confidence: expectNumber(args.confidence),
+            importance: expectNumber(args.importance),
+            source: optionalString(args.source),
+            tags: Array.isArray(args.tags)
+              ? args.tags.filter((entry): entry is string => typeof entry === "string")
+              : undefined,
+            metadata: asRecord(args.metadata) ?? undefined,
+          });
+          params.events?.emit({
+            type: "memory_written",
+            context: scopeContextOf(scope),
+            data: { recordId: written.id, kind: written.kind },
+          });
+          return { record: written };
         }
         if (action === "update") {
           const id = expectString(args.id, "id");
@@ -125,6 +131,13 @@ export function createMemoryToolSet(params: {
           if (args.tags !== undefined) patch.tags = args.tags;
           if (args.metadata !== undefined) patch.metadata = asRecord(args.metadata);
           const record = await params.memory.update(id, patch);
+          if (record) {
+            params.events?.emit({
+              type: "memory_updated",
+              context: scopeContextOf(scope),
+              data: { recordId: id, kind: record.kind },
+            });
+          }
           return { record, updated: record !== null };
         }
         if (action === "delete") {
@@ -134,7 +147,15 @@ export function createMemoryToolSet(params: {
           if (!existing || !sameScope(existing.scope, scope)) {
             return { deleted: false };
           }
-          return { deleted: await params.memory.forget(id) };
+          const deleted = await params.memory.forget(id);
+          if (deleted) {
+            params.events?.emit({
+              type: "memory_deleted",
+              context: scopeContextOf(scope),
+              data: { recordId: id },
+            });
+          }
+          return { deleted };
         }
         throw new Error("action must be search, get, list, write, update, or delete");
       },
@@ -162,7 +183,7 @@ export function createMemoryToolSet(params: {
         const action = expectString(args.action, "action");
         const scopes = parseReadScopeArgs(args);
         if (action === "recall") {
-          return await runtime.buildRecallContext({
+          const result = await runtime.buildRecallContext({
             userMessage: expectString(args.message, "message"),
             recentMessages: Array.isArray(args.recentMessages)
               ? args.recentMessages.filter((entry): entry is string => typeof entry === "string")
@@ -170,6 +191,15 @@ export function createMemoryToolSet(params: {
             scopes,
             maxChars: expectNumber(args.maxChars),
           });
+          params.events?.emit({
+            type: "recall_built",
+            context: { projectId: "local", agentIds: (scopes ?? []).map((s) => s.id).filter((id) => id !== "shared") },
+            data: {
+              message: truncForEvent(expectString(args.message, "message")),
+              hits: (result.hits ?? []).length,
+            },
+          });
+          return result;
         }
         if (action === "retrieve") {
           return await params.memory.retrieval.recall(expectString(args.query, "query"), {
@@ -694,6 +724,7 @@ export function createMemoryMcpHandler(params: {
   runtime?: MemoryRuntime;
   defaultScopes?: MemoryScope[];
   onMemoryChanged?: () => Promise<void>;
+  events?: InspectEventStore;
 }) {
   const tools = createMemoryToolSet(params);
   const toolMap = new Map(tools.map((tool) => [tool.name, tool]));
@@ -1161,4 +1192,17 @@ function rpcError(id: JsonRpcId, code: number, message: string) {
     id,
     error: { code, message },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Inspect event helpers (2026-08-08: durable audit trail for the console)
+// ---------------------------------------------------------------------------
+
+function scopeContextOf(scope: { type: string; id: string }) {
+  // Events are an audit/display trail; projectId is a fixed local placeholder.
+  return scope.type === "agent" ? { projectId: "local", agentId: scope.id } : { projectId: "local" };
+}
+
+function truncForEvent(s: string, n = 60): string {
+  return s.length > n ? s.slice(0, n) + "…" : s;
 }

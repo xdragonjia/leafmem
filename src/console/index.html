@@ -7,7 +7,7 @@
 <style>
   :root{
     --bg:#f5f7fa; --card:#ffffff; --ink:#1a2332; --ink2:#5b6675; --line:#e5e9f0;
-    --brand:#2563eb; --brand2:#1d4ed8; --accent:#0ea5e9;
+    --brand:#16a34a; --brand2:#15803d; --accent:#65a30d;
     --ok:#16a34a; --warn:#d97706; --err:#dc2626; --purple:#7c3aed;
     --radius:14px; --shadow:0 1px 3px rgba(16,24,40,.07),0 4px 14px rgba(16,24,40,.06);
     --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
@@ -21,8 +21,8 @@
   /* ===== 侧边栏 ===== */
   .side{width:216px;background:#0f1b2d;color:#cdd6e4;flex-shrink:0;display:flex;flex-direction:column;padding:18px 12px}
   .side .logo{display:flex;align-items:center;gap:10px;padding:6px 10px 18px;border-bottom:1px solid rgba(255,255,255,.08)}
-  .side .logo .ic{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#2563eb,#0ea5e9);
-    display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 10px rgba(37,99,235,.4)}
+  .side .logo .ic{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#16a34a,#65a30d);
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 10px rgba(22,163,74,.4)}
   .side .logo .ic svg{width:18px;height:18px}
   .side .logo .t b{color:#fff;font-size:15px;display:block;letter-spacing:.2px}
   .side .logo .t span{font-size:11px;color:#8ea0bd}
@@ -32,7 +32,7 @@
     color:#b7c3d8;border-radius:10px;cursor:pointer;font-size:14px;text-align:left;min-height:44px;transition:.15s;font-family:inherit}
   .nav button svg{width:18px;height:18px;flex-shrink:0;opacity:.85}
   .nav button:hover{background:rgba(255,255,255,.06);color:#fff}
-  .nav button.on{background:linear-gradient(90deg,rgba(37,99,235,.35),rgba(14,165,233,.18));color:#fff;font-weight:600}
+  .nav button.on{background:linear-gradient(90deg,rgba(22,163,74,.32),rgba(101,163,13,.16));color:#fff;font-weight:600}
   .side .foot{margin-top:auto;font-size:11px;color:#6b7a96;padding:10px;line-height:1.7}
   .side .foot .row{display:flex;align-items:center;gap:7px}
   .dot{width:8px;height:8px;border-radius:50%;background:#44536b;flex-shrink:0}
@@ -60,7 +60,7 @@
   .btn.sm{min-height:32px;padding:5px 12px;font-size:12.5px;border-radius:8px}
   .input{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:13.5px;
     color:var(--ink);outline:none;transition:.15s;font-family:inherit;min-height:40px}
-  .input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+  .input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(22,163,74,.14)}
   .input.sm{min-height:32px;padding:5px 10px;font-size:12.5px;border-radius:8px}
   .input.mono{font-family:var(--mono);font-size:12px}
   select.input{cursor:pointer}
@@ -171,8 +171,8 @@
 
   /* ===== 连接页 ===== */
   .hero{max-width:440px;margin:8vh auto 0;text-align:center}
-  .hero .ic{width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,#2563eb,#0ea5e9);
-    display:inline-flex;align-items:center;justify-content:center;box-shadow:0 8px 28px rgba(37,99,235,.35);margin-bottom:18px}
+  .hero .ic{width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,#16a34a,#65a30d);
+    display:inline-flex;align-items:center;justify-content:center;box-shadow:0 8px 28px rgba(22,163,74,.35);margin-bottom:18px}
   .hero .ic svg{width:28px;height:28px}
   .hero h2{font-size:20px;letter-spacing:.3px}
   .hero p{color:var(--ink2);font-size:13.5px;margin:8px 0 22px;line-height:1.7}
@@ -199,19 +199,13 @@
     <div class="t"><b>LeafMem</b><span>记忆控制台</span></div>
   </div>
   <nav class="nav">
-    <div class="grp">总览</div>
     <button class="on" data-page="dashboard" onclick="goPage('dashboard')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
       仪表盘
     </button>
-    <div class="grp">记忆</div>
     <button data-page="explorer" onclick="goPage('explorer')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
       记忆浏览
-    </button>
-    <button data-page="recall" onclick="goPage('recall')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-      召回检查
     </button>
     <button data-page="insights" onclick="goPage('insights')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></svg>
@@ -221,7 +215,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
       事件日志
     </button>
-    <div class="grp">配置</div>
+    <button data-page="recall" onclick="goPage('recall')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      召回检查
+    </button>
     <button data-page="agents" onclick="goPage('agents')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
       宿主接入
@@ -482,7 +479,7 @@ async function renderExplorer(el) {
                 </td>
                 <td><span class="pill p">${esc(m.scope?.type)}:${esc(trunc(m.scope?.id, 14))}</span></td>
                 <td class="mono-sm">${timeAgo(m.updatedAt)}</td>
-                <td><button class="btn sm danger" onclick="event.stopPropagation();deleteMemory('${esc(m.id)}')">删除</button></td>
+                <td><button class="btn sm danger" onclick="event.stopPropagation();deleteMemory('${esc(m.id)}','${esc(m.scope?.type)}:${esc(m.scope?.id)}')">删除</button></td>
               </tr>`).join('') : `<tr><td colspan="5"><div class="empty"><div class="glyph">⌀</div><div class="msg">没有匹配的记录</div></div></td></tr>`}
           </tbody>
         </table>
@@ -504,10 +501,12 @@ async function exportMemories() {
     toast('已导出 JSON 文件');
   } catch (err) { toast(`导出失败：${err.message}`, true); }
 }
-async function deleteMemory(id) {
+async function deleteMemory(id, scopeStr) {
   if (!confirm('确定永久删除这条记忆？')) return;
   try {
-    await fetch(`${API_BASE}/v1/memories/${id}?${scopeQuery()}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${state.apiKey}` } });
+    // 破坏性操作需显式 scope（服务端隔离语义）：携带记录自身所属范围
+    const delQuery = scopeStr ? `scope=${encodeURIComponent(scopeStr)}` : scopeQuery();
+    await fetch(`${API_BASE}/v1/memories/${id}?${delQuery}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${state.apiKey}` } });
     state.explorerCache = null;
     toast('已删除'); renderPage();
   } catch (err) { toast(`删除失败：${err.message}`, true); }
@@ -543,7 +542,7 @@ async function openDrawer(id) {
         ${m.metadata?.originFile ? `<span class="k">原始文件</span><span class="v">${esc(m.metadata.originFile)}</span>` : ''}
       </div>
     </div>
-    <button class="btn sm danger" onclick="deleteMemory('${esc(m.id)}')">删除该记录</button>`;
+    <button class="btn sm danger" onclick="deleteMemory('${esc(m.id)}','${esc(m.scope?.type)}:${esc(m.scope?.id)}')">删除该记录</button>`;
 }
 function closeDrawer() { document.getElementById('drawer').classList.remove('open'); }
 
@@ -647,7 +646,7 @@ async function renderEvents(el) {
     </div>`;
   } catch (err) { el.innerHTML = `<div class="empty"><div class="glyph">⚠</div><div class="msg">${esc(err.message)}</div></div>`; }
 }
-function evPill(t) { return { recall:'b', write:'g', reflect:'p', delete:'r' }[t] || 'gray'; }
+function evPill(t) { return { recall:'b', memory_written:'g', memory_updated:'y', memory_deleted:'r', recall_built:'b', projection_synced:'p', write:'g', reflect:'p', delete:'r' }[t] || 'gray'; }
 
 // ================================================================ 宿主接入
 async function renderAgents(el) {

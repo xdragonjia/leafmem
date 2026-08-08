@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { createLeafMem, type LeafMem, type LeafMemOptions } from "../core/index.js";
 import type { MemoryScope } from "../core/types.js";
 import { createMemoryMcpHandler } from "./handler.js";
+import { SqliteInspectEventStore } from "../inspect/sqlite-store.js";
 
 export type MemoryMcpStdioServerOptions = {
   memory?: LeafMem;
@@ -35,10 +36,15 @@ export async function runMemoryMcpStdioServer(
       },
       retrieval: options.retrieval,
     });
+  // Durable audit trail (2026-08-08): MCP writes/updates/deletes/recalls are
+  // recorded into the shared SQLite database so the console /v1/events page
+  // shows real activity across processes and restarts.
+  const events = new SqliteInspectEventStore(options.storagePath ?? defaultMemoryMcpStoragePath());
   const handler = createMemoryMcpHandler({
     memory,
     defaultScopes: options.defaultScopes,
     onMemoryChanged: options.onMemoryChanged,
+    events,
   });
 
   if ("setEncoding" in stdin && typeof stdin.setEncoding === "function") {

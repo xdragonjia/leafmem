@@ -19,7 +19,7 @@ import {
 import { createLeafMem } from "../core/index.js";
 import type { LeafMemOptions } from "../core/memory.js";
 import { createLeafMemServer } from "../http/server.js";
-import { InMemoryInspectEventStore } from "../inspect/store.js";
+import { SqliteInspectEventStore } from "../inspect/sqlite-store.js";
 import { defaultMemoryMcpStoragePath } from "../mcp/stdio.js";
 import { LeafMemPlatformService } from "../platform/service.js";
 import { ProjectStore } from "../auth/project.js";
@@ -381,7 +381,7 @@ async function runUi(input: {
       path: input.options.storagePath,
     },
   });
-  const events = new InMemoryInspectEventStore();
+  const events = new SqliteInspectEventStore(input.options.storagePath);
   const platform = new LeafMemPlatformService({ memory, events });
   const projects = new ProjectStore();
   const { apiKey, project } = projects.create("Local LeafMem");
@@ -452,7 +452,7 @@ async function runServe(input: AgentServiceOptions): Promise<void> {
     entityStore: new SqliteEntityStore(config.storagePath),
     entityExtractor: new RuleBasedEntityExtractor({ strict: true }),
   });
-  const events = new InMemoryInspectEventStore();
+  const events = new SqliteInspectEventStore(config.storagePath);
   const platform = new LeafMemPlatformService({ memory, events });
   const projects = new ProjectStore();
   projects.register(projectFromAgentServiceConfig(config));

@@ -113,6 +113,12 @@ export async function handleMemoryRoutes(
   const id = idMatch[1]!;
   const ref = { context: memoryContextFromQuery(ctx.projectId, url), id };
   const writeRef = { context: { projectId: ctx.projectId }, id };
+  // Destructive ops require an explicit scope= selection (2026-08-08):
+  // view=shared / no-scope callers must NOT be able to mutate agent-scoped
+  // records (project isolation, see console tests). The console sends the
+  // currently selected scope on its delete button, so this stays usable.
+  const hasExplicitScope = Boolean(url.searchParams.get("scope")?.trim());
+  const destructiveRef = hasExplicitScope ? ref : writeRef;
 
   // GET /v1/memories/:id/history
   if (path.endsWith("/history") && req.method === "GET") {
@@ -138,7 +144,7 @@ export async function handleMemoryRoutes(
   if (req.method === "PATCH") {
     const patch = (await readBody(req)) as Record<string, unknown>;
     const updated = await ctx.platform.updateMemory({
-      ref: writeRef,
+      ref: destructiveRef,
       patch: {
         content: patch.content as string | undefined,
         summary: patch.summary as string | undefined,
@@ -159,8 +165,11 @@ export async function handleMemoryRoutes(
   }
 
   // DELETE /v1/memories/:id
+  // (2026-08-08 fix) use the scope-aware ref: the old writeRef carried only
+  // projectId, so recordBelongsToProject could never match agent-scoped
+  // records and every delete returned 404.
   if (req.method === "DELETE") {
-    const deleted = await ctx.platform.deleteMemory(writeRef);
+    const deleted = await ctx.platform.deleteMemory(destructiveRef);
     if (!deleted) {
       json(res, 404, { error: "Memory not found" });
       return;
