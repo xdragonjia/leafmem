@@ -211,4 +211,4 @@ README 只保留摘要数字。复现命令、数据集说明和结果解释请�
 
 ## License / 许可
 
-[MIT](./LICENSE). LeafMem builds on open-source foundations; see [`THIRD-PARTY-NOTICES.md`](./THIRD-PARTY-NOTICES.md).
+Proprietary. LeafMem is currently distributed under a private license (see [`LICENSE`](./LICENSE)).

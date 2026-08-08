@@ -116,7 +116,6 @@
     "dist",
     "README.md",
     "LICENSE",
-    "THIRD-PARTY-NOTICES.md",
     "docs/GETTING_STARTED.md",
     "docs/USAGE.md",
     "docs/WORKBUDDY.md",
@@ -139,5 +138,5 @@
   "engines": {
     "node": ">=22.13.0"
   },
-  "license": "MIT"
+  "license": "UNLICENSED"
 }
