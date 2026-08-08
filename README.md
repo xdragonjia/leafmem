@@ -95,6 +95,17 @@ LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个�
 
 > 💡 这四个工具就是 Agent 与 LeafMem 交互的全部入口。安装器会把使用纪律注入宿主的指令文件，Agent 读到后就知道何时调用。
 
+**工具背后的子组件**（每个工具由它们协同完成）：
+
+| 子组件 | 作用 | 参与的工具 |
+|--------|------|-----------|
+| Proposal Extractor | 从对话/会话蒸馏出"值得记住"的提案 | write（commit） |
+| Entity Extractor + Entity Store | 抽取实体（人/项目/技术/工具/组织）、建实体间关系与实体-记忆链接，构成知识图谱 | write（remember/commit 时自动建链）、recall（图谱加权） |
+| Active Memory Manager | 维护 context / experience / **profile（用户画像）** 三类压缩文档；**profile 会注入每次召回** | recall（active 层）、organize（profile/distill） |
+| Task Context Manager | 任务 transcript、rolling summary、决策窗口 | write（task_append）、recall（task_window） |
+| Maintenance Manager | reflect（蒸馏原则）、calibrate/rebuild（experience）、attribute（归因） | organize、govern |
+| Inspect Event Store | 写/改/删/召回的持久化审计事件 | 全部（自动） |
+
 ### 1.3 分层记忆模型
 
 | 层 | 内容 | 特征 |
@@ -115,7 +126,9 @@ LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个�
 3. **task 层** —— 任务窗口（如有 taskId）
 4. **palace/retrieval 层** —— 加权检索结果
 
-加权信号：**词法重叠 + hash 向量 + 实体图谱加权 + FTS5 BM25 + recency + importance + principle 加成**，过期记录自动降权。可选 BGE-M3 向量重排进一步提升。
+加权信号：**词法重叠 + hash 向量 + 实体图谱加权 + FTS5 BM25 + recency + importance + principle 加成**，过期记录自动降权。**BGE-M3 向量重排为推荐默认配置**（安装引导默认开启，免费硅基流动额度即可），开启后 LongMemEval R@10 从 94.6% 提升到 97.6%。
+
+**Inferencer（可选但推荐）**：DeepSeek 等 OpenAI 兼容模型，驱动三类高阶能力——reflect 蒸馏原则、profile 画像刷新、session commit 的深度治理。未配置时这些动作降级为本地确定性逻辑（不蒸馏），核心召回不受影响。
 
 ### 1.5 常规自动化任务
 
@@ -216,10 +229,12 @@ node dist/bin/leafmem-agent.js tui
 
 ### 2.6 API Key 快速上手
 
-LeafMem **开箱即用**（本地内置检索，零外部依赖）。如需向量化召回与反思蒸馏，按 [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) 配置：
+LeafMem 开箱即用（本地内置检索即可工作）。**推荐默认配置**（安装引导会默认帮你配好）：
 
-- **免费向量化**：硅基流动 BGE-M3
-- **可选 inferencer**：DeepSeek 或任意 OpenAI 兼容模型
+- **向量化 + 重排**：硅基流动 BGE-M3（免费额度，显著提升召回精度，默认开启）
+- **inferencer**：DeepSeek 或任意 OpenAI 兼容模型（驱动 reflect/profile 等蒸馏能力）
+
+配置细节见 [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md)。
 
 ---
 
@@ -239,6 +254,7 @@ LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使�
 | 删一条记忆 | “删掉那条过时的记录” | `memory_govern(action=delete)` |
 | 保护重要记忆 | “把这条原则固定住，别被衰减” | `memory_govern(action=pin)` |
 | 主动整理 | “整理一下最近的记忆” | `memory_organize(action=reflect/profile/decay)` |
+| 看任务工作态 | “这个任务之前做到哪了？” | `memory_recall(action=task_window)` 或控制台任务页 |
 
 #### 记忆控制台
 
@@ -252,8 +268,9 @@ LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使�
 | 🕸️ 知识图谱 | 实体关系力导向图（预模拟稳定布局、邻接高亮、点击详情） |
 | ⏱️ 事件日志 | 写/改/删/召回的审计流水 |
 | 🔎 召回检查 | 模拟 Agent 检索，看实际召回了什么 |
+| 📋 任务上下文 | Agent 工作态（transcript + rolling summary），分页浏览、点开看详情；与记忆是两套数据 |
 | 🔌 宿主接入 | 各宿主安装状态、MCP/纪律/session 导入 |
-| ❓ 帮助文档 | 本文档，支持目录跳转与搜索 |
+| ❓ 帮助文档 | 本文档，支持目录跳转与全文搜索（mermaid 图实时渲染） |
 
 ### 3.2 Agent 怎么用
 
@@ -283,8 +300,13 @@ LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使�
 
 #### ④ 召回（`memory_recall`）
 
-- 组装 active + navigation + task + palace 四层上下文
+- 组装 active + navigation + task + palace 四层上下文（active 层含用户画像）
 - `search` / `get` / `list` 返回完整记录；`recall` 返回 prompt-ready 文本（record 内容已并入 injectedContext）
+
+#### ⑤ 实体图谱与审计（自动，无需手动调用）
+
+- 每次 `remember`/`commit` 自动抽取实体并建链，召回时图谱参与加权；控制台"知识图谱"页可视化
+- 每次写/改/删/召回自动写审计事件，控制台"事件日志"页可查
 
 ### 3.3 纪律文件使用约定
 
@@ -338,13 +360,12 @@ LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使�
 
 ---
 
-## ⚠️ 当前边界
+## ⚠️ 能力边界（如实说明）
 
-- 内置检索本地且确定；超大存储建议启用向量重排或 QMD
-- 远程向量化是显式开关，仅配 API Key 不会触发远程调用
-- QMD 需 `qmd` CLI 在 `PATH`
-- Turn capture 未配 inferencer 时用轻量提案抽取
-- Markdown 宿主兼容为导入后 SQLite → markdown 单向
+- **零外部依赖即可运行**：不配任何 API Key 也能召回，只是精度低于开启 BGE-M3 重排的版本（见基准表）
+- **蒸馏类能力依赖 inferencer**：reflect/profile/深度治理未配置模型时降级为本地逻辑，不做 LLM 蒸馏
+- **超大存储**：数万条以上建议开启向量重排或检索后端扩展，内置加权检索在千级规模表现最佳
+- **Markdown 宿主桥接为单向**：首次导入后以 SQLite 为准，markdown 仅作展示镜像
 
 ---
 

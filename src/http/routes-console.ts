@@ -97,27 +97,67 @@ export async function handleConsoleRoutes(
     return;
   }
 
-  // GET /v1/tasks (2026-08-09): list task_context rows for the console
-  // tasks page (dashboard 任务上下文 KPI landing).
+  // GET /v1/tasks (2026-08-09): paginated task_context listing. Tasks are the
+  // agent's working state (transcript + rolling summary), distinct from memory
+  // records; the console tasks page is their landing.
   if (path === "/v1/tasks" && req.method === "GET") {
+    const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "50", 10), 200);
+    const offset = Math.max(parseInt(url.searchParams.get("offset") ?? "0", 10), 0);
     try {
       const storagePath = ctx.agents?.storagePath;
       if (!storagePath) {
-        json(res, 200, { tasks: [] });
+        json(res, 200, { tasks: [], total: 0 });
         return;
       }
       using db = openSqliteDatabase(storagePath);
+      const total = Number(
+        (db.prepare("SELECT COUNT(*) AS c FROM task_context").get() as { c?: number } | undefined)?.c ?? 0,
+      );
       const tasks = db
         .prepare(
           `SELECT task_id, scope_type, scope_id, title, status, created_at, updated_at
            FROM task_context
            ORDER BY updated_at DESC
-           LIMIT 200`,
+           LIMIT ? OFFSET ?`,
         )
-        .all() as Array<Record<string, unknown>>;
-      json(res, 200, { tasks });
+        .all(limit, offset) as Array<Record<string, unknown>>;
+      json(res, 200, { tasks, total });
     } catch {
-      json(res, 200, { tasks: [] });
+      json(res, 200, { tasks: [], total: 0 });
+    }
+    return;
+  }
+
+  // GET /v1/tasks/detail?id= — task working state: meta + rolling summary +
+  // transcript entries (task_context_state / task_context_entries).
+  if (path === "/v1/tasks/detail" && req.method === "GET") {
+    const id = url.searchParams.get("id") ?? "";
+    try {
+      const storagePath = ctx.agents?.storagePath;
+      if (!storagePath || !id) {
+        json(res, 200, { task: null, rollingSummary: "", entries: [] });
+        return;
+      }
+      using db = openSqliteDatabase(storagePath);
+      const task = db
+        .prepare(
+          `SELECT task_id, scope_type, scope_id, title, status, created_at, updated_at
+           FROM task_context WHERE task_id = ?`,
+        )
+        .get(id) as Record<string, unknown> | undefined;
+      const state = db
+        .prepare("SELECT rolling_summary FROM task_context_state WHERE task_id = ?")
+        .get(id) as { rolling_summary?: string } | undefined;
+      const entries = db
+        .prepare(
+          `SELECT sequence, role, content, summary, created_at
+           FROM task_context_entries WHERE task_id = ?
+           ORDER BY sequence ASC LIMIT 100`,
+        )
+        .all(id) as Array<Record<string, unknown>>;
+      json(res, 200, { task: task ?? null, rollingSummary: state?.rolling_summary ?? "", entries });
+    } catch {
+      json(res, 200, { task: null, rollingSummary: "", entries: [] });
     }
     return;
   }
