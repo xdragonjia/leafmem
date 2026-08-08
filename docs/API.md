@@ -199,12 +199,10 @@ For custom hosts, `createMemoryMcpHandler()` exposes JSON-RPC 2.0 tools.
 
 | Tool | Description |
 |------|-------------|
-| `memory_record` | Search, fetch, list, write, update, or delete long-term memory records |
-| `memory_context` | Build prompt-ready recall or run the retrieval stack |
-| `memory_active` | Read or distill active context and experience |
-| `memory_session` | Commit host-distilled session summaries |
-| `memory_task` | Append task entries or build task context windows |
-| `memory_maintenance` | Run experience calibration or rebuild active experience |
+| `memory_write` | Write memory: remember a record, commit a session, append a task entry, or distill active context/experience |
+| `memory_recall` | Recall memory: build prompt-ready recall, search/get/list records, build a task window, or read active memory |
+| `memory_organize` | Curate memory: prepare/apply maintenance, distill principles (reflect), refresh profile, decay, or maintain experience |
+| `memory_govern` | Manage memory: update/delete records, attribute recall usefulness, or pin/unpin against decay |
 
 ```ts
 import { createMemoryMcpHandler } from "@xdragonjia/leafmem/mcp";

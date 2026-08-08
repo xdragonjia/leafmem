@@ -487,18 +487,16 @@ MCP handler 提供了 6 个聚合工具：
 
 | 工具 | 功能 |
 |------|------|
-| `memory_record` | `action: "search" / "get" / "list" / "write" / "update" / "delete"`，管理长期记忆记录 |
-| `memory_context` | `action: "recall" / "retrieve"`，生成 prompt-ready 召回文本或执行 retrieval stack |
-| `memory_active` | `action: "get" / "distill"`，读取或压缩 active context / experience |
-| `memory_session` | `action: "commit"`，提交宿主 agent 已经 distill 好的 session summary |
-| `memory_task` | `action: "append" / "window"`，追加 task entry 或生成 task prompt 窗口 |
-| `memory_maintenance` | `action: "calibrate" / "rebuild"`，执行 experience 校准或重建 |
+| `memory_write` | `action: "remember" / "commit" / "task_append" / "active_distill"`，写记忆：remember 记录、commit 提交会话、task_append 追加任务条目、active_distill 蒸馏 active |
+| `memory_recall` | `action: "recall" / "search" / "get" / "list" / "task_window" / "active_get"`，召回记忆：召回上下文、检索、任务窗口、读 active |
+| `memory_organize` | `action: "prepare" / "apply" / "reflect" / "profile" / "decay" / "calibrate" / "rebuild"`，整理记忆：维护准备/应用、蒸馏原则、刷新画像、衰减、experience 校准重建 |
+| `memory_govern` | `action: "update" / "delete" / "attribute" / "pin"`，管理记忆：更新/删除记录、归因召回价值、固定防衰减 |
 
-`memory_session` 的 `action: "commit"` 是 Codex、Claude Code、Cursor、Copilot、Antigravity 这类宿主 agent 的推荐 session-flush 路径：宿主 agent 先用自己的当前模型生成 `rollingSummary` 和可选 `durableMemories`，LeafMem 只负责追加新增 `entries`、设置 task rolling summary、更新同一条 session memory。这个工具不会调用 LLM，也不需要 LeafMem 读取宿主 agent 的 OAuth token 或订阅凭据。
+`memory_write` 的 `action: "commit"` 是 Codex、Claude Code、Cursor、Copilot、Antigravity 这类宿主 agent 的推荐 session-flush 路径：宿主 agent 先用自己的当前模型生成 `rollingSummary` 和可选 `durableMemories`，LeafMem 只负责追加新增 `entries`、设置 task rolling summary、更新同一条 session memory。这个工具不会调用 LLM，也不需要 LeafMem 读取宿主 agent 的 OAuth token 或订阅凭据。
 
 OpenClaw、Hermes 这类 runtime / wrapper 自己能拿到 provider key 或 runtime model config 的 agent，推荐直接把 API-backed inferencer 传给 LeafMem。OpenClaw plugin 会自动复用当前 runtime model；Hermes bridge 支持 `LEAFMEM_INFERENCER` / `--inferencer`；其他自带 key 的 runtime 可以用 `createOpenClawInferencer()` 创建同一类 inferencer。
 
-`memory_record` 的 `action: "write"` / `"update"` 可以写入 `source`、`tags` 和 `metadata`。如果一条新记忆被合并到已有记录，tags 和 metadata 会合并，额外来源会保存在 `metadata.sourceHistory`，有冲突的标记会保存在 `metadata.markerHistory`。`memory_context` 的 `action: "recall"` 会在返回的 `hits[].record` 中保留完整记录，并在 prompt-ready 文本里显示每条命中的 source、tags 和 metadata 标记。
+`memory_write` 的 `action: "remember"`（更新用 `memory_govern` 的 `action: "update"`） 可以写入 `source`、`tags` 和 `metadata`。如果一条新记忆被合并到已有记录，tags 和 metadata 会合并，额外来源会保存在 `metadata.sourceHistory`，有冲突的标记会保存在 `metadata.markerHistory`。`memory_recall` 的 `action: "recall"` 会在返回的 `hits[].record` 中保留完整记录，并在 prompt-ready 文本里显示每条命中的 source、tags 和 metadata 标记。
 
 示例参数：
 
@@ -588,7 +586,7 @@ node dist/bin/leafmem-agent.js install workbuddy
 
 安装时还会导入并接管 `~/.workbuddy/SOUL.md`、`~/.workbuddy/USER.md`、`~/.workbuddy/MEMORY.md`。接管后主要记忆存储在 LeafMem 数据库中，这三份 Markdown 文件继续留在原位置作为 WorkBuddy 的映射文件；LeafMem 同步前会先吸收文件中的直接改动，再刷新投影。
 
-因此在 WorkBuddy 里调用 `memory_record` 的 `action: "write"`、`memory_active` 的 `action: "distill"`、`memory_maintenance` 的 `action: "calibrate"` 这类需要 scope 的操作时，可以省略 `scopeType` / `scopeId`；LeafMem 会自动落到 `agent:workbuddy`。如果要跨工具查询共享记忆，调用 `memory_context` 的 `action: "recall"` 时仍然可以不传 scope。
+因此在 WorkBuddy 里调用 `memory_write` 的 `action: "remember"`、`action: "active_distill"`、`memory_organize` 的 `action: "calibrate"` 这类需要 scope 的操作时，可以省略 `scopeType` / `scopeId`；LeafMem 会自动落到 `agent:workbuddy`。如果要跨工具查询共享记忆，调用 `memory_recall` 的 `action: "recall"` 时仍然可以不传 scope。
 
 ### 全局安装到 coding agent
 
@@ -629,7 +627,7 @@ node dist/bin/leafmem-agent.js install trae
 | WorkBuddy | `~/.workbuddy/mcp.json` | `~/.workbuddy/SOUL.md` / `USER.md` / `MEMORY.md` 映射 | n/a |
 | TRAE Work | `~/Library/Application Support/TRAE SOLO CN/User/mcp.json` | `~/.trae/skills/leafmem-memory/SKILL.md` | n/a |
 
-这个安装入口默认不会给 Codex、Claude Code、Cursor、Copilot、Antigravity、TRAE Work 的 MCP server 设置 `agent:*` scope。这样 agent 调 `memory_context` 的 `action: "recall"` 时如果不传 scope，就可以从同一个 SQLite 里跨 agent 召回；需要写入新记忆或做窄查询时，再按指令使用当前 agent 的 scope，例如 `agent:codex`、`agent:claude`、`agent:cursor`、`agent:copilot`、`agent:antigravity` 或 `agent:trae`。
+这个安装入口默认不会给 Codex、Claude Code、Cursor、Copilot、Antigravity、TRAE Work 的 MCP server 设置 `agent:*` scope。这样 agent 调 `memory_recall` 的 `action: "recall"` 时如果不传 scope，就可以从同一个 SQLite 里跨 agent 召回；需要写入新记忆或做窄查询时，再按指令使用当前 agent 的 scope，例如 `agent:codex`、`agent:claude`、`agent:cursor`、`agent:copilot`、`agent:antigravity` 或 `agent:trae`。
 
 WorkBuddy 是例外：它没有 LeafMem 可以稳定写入的全局指令文件，所以 installer 会在 MCP env 里设置 `LEAFMEM_SCOPE_TYPE=agent` 和 `LEAFMEM_SCOPE_ID=workbuddy`，让写入类工具默认落到 `agent:workbuddy`，减少普通用户配置负担。同时它会把 `SOUL.md`、`USER.md`、`MEMORY.md` 作为数据库投影保留下来，避免打断 WorkBuddy 原本的文件读取习惯。
 
@@ -692,7 +690,7 @@ macOS 上会写入用户级 LaunchAgent：
 
 它运行 `leafmem-agent serve`，使用同一个 `~/.leafmem/memory.sqlite` 和一枚稳定的本地 API key。这样重启机器后 console URL 不会因为临时进程退出而失效。
 
-`serve` 只做轻量兜底同步：它定时读取各 agent 的本地 session 文件并复用幂等 importer 写入 LeafMem，不会启动 Codex、Claude 或其它宿主 agent，也不会调用额外模型。高质量 session summary 仍然建议由宿主 agent 在重要工作或会话收尾时主动调用 `memory_session` 的 `action: "commit"`。
+`serve` 只做轻量兜底同步：它定时读取各 agent 的本地 session 文件并复用幂等 importer 写入 LeafMem，不会启动 Codex、Claude 或其它宿主 agent，也不会调用额外模型。高质量 session summary 仍然建议由宿主 agent 在重要工作或会话收尾时主动调用 `memory_write` 的 `action: "commit"`。
 
 常用命令：
 

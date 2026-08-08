@@ -947,7 +947,7 @@ async function buildMaintenanceRequest(
     instructions: [
       "Use the host LLM to lightly deduplicate, decay stale details, and correct active memory against durable palace records.",
       "Keep activeContext compact and current; keep activeExperience as reusable lessons only.",
-      "Return memory_maintenance.apply with activeContext, activeExperience, and a short governanceReport.",
+      "Return memory_organize with action='apply', activeContext, activeExperience, and a short governanceReport.",
     ],
   };
 }

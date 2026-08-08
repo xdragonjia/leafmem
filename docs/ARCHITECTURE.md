@@ -54,7 +54,7 @@ flowchart LR
   Merge --> Prompt["injectedContext"]
 ```
 
-The recall result can expose both prompt-ready text and structured hits. MCP `memory_context` with `action: "recall"` keeps the full `hits[].record`, including `source`, `tags`, and `metadata`.
+The recall result can expose both prompt-ready text and structured hits. MCP `memory_recall` with `action: "recall"` keeps the full `hits[].record`, including `source`, `tags`, and `metadata`.
 
 ## Turn Capture Flow
 

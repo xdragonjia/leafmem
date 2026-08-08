@@ -115,16 +115,16 @@ leafmem
 在 WorkBuddy 里新建任务，输入：
 
 ```text
-请调用 leafmem_memory_context，action 设为 recall，不要使用 conversation_search。不要传 scopeType/scopeId。召回我们之前写过的长期记忆，列出你找到的记录来源、scope 和核心内容。
+请调用 leafmem_memory_recall，action 设为 recall，不要使用 conversation_search。不要传 scopeType/scopeId。召回我们之前写过的长期记忆，列出你找到的记录来源、scope 和核心内容。
 ```
 
 如果你已经有 LeafMem 旧记忆，也可以问更具体的问题，例如：
 
 ```text
-请调用 leafmem_memory_context，action 设为 recall，不要使用 conversation_search。不要传 scopeType/scopeId。召回我们之前写腾讯文章时形成的独特观点，重点找判断框架、管理层话外音、估值逻辑、多情景目标价和可直接写进文章的核心句子。
+请调用 leafmem_memory_recall，action 设为 recall，不要使用 conversation_search。不要传 scopeType/scopeId。召回我们之前写腾讯文章时形成的独特观点，重点找判断框架、管理层话外音、估值逻辑、多情景目标价和可直接写进文章的核心句子。
 ```
 
-正常情况下，WorkBuddy 会调用 `leafmem_memory_context` 或 `leafmem_memory_record`，而不是只搜索 WorkBuddy 自己的历史对话。
+正常情况下，WorkBuddy 会调用 `leafmem_memory_recall` 或 `leafmem_memory_write`，而不是只搜索 WorkBuddy 自己的历史对话。
 
 ## 日常怎么用
 
@@ -145,13 +145,13 @@ leafmem
 更稳定的写法是直接点名工具：
 
 ```text
-请调用 leafmem_memory_context，action 设为 recall，不要传 scopeType/scopeId，召回……
+请调用 leafmem_memory_recall，action 设为 recall，不要传 scopeType/scopeId，召回……
 ```
 
 写入新记忆时不需要传 scope。LeafMem 会自动写到 `agent:workbuddy`：
 
 ```text
-请调用 leafmem_memory_record，action 设为 write，记住：我希望这类任务先给结论，再给证据。
+请调用 leafmem_memory_write，action 设为 remember，记住：我希望这类任务先给结论，再给证据。
 ```
 
 ## 更新 LeafMem
@@ -174,7 +174,7 @@ node dist/bin/leafmem-agent.js update workbuddy
 可以这样问：
 
 ```text
-请调用 leafmem_memory_context，action 设为 recall，不要使用 conversation_search。不要传 scopeType/scopeId。
+请调用 leafmem_memory_recall，action 设为 recall，不要使用 conversation_search。不要传 scopeType/scopeId。
 ```
 
 ### WorkBuddy 能看到 leafmem，但没有结果
@@ -182,13 +182,13 @@ node dist/bin/leafmem-agent.js update workbuddy
 可能是记忆库里还没有相关内容。先写一条测试记忆：
 
 ```text
-请调用 leafmem_memory_record，action 设为 write，记住：WorkBuddy 已经成功接入 LeafMem。
+请调用 leafmem_memory_write，action 设为 remember，记住：WorkBuddy 已经成功接入 LeafMem。
 ```
 
 再召回：
 
 ```text
-请调用 leafmem_memory_context，action 设为 recall，查询 WorkBuddy 已经成功接入 LeafMem。
+请调用 leafmem_memory_recall，action 设为 recall，查询 WorkBuddy 已经成功接入 LeafMem。
 ```
 
 ### leafmem 显示未信任或未启用
@@ -229,4 +229,4 @@ printf '%s\n' \
   | node dist/bin/leafmem-mcp.js
 ```
 
-如果输出里能看到 `memory_context`、`memory_record`、`memory_session` 等工具，说明 LeafMem MCP server 本身正常。
+如果输出里能看到 `memory_recall`、`memory_write`、`memory_organize`、`memory_govern` 四个工具，说明 LeafMem MCP server 本身正常。
