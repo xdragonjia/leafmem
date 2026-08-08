@@ -109,7 +109,7 @@ export function createLeafMemServer(options: LeafMemServerOptions) {
         await handleBridgeRoutes(req, res, ctx, pathname);
       } else if (pathname.startsWith("/v1/agents/")) {
         await handleAgentRoutes(req, res, ctx, pathname);
-      } else if (pathname === "/v1/stats" || pathname === "/v1/governance" || (pathname === "/v1/graph" || pathname === "/v1/graph/entity" || pathname === "/v1/docs") || pathname === "/v1/events" || pathname.startsWith("/v1/inspect/")) {
+      } else if (pathname === "/v1/stats" || pathname === "/v1/governance" || (pathname === "/v1/graph" || pathname === "/v1/graph/entity" || pathname === "/v1/docs" || pathname === "/v1/tasks") || pathname === "/v1/events" || pathname.startsWith("/v1/inspect/")) {
         await handleConsoleRoutes(req, res, ctx, pathname, url);
       } else {
         json(res, 404, { error: "Not found" });

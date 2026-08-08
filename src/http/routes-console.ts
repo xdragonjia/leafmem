@@ -97,6 +97,31 @@ export async function handleConsoleRoutes(
     return;
   }
 
+  // GET /v1/tasks (2026-08-09): list task_context rows for the console
+  // tasks page (dashboard 任务上下文 KPI landing).
+  if (path === "/v1/tasks" && req.method === "GET") {
+    try {
+      const storagePath = ctx.agents?.storagePath;
+      if (!storagePath) {
+        json(res, 200, { tasks: [] });
+        return;
+      }
+      using db = openSqliteDatabase(storagePath);
+      const tasks = db
+        .prepare(
+          `SELECT task_id, scope_type, scope_id, title, status, created_at, updated_at
+           FROM task_context
+           ORDER BY updated_at DESC
+           LIMIT 200`,
+        )
+        .all() as Array<Record<string, unknown>>;
+      json(res, 200, { tasks });
+    } catch {
+      json(res, 200, { tasks: [] });
+    }
+    return;
+  }
+
   // GET /v1/events (enhanced with pagination & type filter)
   // GET /v1/graph (2026-08-08): lightweight entity knowledge-graph payload.
   // Nodes = entities, edges = entity_relations. No external graph DB needed:
