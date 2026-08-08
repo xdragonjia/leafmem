@@ -1,0 +1,143 @@
+{
+  "name": "@xdragonjia/leafmem",
+  "version": "0.1.2",
+  "description": "LeafMem — long-term memory engine for AI agents (recall, reflect, profile, governance).",
+  "type": "module",
+  "keywords": [
+    "memory",
+    "agent",
+    "rag",
+    "retrieval",
+    "mcp",
+    "sqlite"
+  ],
+  "bin": {
+    "leafmem-agent": "./dist/bin/leafmem-agent.js",
+    "leafmem-mcp": "./dist/bin/leafmem-mcp.js",
+    "leafmem-codex-import": "./dist/bin/leafmem-codex-import.js",
+    "leafmem-claude-import": "./dist/bin/leafmem-claude-import.js",
+    "leafmem-antigravity-import": "./dist/bin/leafmem-antigravity-import.js",
+    "leafmem-copilot-import": "./dist/bin/leafmem-copilot-import.js",
+    "leafmem-cursor-import": "./dist/bin/leafmem-cursor-import.js",
+    "leafmem-hermes": "./dist/bin/leafmem-hermes.js",
+    "leafmem-openclaw": "./dist/bin/leafmem-openclaw.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "default": "./dist/core/index.js"
+    },
+    "./active": {
+      "types": "./dist/active/index.d.ts",
+      "default": "./dist/active/index.js"
+    },
+    "./task": {
+      "types": "./dist/task/index.d.ts",
+      "default": "./dist/task/index.js"
+    },
+    "./retrieval": {
+      "types": "./dist/retrieval/index.d.ts",
+      "default": "./dist/retrieval/index.js"
+    },
+    "./maintenance": {
+      "types": "./dist/maintenance/index.d.ts",
+      "default": "./dist/maintenance/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "default": "./dist/runtime/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/index.d.ts",
+      "default": "./dist/mcp/index.js"
+    },
+    "./adapters": {
+      "types": "./dist/adapters/index.d.ts",
+      "default": "./dist/adapters/index.js"
+    },
+    "./adapters/hermes-agent": {
+      "types": "./dist/adapters/hermes-agent.d.ts",
+      "default": "./dist/adapters/hermes-agent.js"
+    },
+    "./adapters/openclaw": {
+      "types": "./dist/adapters/openclaw.d.ts",
+      "default": "./dist/adapters/openclaw.js"
+    },
+    "./adapters/workbuddy": {
+      "types": "./dist/adapters/workbuddy.d.ts",
+      "default": "./dist/adapters/workbuddy.js"
+    },
+    "./system": {
+      "types": "./dist/system/index.d.ts",
+      "default": "./dist/system/index.js"
+    },
+    "./cloud": {
+      "types": "./dist/cloud/index.d.ts",
+      "default": "./dist/cloud/index.js"
+    },
+    "./platform": {
+      "types": "./dist/platform/index.d.ts",
+      "default": "./dist/platform/index.js"
+    },
+    "./inspect": {
+      "types": "./dist/inspect/index.d.ts",
+      "default": "./dist/inspect/index.js"
+    },
+    "./bridge": {
+      "types": "./dist/bridge/index.d.ts",
+      "default": "./dist/bridge/index.js"
+    },
+    "./products/coding": {
+      "types": "./dist/products/coding/index.d.ts",
+      "default": "./dist/products/coding/index.js"
+    },
+    "./products/runtime": {
+      "types": "./dist/products/runtime/index.d.ts",
+      "default": "./dist/products/runtime/index.js"
+    },
+    "./auth": {
+      "types": "./dist/auth/index.d.ts",
+      "default": "./dist/auth/index.js"
+    },
+    "./http": {
+      "types": "./dist/http/index.d.ts",
+      "default": "./dist/http/index.js"
+    },
+    "./entity": {
+      "types": "./dist/entity/index.d.ts",
+      "default": "./dist/entity/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.md",
+    "docs/GETTING_STARTED.md",
+    "docs/USAGE.md",
+    "docs/WORKBUDDY.md",
+    "docs/ARCHITECTURE.md",
+    "docs/API.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && mkdir -p dist/console dist/cloud && cp src/console/index.html dist/console/index.html && cp src/cloud/schema.sql dist/cloud/schema.sql",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "mcp:serve": "node dist/bin/leafmem-mcp.js",
+    "test": "tsx --test test/*.test.ts",
+    "bench:lme": "node --experimental-strip-types benchmarks/longmemeval/bench.ts",
+    "bench:locomo": "node --experimental-strip-types benchmarks/locomo/bench.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "license": "MIT"
+}

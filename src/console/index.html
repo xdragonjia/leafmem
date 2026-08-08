@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LeafMem Console</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --card:#ffffff; --ink:#1a2332; --ink2:#5b6675; --line:#e5e9f0;
+    --brand:#2563eb; --brand2:#1d4ed8; --accent:#0ea5e9;
+    --ok:#16a34a; --warn:#d97706; --err:#dc2626; --purple:#7c3aed;
+    --radius:14px; --shadow:0 1px 3px rgba(16,24,40,.07),0 4px 14px rgba(16,24,40,.06);
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--ink);line-height:1.6;font-size:14px;display:flex;height:100vh;overflow:hidden}
+  a{color:var(--brand);text-decoration:none}
+
+  /* ===== 侧边栏 ===== */
+  .side{width:216px;background:#0f1b2d;color:#cdd6e4;flex-shrink:0;display:flex;flex-direction:column;padding:18px 12px}
+  .side .logo{display:flex;align-items:center;gap:10px;padding:6px 10px 18px;border-bottom:1px solid rgba(255,255,255,.08)}
+  .side .logo .ic{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#2563eb,#0ea5e9);
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 10px rgba(37,99,235,.4)}
+  .side .logo .ic svg{width:18px;height:18px}
+  .side .logo .t b{color:#fff;font-size:15px;display:block;letter-spacing:.2px}
+  .side .logo .t span{font-size:11px;color:#8ea0bd}
+  .nav{margin-top:14px;display:flex;flex-direction:column;gap:2px}
+  .nav .grp{font-size:11px;color:#6b7a96;padding:12px 12px 5px;letter-spacing:.08em}
+  .nav button{display:flex;align-items:center;gap:11px;width:100%;padding:11px 12px;border:none;background:none;
+    color:#b7c3d8;border-radius:10px;cursor:pointer;font-size:14px;text-align:left;min-height:44px;transition:.15s;font-family:inherit}
+  .nav button svg{width:18px;height:18px;flex-shrink:0;opacity:.85}
+  .nav button:hover{background:rgba(255,255,255,.06);color:#fff}
+  .nav button.on{background:linear-gradient(90deg,rgba(37,99,235,.35),rgba(14,165,233,.18));color:#fff;font-weight:600}
+  .side .foot{margin-top:auto;font-size:11px;color:#6b7a96;padding:10px;line-height:1.7}
+  .side .foot .row{display:flex;align-items:center;gap:7px}
+  .dot{width:8px;height:8px;border-radius:50%;background:#44536b;flex-shrink:0}
+  .dot.on{background:#4ade80;box-shadow:0 0 8px rgba(74,222,128,.7)}
+  .side .foot .mono{font-family:var(--mono);font-size:10.5px;color:#8ea0bd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* ===== 主区 ===== */
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .topbar{display:flex;align-items:center;gap:12px;padding:16px 26px 0;flex-wrap:wrap}
+  .topbar h1{font-size:20px;letter-spacing:.3px}
+  .topbar .meta{font-size:12.5px;color:var(--ink2)}
+  .topbar .spacer{flex:1}
+  #page{flex:1;overflow-y:auto;padding:18px 26px 46px}
+  .inner{max-width:1280px;margin:0 auto}
+
+  /* ===== 控件 ===== */
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:9px 15px;border-radius:10px;border:1px solid var(--line);
+    background:var(--card);color:var(--ink);font-size:13.5px;cursor:pointer;min-height:40px;transition:.15s;font-weight:500;font-family:inherit;white-space:nowrap}
+  .btn:hover{border-color:var(--brand);color:var(--brand)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .btn.primary:hover{background:var(--brand2);color:#fff}
+  .btn.danger{color:var(--err)}
+  .btn.danger:hover{border-color:var(--err);color:var(--err);background:#fef2f2}
+  .btn.sm{min-height:32px;padding:5px 12px;font-size:12.5px;border-radius:8px}
+  .input{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:13.5px;
+    color:var(--ink);outline:none;transition:.15s;font-family:inherit;min-height:40px}
+  .input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+  .input.sm{min-height:32px;padding:5px 10px;font-size:12.5px;border-radius:8px}
+  .input.mono{font-family:var(--mono);font-size:12px}
+  select.input{cursor:pointer}
+
+  /* ===== 卡片 ===== */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
+    padding:18px 20px;margin-bottom:16px}
+  .card h3{font-size:15px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+  .card h3 .sub{font-size:12px;color:var(--ink2);font-weight:400}
+  .card.plain{padding:0}
+  .card .head{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+  .card .head h3{margin:0}
+
+  /* ===== KPI ===== */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+  .kpi .lbl{font-size:12.5px;color:var(--ink2);display:flex;align-items:center;gap:6px}
+  .kpi .val{font-size:27px;font-weight:700;margin-top:5px;letter-spacing:.5px;font-variant-numeric:tabular-nums}
+  .kpi .sub{font-size:12px;color:var(--ink2);margin-top:2px}
+  .kpi.c1 .val{color:var(--brand)} .kpi.c2 .val{color:var(--ok)} .kpi.c3 .val{color:var(--purple)} .kpi.c4 .val{color:var(--accent)}
+
+  .grid2{display:grid;grid-template-columns:1.5fr 1fr;gap:16px}
+  .grid2 .card{margin-bottom:0}
+
+  /* ===== 进度条 ===== */
+  .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+  .bar-row .lbl{width:86px;font-family:var(--mono);font-size:11.5px;color:var(--ink2);text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis}
+  .bar{flex:1;height:10px;background:#eef1f6;border-radius:20px;overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:20px;background:linear-gradient(90deg,var(--brand),var(--accent))}
+  .bar-row .num{width:44px;font-family:var(--mono);font-size:11.5px;color:var(--ink2)}
+
+  /* ===== 表格 ===== */
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{padding:11px 16px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--ink2);font-weight:600;font-size:12px;background:#f8fafc}
+  tr:last-child td{border-bottom:none}
+  tbody tr{cursor:pointer;transition:background .1s}
+  tbody tr:hover{background:#f6f9ff}
+  .cell-preview{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.55}
+  .mono-sm{font-family:var(--mono);font-size:11px;color:var(--ink2);white-space:nowrap}
+
+  /* ===== 标签 ===== */
+  .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11.5px;font-weight:600;white-space:nowrap}
+  .pill.g{background:#dcfce7;color:#15803d}.pill.b{background:#dbeafe;color:#1d4ed8}
+  .pill.y{background:#fef3c7;color:#b45309}.pill.p{background:#ede9fe;color:#6d28d9}
+  .pill.gray{background:#eef1f6;color:var(--ink2)}.pill.r{background:#fee2e2;color:#b91c1c}
+  .tags-row{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+  .tags-row .pill{font-weight:500;font-size:11px;background:#f1f5f9;color:#64748b}
+
+  /* ===== 工具条 ===== */
+  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .toolbar .spacer{flex:1}
+  .search-wrap{position:relative;flex:1;min-width:220px;max-width:420px}
+  .search-wrap svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:#94a3b8}
+  .search-wrap .input{width:100%;padding-left:32px}
+  .pager{display:flex;align-items:center;gap:6px}
+  .pager .info{font-family:var(--mono);font-size:12px;color:var(--ink2);margin-right:2px}
+
+  /* ===== 时间线 ===== */
+  .tl{padding:6px 20px}
+  .tl-item{display:flex;gap:14px;padding:10px 0;border-bottom:1px solid var(--line);align-items:baseline}
+  .tl-item:last-child{border-bottom:none}
+  .tl-time{font-family:var(--mono);font-size:11px;color:#94a3b8;width:64px;flex-shrink:0}
+  .tl-type{width:96px;flex-shrink:0}
+  .tl-data{font-family:var(--mono);font-size:11.5px;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+
+  /* ===== 召回 ===== */
+  .hit{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 18px;margin-bottom:12px}
+  .hit-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .hit-score{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--brand);width:56px}
+  .hit-bar{flex:0 0 130px;height:6px;background:#eef1f6;border-radius:20px;overflow:hidden}
+  .hit-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--brand),var(--accent))}
+  .hit-summary{line-height:1.6}
+  .hit-reasons{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+  .reason{font-family:var(--mono);font-size:10.5px;padding:2px 8px;border-radius:6px;background:#f1f5f9;color:#64748b}
+  .reason.hot{background:#dbeafe;color:#1d4ed8;font-weight:600}
+
+  /* ===== 宿主卡片 ===== */
+  .infra{display:flex;gap:28px;align-items:center;flex-wrap:wrap}
+  .infra .item .lbl{font-size:11.5px;color:var(--ink2);margin-bottom:3px}
+  .infra .item .val{font-family:var(--mono);font-size:12px;color:var(--ink);word-break:break-all}
+  .agent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+  .agent-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+  .agent-head{display:flex;align-items:center;justify-content:space-between}
+  .agent-name{font-weight:700;font-size:14px}
+  .agent-scope{font-family:var(--mono);font-size:10.5px;color:#94a3b8;margin-top:2px}
+  .agent-rows{display:flex;flex-direction:column;gap:7px}
+  .agent-row{display:flex;justify-content:space-between;align-items:center;font-size:12.5px}
+  .agent-row .lbl{color:var(--ink2)}
+  .agent-path{font-family:var(--mono);font-size:10px;color:#94a3b8;word-break:break-all}
+  .agent-actions{display:flex;gap:8px}
+  .agent-actions .btn{flex:1;justify-content:center}
+
+  /* ===== 抽屉 ===== */
+  #drawer{position:fixed;top:0;right:0;bottom:0;width:500px;max-width:92vw;background:var(--card);
+    border-left:1px solid var(--line);box-shadow:-8px 0 30px rgba(16,24,40,.12);transform:translateX(100%);
+    transition:transform .22s ease;z-index:60;display:flex;flex-direction:column}
+  #drawer.open{transform:translateX(0)}
+  .dw-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+  .dw-head b{font-size:14.5px}
+  .dw-body{flex:1;overflow-y:auto;padding:20px}
+  .dw-sec{margin-bottom:18px}
+  .dw-lbl{font-size:11.5px;font-weight:700;color:var(--ink2);margin-bottom:6px}
+  .dw-text{font-size:13.5px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+  .dw-kv{display:grid;grid-template-columns:90px 1fr;gap:7px 12px;font-size:12.5px}
+  .dw-kv .k{color:var(--ink2)}
+  .dw-kv .v{font-family:var(--mono);font-size:11.5px;word-break:break-all}
+
+  /* ===== 连接页 ===== */
+  .hero{max-width:440px;margin:8vh auto 0;text-align:center}
+  .hero .ic{width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,#2563eb,#0ea5e9);
+    display:inline-flex;align-items:center;justify-content:center;box-shadow:0 8px 28px rgba(37,99,235,.35);margin-bottom:18px}
+  .hero .ic svg{width:28px;height:28px}
+  .hero h2{font-size:20px;letter-spacing:.3px}
+  .hero p{color:var(--ink2);font-size:13.5px;margin:8px 0 22px;line-height:1.7}
+  .hero .card{text-align:left}
+
+  .empty{text-align:center;padding:52px 20px;color:#94a3b8}
+  .empty .glyph{font-size:26px;margin-bottom:10px;opacity:.6}
+  .loading{text-align:center;padding:40px;color:#94a3b8;font-size:13px}
+  #toasts{position:fixed;bottom:22px;right:22px;z-index:100;display:flex;flex-direction:column;gap:8px}
+  .toast{background:#1a2332;color:#fff;border-radius:10px;padding:11px 16px;font-size:13px;
+    box-shadow:0 8px 24px rgba(16,24,40,.25);animation:tin .18s ease;max-width:380px}
+  .toast.err{background:var(--err)}
+  @keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#cfd8e3;border-radius:5px;border:2px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+
+<aside class="side">
+  <div class="logo">
+    <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg></div>
+    <div class="t"><b>LeafMem</b><span>记忆控制台</span></div>
+  </div>
+  <nav class="nav">
+    <div class="grp">总览</div>
+    <button class="on" data-page="dashboard" onclick="goPage('dashboard')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+      仪表盘
+    </button>
+    <div class="grp">记忆</div>
+    <button data-page="explorer" onclick="goPage('explorer')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+      记忆浏览
+    </button>
+    <button data-page="recall" onclick="goPage('recall')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      召回检查
+    </button>
+    <button data-page="insights" onclick="goPage('insights')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></svg>
+      洞察
+    </button>
+    <button data-page="events" onclick="goPage('events')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+      事件日志
+    </button>
+    <div class="grp">配置</div>
+    <button data-page="agents" onclick="goPage('agents')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+      宿主接入
+    </button>
+  </nav>
+  <div class="foot">
+    <div class="row"><span class="dot" id="conn-dot"></span><span id="conn-label">未连接</span></div>
+    <div class="row"><span class="mono" id="conn-scope">—</span></div>
+  </div>
+</aside>
+
+<div class="main">
+  <div class="topbar">
+    <h1 id="page-title">仪表盘</h1>
+    <span class="meta" id="page-sub"></span>
+    <div class="spacer"></div>
+    <span class="meta" id="scope-label" style="display:none">范围</span>
+    <select class="input sm" id="scope-select" style="display:none" onchange="setScope(this.value)"></select>
+    <input class="input sm mono" id="api-key-input" placeholder="服务 API Key" style="width:220px" spellcheck="false">
+    <button class="btn primary sm" id="connect-btn" onclick="connect()">连接</button>
+  </div>
+  <div id="page"></div>
+</div>
+
+<div id="drawer">
+  <div class="dw-head"><b>记忆详情</b><button class="btn sm" onclick="closeDrawer()">关闭 ✕</button></div>
+  <div class="dw-body" id="drawer-body"></div>
+</div>
+<div id="toasts"></div>
+
+<script>
+// ================================================================ 状态
+const API_BASE = window.location.origin;
+const _q = new URLSearchParams(window.location.search);
+const state = {
+  apiKey: _q.get('apiKey') || localStorage.getItem('leafmem_api_key') || '',
+  page: ['dashboard','explorer','recall','insights','events','agents'].includes(_q.get('page')) ? _q.get('page') : 'dashboard',
+  connected: false,
+  scope: _q.get('scope') || localStorage.getItem('leafmem_scope') || 'shared',
+  agentIds: [],
+  explorerCache: null, explorerCacheScope: null,
+  explorerPage: 0, explorerQuery: '', explorerKind: '',
+  recallQuery: '', eventType: '', expandedPrincipleId: null,
+};
+const PAGE_SIZE = 25;
+const KIND_PILL = { note:'b', lesson:'y', decision:'p', principle:'g' };
+
+// ================================================================ API
+async function api(path, options = {}) {
+  if (!state.apiKey) throw new Error('未提供 API Key');
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.apiKey}`, ...options.headers },
+  });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { const b = await res.json(); if (b?.error) msg = b.error; } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+function scopeQuery() {
+  const p = new URLSearchParams();
+  if (state.scope === 'shared') p.set('view', 'shared');
+  else p.set('scope', state.scope || 'project');
+  return p.toString();
+}
+function scopeContext() {
+  if (state.scope === 'shared') return { agentIds: state.agentIds.length ? state.agentIds : undefined };
+  if (state.scope?.startsWith('agent:')) return { agentId: state.scope.slice('agent:'.length) };
+  return {};
+}
+const SCOPE_LABEL = { shared: '共享记忆库', project: '当前项目' };
+function scopeName(s) { return SCOPE_LABEL[s] || (s?.startsWith('agent:') ? `宿主 · ${s.slice(6)}` : s); }
+
+// ================================================================ 连接
+async function connect() {
+  const key = document.getElementById('api-key-input').value.trim();
+  if (key) state.apiKey = key;
+  try {
+    await api(`/v1/stats?${scopeQuery()}`);
+    state.connected = true;
+    localStorage.setItem('leafmem_api_key', state.apiKey);
+    localStorage.setItem('leafmem_scope', state.scope);
+    await loadAgentIds();
+    chrome(); renderPage();
+  } catch (err) {
+    state.connected = false; chrome(); renderConnect();
+    toast(`连接失败：${err.message}`, true);
+  }
+}
+async function loadAgentIds() {
+  try { state.agentIds = ((await api('/v1/agents/status')).agents || []).map(a => a.agent); }
+  catch { state.agentIds = []; }
+}
+
+// ================================================================ 框架
+function chrome() {
+  document.getElementById('conn-dot').className = 'dot' + (state.connected ? ' on' : '');
+  document.getElementById('conn-label').textContent = state.connected ? '已连接' : '未连接';
+  document.getElementById('conn-scope').textContent = state.connected ? `范围：${scopeName(state.scope)}` : '—';
+  document.getElementById('scope-label').style.display = state.connected ? '' : 'none';
+  document.getElementById('scope-select').style.display = state.connected ? '' : 'none';
+  document.getElementById('connect-btn').textContent = state.connected ? '重新连接' : '连接';
+  document.getElementById('api-key-input').style.display = state.connected ? 'none' : '';
+  const sel = document.getElementById('scope-select');
+  const opts = [['shared', SCOPE_LABEL.shared], ['project', SCOPE_LABEL.project],
+    ...state.agentIds.map(id => [`agent:${id}`, `宿主 · ${id}`])];
+  sel.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}"${v === state.scope ? ' selected' : ''}>${esc(l)}</option>`).join('');
+  if (![...sel.options].some(o => o.value === state.scope)) {
+    sel.insertAdjacentHTML('beforeend', `<option value="${esc(state.scope)}" selected>${esc(scopeName(state.scope))}</option>`);
+  }
+  const T = { dashboard:['仪表盘','存储健康与活动概览'], explorer:['记忆浏览','检索、筛选与管理记忆'],
+    recall:['召回检查','模拟智能体实际检索到的内容'], insights:['洞察','蒸馏原则与用户画像'],
+    events:['事件日志','记忆操作审计流水'], agents:['宿主接入','各智能体宿主的安装与导入状态'] };
+  document.getElementById('page-title').textContent = T[state.page][0];
+  document.getElementById('page-sub').textContent = T[state.page][1];
+  document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('on', b.dataset.page === state.page));
+}
+function setScope(v) {
+  state.scope = v || 'shared';
+  localStorage.setItem('leafmem_scope', state.scope);
+  state.explorerCache = null;
+  chrome(); if (state.connected) renderPage();
+}
+function goPage(p) { state.page = p; chrome(); state.connected ? renderPage() : renderConnect(); }
+
+function renderPage() {
+  const el = document.getElementById('page');
+  closeDrawer();
+  if (!state.connected) return renderConnect();
+  ({ dashboard: renderDashboard, explorer: renderExplorer, recall: renderRecall,
+     insights: renderInsights, events: renderEvents, agents: renderAgents })[state.page](el);
+}
+
+function renderConnect() {
+  document.getElementById('page').innerHTML = `
+  <div class="hero">
+    <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg></div>
+    <h2>LeafMem 记忆控制台</h2>
+    <p>面向 AI 智能体的长期记忆控制面。<br>输入服务 API Key，即可浏览、检索与治理记忆。</p>
+    <div class="card">
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <input class="input mono" id="hero-key" placeholder="mm_… 服务 API Key" value="${esc(state.apiKey)}" spellcheck="false"
+          onkeydown="if(event.key==='Enter'){document.getElementById('api-key-input').value=this.value;connect();}">
+        <button class="btn primary" style="justify-content:center" onclick="document.getElementById('api-key-input').value=document.getElementById('hero-key').value;connect()">连接服务</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ================================================================ 仪表盘
+async function renderDashboard(el) {
+  el.innerHTML = '<div class="loading">正在加载总览…</div>';
+  try {
+    const [stats, evData, gov] = await Promise.all([
+      api(`/v1/stats?${scopeQuery()}`),
+      api('/v1/events?limit=8'),
+      api(`/v1/governance?${scopeQuery()}`).catch(() => null),
+    ]);
+    const kinds = Object.entries(stats.kinds || {}).sort((a, b) => b[1] - a[1]);
+    const max = kinds.length ? kinds[0][1] : 1;
+    const events = evData.events || [];
+    el.innerHTML = `<div class="inner">
+      <div class="kpis">
+        <div class="kpi c1"><div class="lbl">记忆总数</div><div class="val">${stats.totalMemories}</div><div class="sub">${kinds.length} 种类型</div></div>
+        <div class="kpi c2"><div class="lbl">蒸馏原则</div><div class="val">${gov?.stats?.principleCount ?? 0}</div><div class="sub">reflect() 沉淀</div></div>
+        <div class="kpi c3"><div class="lbl">召回次数</div><div class="val">${gov?.stats?.totalRecallCount ?? 0}</div><div class="sub">${gov?.stats?.entityCount ?? 0} 实体 · ${gov?.stats?.entityLinkCount ?? 0} 关联</div></div>
+        <div class="kpi c4"><div class="lbl">范围数</div><div class="val">${Object.keys(stats.scopes || {}).length}</div><div class="sub">project · agent · repo</div></div>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <h3>记忆类型分布 <span class="sub">${esc(scopeName(state.scope))}</span></h3>
+          ${kinds.length ? kinds.slice(0, 8).map(([k, n]) => `
+            <div class="bar-row">
+              <span class="lbl">${esc(k)}</span>
+              <div class="bar"><i style="width:${Math.max(2, (n / max) * 100)}%"></i></div>
+              <span class="num">${n}</span>
+            </div>`).join('') : '<div class="empty"><div class="msg">该范围暂无记忆</div></div>'}
+        </div>
+        <div class="card">
+          <h3>最近活动 <span class="sub">最新事件</span></h3>
+          <div class="tl" style="padding:0">
+            ${events.length ? events.map(ev => `
+              <div class="tl-item">
+                <span class="tl-time">${fmtTime(ev.timestamp)}</span>
+                <span class="tl-type"><span class="pill ${evPill(ev.type)}">${esc(ev.type)}</span></span>
+                <span class="tl-data">${ev.data ? Object.entries(ev.data).map(([k, v]) => `${k}: ${typeof v === 'string' ? trunc(v, 22) : v}`).join(' · ') : '—'}</span>
+              </div>`).join('') : '<div class="empty"><div class="msg">暂无事件</div></div>'}
+          </div>
+        </div>
+      </div>
+      ${gov?.profile?.present ? `
+      <div class="card">
+        <h3>用户画像 <span class="sub">更新于 ${timeAgo(gov.profile.updatedAt)} · ${(gov.profile.sections ?? []).length} 个分节</span></h3>
+        ${gov.profile.preamble ? `<div class="dw-text" style="color:var(--ink2)">${esc(trunc(gov.profile.preamble, 400))}</div>` : ''}
+        <div class="tags-row">${(gov.profile.sections ?? []).map(s => `<span class="pill b">${esc(s.title)}</span>`).join('')}</div>
+        <div class="sub" style="font-size:12px;color:var(--ink2);margin-top:10px">完整内容见「洞察」→ 用户画像。</div>
+      </div>` : ''}
+    </div>`;
+  } catch (err) { el.innerHTML = `<div class="empty"><div class="glyph">⚠</div><div class="msg">${esc(err.message)}</div></div>`; }
+}
+
+// ================================================================ 记忆浏览
+async function renderExplorer(el) {
+  el.innerHTML = '<div class="loading">正在加载记忆…</div>';
+  try {
+    if (!state.explorerCache || state.explorerCacheScope !== state.scope) {
+      const d = await api(`/v1/memories/export?limit=5000&${scopeQuery()}`);
+      state.explorerCache = d?.memories || [];
+      state.explorerCacheScope = state.scope;
+      state.explorerPage = 0;
+    }
+    let mems = state.explorerCache;
+    const kindOpts = [...new Set(mems.map(m => m.kind))].sort();
+    if (state.explorerKind) mems = mems.filter(m => m.kind === state.explorerKind);
+    if (state.explorerQuery) {
+      const q = state.explorerQuery.toLowerCase();
+      mems = mems.filter(m => (m.content || '').toLowerCase().includes(q) ||
+        (m.summary || '').toLowerCase().includes(q) || (m.tags || []).some(t => t.toLowerCase().includes(q)));
+    }
+    mems = [...mems].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    const pages = Math.max(1, Math.ceil(mems.length / PAGE_SIZE));
+    state.explorerPage = Math.min(state.explorerPage, pages - 1);
+    const rows = mems.slice(state.explorerPage * PAGE_SIZE, (state.explorerPage + 1) * PAGE_SIZE);
+
+    el.innerHTML = `<div class="inner">
+      <div class="toolbar">
+        <div class="search-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input class="input" id="explorer-search" placeholder="搜索内容、摘要、标签…" value="${esc(state.explorerQuery)}" oninput="explorerSearch(this.value)">
+        </div>
+        <select class="input" onchange="state.explorerKind=this.value;state.explorerPage=0;renderPage()">
+          <option value="">全部类型</option>
+          ${kindOpts.map(k => `<option value="${esc(k)}"${k === state.explorerKind ? ' selected' : ''}>${esc(k)}</option>`).join('')}
+        </select>
+        <span class="mono-sm">${mems.length} 条记录</span>
+        <div class="spacer"></div>
+        <button class="btn sm" onclick="exportMemories()">导出 JSON ↓</button>
+        <div class="pager">
+          <span class="info">第 ${state.explorerPage + 1}/${pages} 页</span>
+          <button class="btn sm" ${state.explorerPage === 0 ? 'disabled' : ''} onclick="state.explorerPage=0;renderPage()">«</button>
+          <button class="btn sm" ${state.explorerPage === 0 ? 'disabled' : ''} onclick="state.explorerPage--;renderPage()">‹</button>
+          <button class="btn sm" ${state.explorerPage >= pages - 1 ? 'disabled' : ''} onclick="state.explorerPage++;renderPage()">›</button>
+          <button class="btn sm" ${state.explorerPage >= pages - 1 ? 'disabled' : ''} onclick="state.explorerPage=${pages - 1};renderPage()">»</button>
+        </div>
+      </div>
+      <div class="card plain">
+        <table>
+          <thead><tr><th style="width:100px">类型</th><th>内容</th><th style="width:170px">范围</th><th style="width:90px">更新</th><th style="width:70px"></th></tr></thead>
+          <tbody>
+            ${rows.length ? rows.map(m => `
+              <tr onclick="openDrawer('${esc(m.id)}')">
+                <td><span class="pill ${KIND_PILL[m.kind] || 'gray'}">${esc(m.kind)}</span></td>
+                <td>
+                  <div class="cell-preview">${esc(m.content)}</div>
+                  ${m.tags?.length ? `<div class="tags-row">${m.tags.map(t => `<span class="pill">${esc(t)}</span>`).join('')}</div>` : ''}
+                </td>
+                <td><span class="pill p">${esc(m.scope?.type)}:${esc(trunc(m.scope?.id, 14))}</span></td>
+                <td class="mono-sm">${timeAgo(m.updatedAt)}</td>
+                <td><button class="btn sm danger" onclick="event.stopPropagation();deleteMemory('${esc(m.id)}')">删除</button></td>
+              </tr>`).join('') : `<tr><td colspan="5"><div class="empty"><div class="glyph">⌀</div><div class="msg">没有匹配的记录</div></div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  } catch (err) { el.innerHTML = `<div class="empty"><div class="glyph">⚠</div><div class="msg">${esc(err.message)}</div></div>`; }
+}
+let searchTimer = null;
+function explorerSearch(v) { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.explorerQuery = v; state.explorerPage = 0; renderPage(); }, 250); }
+
+async function exportMemories() {
+  try {
+    const d = await api(`/v1/memories/export?limit=5000&${scopeQuery()}`);
+    const blob = new Blob([JSON.stringify(d.memories || [], null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `leafmem-export-${state.scope.replace(/[:/]/g, '_')}.json`;
+    a.click(); URL.revokeObjectURL(a.href);
+    toast('已导出 JSON 文件');
+  } catch (err) { toast(`导出失败：${err.message}`, true); }
+}
+async function deleteMemory(id) {
+  if (!confirm('确定永久删除这条记忆？')) return;
+  try {
+    await fetch(`${API_BASE}/v1/memories/${id}?${scopeQuery()}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${state.apiKey}` } });
+    state.explorerCache = null;
+    toast('已删除'); renderPage();
+  } catch (err) { toast(`删除失败：${err.message}`, true); }
+}
+
+// ================================================================ 抽屉
+async function openDrawer(id) {
+  const dw = document.getElementById('drawer'), body = document.getElementById('drawer-body');
+  dw.classList.add('open');
+  let m = (state.explorerCache || []).find(x => x.id === id);
+  if (!m) {
+    body.innerHTML = '<div class="loading">加载中…</div>';
+    try { m = ((await api(`/v1/memories/export?limit=5000&${scopeQuery()}`)).memories || []).find(x => x.id === id); } catch {}
+  }
+  if (!m) { body.innerHTML = '<div class="empty"><div class="msg">未找到该记录</div></div>'; return; }
+  body.innerHTML = `
+    <div class="dw-sec"><div style="display:flex;gap:6px;flex-wrap:wrap">
+      <span class="pill ${KIND_PILL[m.kind] || 'gray'}">${esc(m.kind)}</span>
+      <span class="pill p">${esc(m.scope?.type)}:${esc(m.scope?.id)}</span>
+      ${(m.tags || []).includes('pinned') ? '<span class="pill gray">📌 已固定</span>' : ''}
+      ${m.kind === 'principle' ? '<span class="pill g">✦ 蒸馏产出</span>' : ''}
+    </div></div>
+    <div class="dw-sec"><div class="dw-lbl">内容</div><div class="dw-text">${esc(m.content)}</div></div>
+    ${m.summary ? `<div class="dw-sec"><div class="dw-lbl">摘要</div><div class="dw-text">${esc(m.summary)}</div></div>` : ''}
+    ${m.tags?.length ? `<div class="dw-sec"><div class="dw-lbl">标签</div><div class="tags-row">${m.tags.map(t => `<span class="pill">${esc(t)}</span>`).join('')}</div></div>` : ''}
+    <div class="dw-sec"><div class="dw-lbl">元信息</div>
+      <div class="dw-kv">
+        <span class="k">ID</span><span class="v">${esc(m.id)}</span>
+        <span class="k">来源</span><span class="v">${esc(m.source || '—')}</span>
+        <span class="k">重要性</span><span class="v">${m.importance != null ? Number(m.importance).toFixed(2) : '—'}</span>
+        <span class="k">创建</span><span class="v">${esc(m.createdAt || '—')}</span>
+        <span class="k">更新</span><span class="v">${esc(m.updatedAt || '—')}</span>
+        ${m.metadata?.originFile ? `<span class="k">原始文件</span><span class="v">${esc(m.metadata.originFile)}</span>` : ''}
+      </div>
+    </div>
+    <button class="btn sm danger" onclick="deleteMemory('${esc(m.id)}')">删除该记录</button>`;
+}
+function closeDrawer() { document.getElementById('drawer').classList.remove('open'); }
+
+// ================================================================ 召回检查
+async function renderRecall(el) {
+  el.innerHTML = `<div class="inner">
+    <div class="card" style="display:flex;gap:10px">
+      <input class="input" style="flex:1" id="recall-query" placeholder="智能体会怎么问？例如「服务怎么部署」" value="${esc(state.recallQuery)}" onkeydown="if(event.key==='Enter')runRecall()">
+      <button class="btn primary" onclick="runRecall()">开始检查</button>
+    </div>
+    <div id="recall-results"></div>
+  </div>`;
+  if (state.recallQuery) runRecall();
+}
+async function runRecall() {
+  const q = document.getElementById('recall-query')?.value.trim();
+  if (!q) return;
+  state.recallQuery = q;
+  const out = document.getElementById('recall-results');
+  out.innerHTML = '<div class="loading">正在检索…</div>';
+  try {
+    const d = await api('/v1/recall', { method: 'POST',
+      body: JSON.stringify({ context: scopeContext(), message: q, inspect: true, maxChars: 8000 }) });
+    const hits = d.hits || [];
+    out.innerHTML = hits.length ? hits.map(h => {
+      const r = h.record || {};
+      const reasons = Object.entries(h.reasons || {}).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+      return `
+      <div class="hit">
+        <div class="hit-head">
+          <span class="hit-score">${(h.score ?? 0).toFixed(3)}</span>
+          <div class="hit-bar"><i style="width:${Math.min(100, (h.score ?? 0) * 100)}%"></i></div>
+          <span class="pill ${KIND_PILL[r.kind] || 'gray'}">${esc(r.kind)}</span>
+          <span class="pill p">${esc(r.scope?.type)}:${esc(trunc(r.scope?.id, 12))}</span>
+        </div>
+        <div class="hit-summary">${esc(r.summary || trunc(r.content, 160))}</div>
+        <div class="hit-reasons">${reasons.map(([k, v]) => `<span class="reason${v >= 0.7 ? ' hot' : ''}">${k} ${Number(v).toFixed(2)}</span>`).join('')}</div>
+      </div>`;
+    }).join('') : '<div class="empty"><div class="glyph">⌀</div><div class="msg">该问题未检索到任何记忆</div></div>';
+  } catch (err) { out.innerHTML = `<div class="empty"><div class="glyph">⚠</div><div class="msg">${esc(err.message)}</div></div>`; }
+}
+
+// ================================================================ 洞察
+async function renderInsights(el) {
+  el.innerHTML = '<div class="loading">正在加载洞察…</div>';
+  try {
+    const gov = await api(`/v1/governance?${scopeQuery()}`);
+    const ps = gov.principles ?? [], profile = gov.profile;
+    el.innerHTML = `<div class="inner"><div class="grid2">
+      <div class="card plain">
+        <div class="head"><h3>蒸馏原则 <span class="sub">${ps.length} 条 · reflect() 产出</span></h3></div>
+        ${ps.length ? ps.map(p => `
+          <div style="padding:13px 20px;border-bottom:1px solid var(--line);cursor:pointer" onclick="togglePrinciple('${esc(p.id)}')">
+            <div style="line-height:1.6">${esc(p.summary)}</div>
+            <div class="tags-row" style="margin-top:7px">
+              <span class="pill g">principle</span>
+              <span class="mono-sm">${p.supportsCount} 条证据 · 重要性 ${Number(p.importance).toFixed(2)}</span>
+              ${state.expandedPrincipleId === p.id ? (p.tags || []).map(t => `<span class="pill">${esc(t)}</span>`).join('') || '<span class="mono-sm">—</span>' : ''}
+            </div>
+          </div>`).join('') : '<div class="empty"><div class="msg">暂无蒸馏原则</div></div>'}
+      </div>
+      <div class="card">
+        <h3>用户画像 <span class="sub">${profile?.present ? `更新于 ${timeAgo(profile.updatedAt)}` : '尚未生成'}</span></h3>
+        ${profile?.present
+          ? `${profile.preamble ? `<div class="dw-text" style="color:var(--ink2)">${esc(profile.preamble)}</div>` : ''}
+             ${(profile.sections ?? []).length ? `<div class="dw-lbl" style="margin-top:${profile.preamble ? 14 : 0}px">分节 · ${(profile.sections ?? []).length}</div>` + profile.sections.map(s => `
+               <div style="margin-bottom:15px">
+                 <div style="font-size:13px;font-weight:700;margin-bottom:4px">${esc(s.title)}</div>
+                 <div class="dw-text" style="font-size:12.5px;color:var(--ink2)">${esc(s.content)}</div>
+               </div>`).join('') : ''}`
+          : '<div class="empty"><div class="msg">证据积累到一定量后，delta-ops 画像会自动生成</div></div>'}
+      </div>
+    </div></div>`;
+  } catch (err) { el.innerHTML = `<div class="empty"><div class="glyph">⚠</div><div class="msg">${esc(err.message)}</div></div>`; }
+}
+function togglePrinciple(id) { state.expandedPrincipleId = state.expandedPrincipleId === id ? null : id; renderPage(); }
+
+// ================================================================ 事件日志
+async function renderEvents(el) {
+  el.innerHTML = '<div class="loading">正在加载事件…</div>';
+  try {
+    const d = await api(`/v1/events?limit=100${state.eventType ? `&type=${state.eventType}` : ''}`);
+    const events = d.events || [];
+    const types = [...new Set(events.map(e => e.type))];
+    el.innerHTML = `<div class="inner">
+      <div class="toolbar">
+        <select class="input" onchange="state.eventType=this.value;renderPage()">
+          <option value="">全部事件类型</option>
+          ${types.map(t => `<option value="${esc(t)}"${t === state.eventType ? ' selected' : ''}>${esc(t)}</option>`).join('')}
+        </select>
+        <span class="mono-sm">${events.length} 条事件</span>
+      </div>
+      <div class="card plain"><div class="tl">
+        ${events.length ? events.map(ev => `
+          <div class="tl-item">
+            <span class="tl-time">${fmtTime(ev.timestamp)}</span>
+            <span class="tl-type"><span class="pill ${evPill(ev.type)}">${esc(ev.type)}</span></span>
+            <span class="tl-data">${ev.data ? Object.entries(ev.data).map(([k, v]) => `${k}: ${typeof v === 'string' ? trunc(v, 40) : v}`).join(' · ') : '—'}</span>
+          </div>`).join('') : '<div class="empty"><div class="msg">暂无事件记录</div></div>'}
+      </div></div>
+    </div>`;
+  } catch (err) { el.innerHTML = `<div class="empty"><div class="glyph">⚠</div><div class="msg">${esc(err.message)}</div></div>`; }
+}
+function evPill(t) { return { recall:'b', write:'g', reflect:'p', delete:'r' }[t] || 'gray'; }
+
+// ================================================================ 宿主接入
+async function renderAgents(el) {
+  el.innerHTML = '<div class="loading">正在扫描宿主…</div>';
+  try {
+    const d = await api('/v1/agents/status');
+    const agents = d.agents || [];
+    el.innerHTML = `<div class="inner">
+      <div class="card infra">
+        <div class="item"><div class="lbl">共享 SQLite</div><div class="val">${esc(d.storagePath)}</div></div>
+        <div class="item"><div class="lbl">MCP 脚本</div><div class="val">${esc(d.mcpPath)}</div></div>
+        <div style="flex:1"></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" onclick="agentBulkAction('/v1/agents/import-all')">立即同步</button>
+          <button class="btn primary" onclick="agentBulkAction('/v1/agents/install-all')">全部安装</button>
+        </div>
+      </div>
+      <div class="agent-grid">${agents.map(agentCard).join('')}</div>
+    </div>`;
+  } catch (err) { el.innerHTML = `<div class="empty"><div class="glyph">⚠</div><div class="msg">${esc(err.message)}</div></div>`; }
+}
+function agentCard(a) {
+  const ready = a.mcp.configured && a.mcp.storagePathMatches;
+  const inst = a.instructions.supported
+    ? (a.instructions.installed ? '<span class="pill g">已安装</span>' : '<span class="pill y">缺失</span>')
+    : '<span class="pill gray">不适用</span>';
+  const imported = a.imported.memories > 0 ? `${a.imported.memories} 条记忆 · ${a.imported.tasks} 任务` : '无';
+  return `
+  <div class="agent-card">
+    <div class="agent-head">
+      <div><div class="agent-name">${esc(a.label)}</div><div class="agent-scope">agent:${esc(a.scopeId)}</div></div>
+      ${ready ? '<span class="pill g">就绪</span>' : '<span class="pill y">待配置</span>'}
+    </div>
+    <div class="agent-rows">
+      <div class="agent-row"><span class="lbl">MCP</span>${a.mcp.configured ? (a.mcp.storagePathMatches ? '<span class="pill g">已配置</span>' : '<span class="pill y">库路径错误</span>') : '<span class="pill gray">缺失</span>'}</div>
+      <div class="agent-row"><span class="lbl">指令注入</span>${inst}</div>
+      <div class="agent-row"><span class="lbl">会话目录</span>${a.sessions.rootExists ? '<span class="pill g">已找到</span>' : '<span class="pill gray">缺失</span>'}</div>
+      <div class="agent-row"><span class="lbl">已导入</span><span class="mono-sm">${esc(imported)}</span></div>
+    </div>
+    <div class="agent-path">${esc(a.paths.sessionsRoot)}</div>
+    <div class="agent-actions">
+      <button class="btn sm" onclick="agentAction('/v1/agents/import', '${esc(a.agent)}')">同步</button>
+      <button class="btn sm primary" onclick="agentAction('/v1/agents/install', '${esc(a.agent)}')">安装</button>
+    </div>
+  </div>`;
+}
+async function agentAction(path, agent) {
+  await runMutation(() => api(path, { method: 'POST', body: JSON.stringify({ agent }) }), agent);
+}
+async function agentBulkAction(path) {
+  await runMutation(() => api(path, { method: 'POST', body: '{}' }));
+}
+async function runMutation(fn, agent) {
+  const btns = [...document.querySelectorAll('.agent-actions button, .infra button')];
+  btns.forEach(b => b.disabled = true);
+  try {
+    await fn();
+    toast(agent ? `${agent}：操作完成` : '批量操作完成');
+    await loadAgentIds();
+    renderPage();
+  } catch (err) {
+    toast(`操作失败：${err.message}`, true);
+    btns.forEach(b => b.disabled = false);
+  }
+}
+
+// ================================================================ 工具
+function esc(s) { return s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function trunc(s, n) { s = String(s ?? ''); return s.length > n ? s.slice(0, n) + '…' : s; }
+function timeAgo(iso) {
+  if (!iso) return '—';
+  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (isNaN(m)) return '—';
+  if (m < 1) return '刚刚'; if (m < 60) return `${m} 分钟前`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h} 小时前`;
+  return `${Math.floor(h / 24)} 天前`;
+}
+function fmtTime(iso) { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : d.toTimeString().slice(0, 5); }
+function toast(msg, isErr) {
+  const w = document.getElementById('toasts');
+  const t = document.createElement('div');
+  t.className = 'toast' + (isErr ? ' err' : '');
+  t.textContent = msg;
+  w.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 320); }, 3200);
+}
+
+// ================================================================ 启动
+document.getElementById('api-key-input').value = state.apiKey;
+if (state.apiKey) connect(); else { chrome(); renderConnect(); }
+</script>
+</body>
+</html>

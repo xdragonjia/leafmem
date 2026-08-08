@@ -1,0 +1,357 @@
+# LeafMem API Reference
+
+This document collects the API and configuration details that do not need to live in the README. For step-by-step integration examples, see [`USAGE.md`](USAGE.md).
+
+## Core API
+
+### Palace Memory
+
+```ts
+import { createLeafMem } from "@xdragonjia/leafmem";
+
+const memory = createLeafMem({
+  storage: { backend: "sqlite", path: ".leafmem/memory.sqlite" },
+});
+
+const record = await memory.remember({
+  scope: { type: "user", id: "alice" },
+  kind: "preference",
+  content: "User prefers concise replies in Chinese.",
+  source: "manual",
+  tags: ["language", "style"],
+  metadata: { origin: "profile" },
+});
+
+const hits = await memory.search("reply style", {
+  scopes: [{ type: "user", id: "alice", weight: 1.05 }],
+  maxResults: 5,
+  minScore: 0.18,
+});
+
+const recall = await memory.recall({
+  query: "How should I answer this user?",
+  scopes: [{ type: "user", id: "alice" }],
+  maxChars: 1000,
+});
+
+await memory.update(record.id, { content: "Updated content" });
+await memory.forget(record.id);
+```
+
+`remember()` deduplicates by default. When an incoming record is merged, tags and metadata are merged, additional sources are kept in `metadata.sourceHistory`, and conflicting marker details are kept in `metadata.markerHistory`.
+
+### Active Memory
+
+```ts
+await memory.active.distillContext({
+  scope: { type: "task", id: "release-flow" },
+  sessionSummary: "We are preparing release notes and QA handoff.",
+});
+
+await memory.active.distillExperience({
+  scope: { type: "task", id: "release-flow" },
+  newData: "Release checklists should be short and action-oriented.",
+});
+
+const context = await memory.active.read("context", { type: "task", id: "release-flow" });
+const experience = await memory.active.read("experience", { type: "task", id: "release-flow" });
+```
+
+### Task Context
+
+```ts
+await memory.task.create({
+  taskId: "release-flow",
+  scope: { type: "task", id: "release-flow" },
+  title: "Release flow",
+});
+
+await memory.task.appendEntry({
+  taskId: "release-flow",
+  role: "user",
+  content: "We still need a final QA checklist.",
+});
+
+await memory.task.addDecision({
+  taskId: "release-flow",
+  content: "Keep the checklist short and action-oriented.",
+});
+
+const window = await memory.task.buildWindow({
+  taskId: "release-flow",
+  currentQuery: "What is left before release?",
+  maxChars: 2000,
+});
+```
+
+## Runtime API
+
+```ts
+import { createMemoryRuntime } from "@xdragonjia/leafmem/runtime";
+
+const runtime = createMemoryRuntime({
+  memory,
+  defaultScopes: [{ type: "user", id: "alice", weight: 1.05 }],
+  maxRecallChars: 1200,
+});
+
+const capture = await runtime.captureTurn({
+  taskId: "release-flow",
+  taskTitle: "Release flow",
+  userMessage: "Remember that I prefer concise Chinese replies.",
+  assistantMessage: "Got it, I'll keep replies concise and in Chinese.",
+});
+
+const recall = await runtime.buildRecallContext({
+  taskId: "release-flow",
+  userMessage: "What did we decide about deployment?",
+  maxChars: 1000,
+});
+
+await runtime.captureReflection({
+  taskId: "release-flow",
+  summary: "Adapter APIs should remain framework-agnostic.",
+  scopes: [{ type: "task", id: "release-flow" }],
+});
+```
+
+## Retrieval
+
+### Builtin
+
+Builtin retrieval is always available and uses deterministic local scoring.
+
+| Factor | Default weight |
+|--------|----------------|
+| Lexical overlap | `0.45` |
+| Hash embedding | `0.35` |
+| Recency | `0.08` |
+| Importance | `0.07` |
+| Scope weight | `0.05` |
+
+```ts
+const result = await memory.retrieval.recall("release checklist", {
+  scopes: [{ type: "task", id: "release-flow" }],
+  maxChars: 1200,
+});
+```
+
+### Remote Embeddings
+
+Remote embeddings are opt-in. Setting an API key alone does not enable them.
+
+| Provider | Env variable | Default model |
+|----------|--------------|---------------|
+| OpenAI | `OPENAI_API_KEY` | `text-embedding-3-small` |
+| Gemini | `GEMINI_API_KEY` or `GOOGLE_API_KEY` | `gemini-embedding-001` |
+| Voyage | `VOYAGE_API_KEY` | `voyage-4` |
+
+```ts
+const memory = createLeafMem({
+  retrieval: {
+    backend: "builtin",
+    embeddings: { provider: "openai" },
+  },
+});
+```
+
+### QMD
+
+```ts
+const memory = createLeafMem({
+  retrieval: {
+    backend: "qmd",
+    qmd: {
+      enabled: true,
+      command: "qmd",
+      collections: [{ name: "memory", path: ".leafmem/qmd", pattern: "**/*.md" }],
+      includeDefaultMemory: true,
+    },
+  },
+});
+```
+
+## Maintenance
+
+```ts
+await memory.maintenance.attributeExperience({
+  scope: { type: "task", id: "release-flow" },
+  response: "I will keep the checklist concise and actionable.",
+  outcome: "positive",
+});
+
+await memory.maintenance.calibrateExperience({
+  scope: { type: "task", id: "release-flow" },
+});
+
+await memory.maintenance.rebuildExperience({
+  scope: { type: "task", id: "release-flow" },
+});
+
+await memory.maintenance.deepConsolidate({
+  scope: { type: "task", id: "release-flow" },
+});
+```
+
+## MCP Tools
+
+For custom hosts, `createMemoryMcpHandler()` exposes JSON-RPC 2.0 tools.
+
+| Tool | Description |
+|------|-------------|
+| `memory_record` | Search, fetch, list, write, update, or delete long-term memory records |
+| `memory_context` | Build prompt-ready recall or run the retrieval stack |
+| `memory_active` | Read or distill active context and experience |
+| `memory_session` | Commit host-distilled session summaries |
+| `memory_task` | Append task entries or build task context windows |
+| `memory_maintenance` | Run experience calibration or rebuild active experience |
+
+```ts
+import { createMemoryMcpHandler } from "@xdragonjia/leafmem/mcp";
+
+const handler = createMemoryMcpHandler({ memory });
+const response = await handler.handleRequest(jsonRpcPayload);
+```
+
+Local stdio server:
+
+```bash
+npm run build
+node dist/bin/leafmem-mcp.js
+```
+
+Useful environment variables:
+
+```bash
+LEAFMEM_STORAGE_PATH="$HOME/.leafmem/memory.sqlite"
+LEAFMEM_SCOPE_TYPE=agent
+LEAFMEM_SCOPE_ID=codex
+LEAFMEM_RETRIEVAL_BACKEND=builtin
+LEAFMEM_EMBEDDINGS_PROVIDER=openai
+LEAFMEM_EMBEDDINGS_MODEL=text-embedding-3-small
+```
+
+## Adapters
+
+| Adapter | Factory |
+|---------|---------|
+| Generic | `createGenericMemoryAdapter()` |
+| Session flush | `createSessionMemoryAdapter()` |
+| OpenClaw | `createOpenClawMemoryAdapter()` / `installOpenClawMemoryTakeover()` |
+| Hermes | `createHermesAgentMemoryAdapter()` / `installHermesAgentMemoryTakeover()` |
+
+Generic adapter:
+
+```ts
+import { createGenericMemoryAdapter } from "@xdragonjia/leafmem/adapters";
+
+const adapter = createGenericMemoryAdapter({ memory });
+
+const { systemHint, injectedContext } = await adapter.beforePrompt({
+  userMessage: "How should I deploy this?",
+});
+
+await adapter.afterTurn({
+  userMessage: "How should I deploy this?",
+  assistantMessage: "I recommend using Railway for this project.",
+});
+```
+
+OpenClaw and Hermes adapters can import existing markdown memory files once, treat SQLite as the source of truth, and mirror durable memory back to host markdown files.
+
+## Local Agent Setup API
+
+The `leafmem-agent` CLI manages Codex, Claude Code, Cursor, GitHub Copilot, Antigravity, WorkBuddy, and Trae Solo setup. Details live in [`USAGE.md`](USAGE.md#12-mcp-的接入).
+
+```bash
+node dist/bin/leafmem-agent.js install all
+node dist/bin/leafmem-agent.js ui
+node dist/bin/leafmem-agent.js tui
+```
+
+When the UI server is running, it also exposes:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/agents/status` | `GET` | Agent setup status |
+| `/v1/agents/install` | `POST` | Install one agent |
+| `/v1/agents/import` | `POST` | Import one agent's sessions |
+| `/v1/agents/install-all` | `POST` | Install all agents |
+| `/v1/agents/import-all` | `POST` | Import all agent sessions |
+
+## HTTP Memory Routes
+
+The local HTTP server is project-key authenticated.
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/v1/memories` | `POST` | Create one memory |
+| `/v1/memories` | `GET` | List memories |
+| `/v1/memories/:id` | `GET` | Fetch one memory |
+| `/v1/memories/:id` | `PATCH` | Update one memory |
+| `/v1/memories/:id` | `DELETE` | Delete one memory |
+| `/v1/memories/batch` | `POST` | Create many memories |
+| `/v1/memories/batch` | `DELETE` | Delete many memories |
+| `/v1/memories/export` | `GET` | Export JSON |
+| `/v1/memories/:id/history` | `GET` | Inspect recent event history |
+
+List filters include `kinds`, `tags`, and `metadata.<key>`.
+
+## Configuration
+
+```ts
+const memory = createLeafMem({
+  storage: { backend: "sqlite", path: ".leafmem/memory.sqlite" },
+  inferencer: async ({ kind, system, prompt, maxChars }) => ({
+    ok: true,
+    text: "...",
+  }),
+  retrieval: {
+    backend: "builtin",
+    embeddings: { provider: "auto" },
+    qmd: { enabled: false },
+  },
+  active: {
+    contextMaxChars: 400,
+    experienceMaxChars: 800,
+  },
+  task: {
+    recentEntriesLimit: 24,
+    windowMaxChars: 4000,
+    summaryMaxChars: 600,
+  },
+  dedupeThreshold: 0.85,
+  embeddingDimensions: 128,
+  searchWeights: {
+    lexical: 0.45,
+    hash: 0.35,
+    recency: 0.08,
+    importance: 0.07,
+    scope: 0.05,
+  },
+});
+```
+
+## Package Exports
+
+```text
+leafmem
+leafmem/core
+leafmem/active
+leafmem/task
+leafmem/retrieval
+leafmem/maintenance
+leafmem/runtime
+leafmem/mcp
+leafmem/adapters
+leafmem/system
+leafmem/cloud
+leafmem/platform
+leafmem/http
+leafmem/auth
+leafmem/entity
+leafmem/inspect
+leafmem/bridge
+leafmem/products/coding
+leafmem/products/runtime
+```

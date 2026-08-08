@@ -1,0 +1,1164 @@
+import type { LeafMem } from "../core/memory.js";
+import {
+  MEMORY_SCOPE_TYPES,
+  parseMemoryScopeType,
+  type MemoryRecord,
+  type MemoryScope,
+} from "../core/types.js";
+import { createMemoryRuntime, type MemoryRuntime } from "../runtime/index.js";
+
+type JsonRpcId = string | number | null;
+const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2024-11-05"] as const;
+const MAINTENANCE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const ACTIVE_CONTEXT_MAX_CHARS = 400;
+const ACTIVE_EXPERIENCE_MAX_CHARS = 800;
+const SCOPE_TYPE_SCHEMA = { type: "string", enum: [...MEMORY_SCOPE_TYPES] };
+const SERVER_INSTRUCTIONS =
+  "Use memory_context with action='recall' and no scopeType/scopeId when continuity or prior decisions matter, so LeafMem can search shared memory across agents. " +
+  "Use memory_record with action='write' for durable user preferences, facts, or explicit remember requests. " +
+  "Use memory_session with action='commit' when the host agent has already distilled a session; include activeContext/activeExperience when available, and follow maintenanceRequest if returned. " +
+  "Use memory_task with action='append' or action='window' for longer task-focused work.";
+
+export type MemoryToolDefinition = {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  mutatesMemory?: boolean;
+  execute(args: Record<string, unknown>): Promise<unknown>;
+};
+
+export function createMemoryToolSet(params: {
+  memory: LeafMem;
+  runtime?: MemoryRuntime;
+  defaultScopes?: MemoryScope[];
+  onMemoryChanged?: () => Promise<void>;
+}): MemoryToolDefinition[] {
+  const runtime =
+    params.runtime ??
+    createMemoryRuntime({
+      memory: params.memory,
+      defaultScopes: params.defaultScopes,
+    });
+
+  return [
+    {
+      name: "memory_record",
+      description: "Search, fetch, list, write, update, or delete long-term memory records.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["search", "get", "list", "write", "update", "delete"] },
+          id: { type: "string" },
+          query: { type: "string" },
+          scopeType: SCOPE_TYPE_SCHEMA,
+          scopeId: { type: "string" },
+          content: { type: "string" },
+          kind: { type: "string" },
+          summary: { type: "string" },
+          confidence: { type: "number" },
+          importance: { type: "number" },
+          source: { type: "string" },
+          tags: { type: "array", items: { type: "string" } },
+          metadata: { type: "object", additionalProperties: true },
+          limit: { type: "number" },
+          maxResults: { type: "number" },
+          minScore: { type: "number" },
+        },
+        required: ["action"],
+      },
+      mutatesMemory: true,
+      execute: async (args) => {
+        const action = expectString(args.action, "action");
+        if (action === "search") {
+          return {
+            hits: await params.memory.search(expectString(args.query, "query"), {
+              scopes: parseReadScopeArgs(args),
+              maxResults: expectNumber(args.maxResults),
+              minScore: expectNumber(args.minScore),
+            }),
+          };
+        }
+        if (action === "get") {
+          return { record: await params.memory.get(expectString(args.id, "id")) };
+        }
+        if (action === "list") {
+          return {
+            records: await params.memory.list({
+              scopes: parseReadScopeArgs(args),
+              limit: expectNumber(args.limit),
+            }),
+          };
+        }
+        if (action === "write") {
+          const scope = requireScope(args, params.defaultScopes);
+          return {
+            record: await params.memory.remember({
+              scope,
+              kind: optionalString(args.kind) ?? "note",
+              content: expectString(args.content, "content"),
+              summary: optionalString(args.summary),
+              confidence: expectNumber(args.confidence),
+              importance: expectNumber(args.importance),
+              source: optionalString(args.source),
+              tags: Array.isArray(args.tags)
+                ? args.tags.filter((entry): entry is string => typeof entry === "string")
+                : undefined,
+              metadata: asRecord(args.metadata) ?? undefined,
+            }),
+          };
+        }
+        if (action === "update") {
+          const id = expectString(args.id, "id");
+          const scope = requireDestructiveScope(args, params.defaultScopes);
+          const existing = await params.memory.get(id);
+          if (!existing || !sameScope(existing.scope, scope)) {
+            return { record: null, updated: false };
+          }
+          const patch: Record<string, unknown> = {};
+          if (args.content !== undefined) patch.content = args.content;
+          if (args.kind !== undefined) patch.kind = args.kind;
+          if (args.summary !== undefined) patch.summary = args.summary;
+          if (args.confidence !== undefined) patch.confidence = args.confidence;
+          if (args.importance !== undefined) patch.importance = args.importance;
+          if (args.source !== undefined) patch.source = args.source;
+          if (args.tags !== undefined) patch.tags = args.tags;
+          if (args.metadata !== undefined) patch.metadata = asRecord(args.metadata);
+          const record = await params.memory.update(id, patch);
+          return { record, updated: record !== null };
+        }
+        if (action === "delete") {
+          const id = expectString(args.id, "id");
+          const scope = requireDestructiveScope(args, params.defaultScopes);
+          const existing = await params.memory.get(id);
+          if (!existing || !sameScope(existing.scope, scope)) {
+            return { deleted: false };
+          }
+          return { deleted: await params.memory.forget(id) };
+        }
+        throw new Error("action must be search, get, list, write, update, or delete");
+      },
+    },
+    {
+      name: "memory_context",
+      description: "Build prompt-ready recall context or run the configured retrieval stack.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["recall", "retrieve"] },
+          message: { type: "string" },
+          query: { type: "string" },
+          recentMessages: { type: "array", items: { type: "string" } },
+          scopeType: SCOPE_TYPE_SCHEMA,
+          scopeId: { type: "string" },
+          maxResults: { type: "number" },
+          minScore: { type: "number" },
+          maxChars: { type: "number" },
+        },
+        required: ["action"],
+      },
+      execute: async (args) => {
+        const action = expectString(args.action, "action");
+        const scopes = parseReadScopeArgs(args);
+        if (action === "recall") {
+          return await runtime.buildRecallContext({
+            userMessage: expectString(args.message, "message"),
+            recentMessages: Array.isArray(args.recentMessages)
+              ? args.recentMessages.filter((entry): entry is string => typeof entry === "string")
+              : undefined,
+            scopes,
+            maxChars: expectNumber(args.maxChars),
+          });
+        }
+        if (action === "retrieve") {
+          return await params.memory.retrieval.recall(expectString(args.query, "query"), {
+            scopes,
+            maxResults: expectNumber(args.maxResults),
+            minScore: expectNumber(args.minScore),
+            maxChars: expectNumber(args.maxChars),
+          });
+        }
+        throw new Error("action must be recall or retrieve");
+      },
+    },
+    {
+      name: "memory_active",
+      description: "Read or distill active context and active experience for a scope.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["get", "distill"] },
+          kind: { type: "string" },
+          content: { type: "string" },
+          scopeType: SCOPE_TYPE_SCHEMA,
+          scopeId: { type: "string" },
+          maxChars: { type: "number" },
+        },
+        required: ["action"],
+      },
+      mutatesMemory: true,
+      execute: async (args) => {
+        const action = expectString(args.action, "action");
+        const scope = requireScope(args, params.defaultScopes);
+        if (action === "get") {
+          return {
+            context: await params.memory.active.read("context", scope),
+            experience: await params.memory.active.read("experience", scope),
+          };
+        }
+        if (action === "distill") {
+          const kind = expectString(args.kind, "kind");
+          const content = expectString(args.content, "content");
+          if (kind === "context") {
+            return {
+              document: await params.memory.active.distillContext({
+                scope,
+                sessionSummary: content,
+                maxChars: expectNumber(args.maxChars),
+              }),
+            };
+          }
+          if (kind === "experience") {
+            return {
+              document: await params.memory.active.distillExperience({
+                scope,
+                newData: content,
+                maxChars: expectNumber(args.maxChars),
+              }),
+            };
+          }
+          throw new Error("kind must be 'context' or 'experience'");
+        }
+        throw new Error("action must be get or distill");
+      },
+    },
+    {
+      name: "memory_session",
+      description: "Commit a host-distilled session summary and active memory. LeafMem stores it and returns a maintenance request when deeper governance is due.",
+      mutatesMemory: true,
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["commit"] },
+          agent: { type: "string" },
+          sessionId: { type: "string" },
+          taskId: { type: "string" },
+          title: { type: "string" },
+          cwd: { type: "string" },
+          timestamp: { type: "string" },
+          messageCount: { type: "number" },
+          rollingSummary: { type: "string" },
+          activeContext: { type: "string" },
+          activeExperience: { type: "string" },
+          governanceReport: { type: "object", additionalProperties: true },
+          scopeType: SCOPE_TYPE_SCHEMA,
+          scopeId: { type: "string" },
+          entries: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                role: { type: "string" },
+                content: { type: "string" },
+                summary: { type: "string" },
+                tokenCount: { type: "number" },
+                metadata: { type: "object", additionalProperties: true },
+              },
+              required: ["role", "content"],
+            },
+          },
+          durableMemories: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                content: { type: "string" },
+                kind: { type: "string" },
+                summary: { type: "string" },
+                scopeType: SCOPE_TYPE_SCHEMA,
+                scopeId: { type: "string" },
+                confidence: { type: "number" },
+                importance: { type: "number" },
+                source: { type: "string" },
+                tags: { type: "array", items: { type: "string" } },
+                metadata: { type: "object", additionalProperties: true },
+              },
+              required: ["content"],
+            },
+          },
+        },
+        required: ["action", "agent", "sessionId", "rollingSummary"],
+      },
+      execute: async (args) => {
+        const action = expectString(args.action, "action");
+        if (action !== "commit") {
+          throw new Error("action must be commit");
+        }
+        const agent = expectString(args.agent, "agent");
+        const sessionId = expectString(args.sessionId, "sessionId");
+        const rollingSummary = expectString(args.rollingSummary, "rollingSummary");
+        const activeContext = optionalString(args.activeContext);
+        const activeExperience = optionalString(args.activeExperience);
+        const governanceReport = asRecord(args.governanceReport) ?? undefined;
+        const taskId = optionalString(args.taskId) ?? `${agent}:${sessionId}`;
+        const scope = parseScopeArgs(args, params.defaultScopes)?.[0];
+        if (!scope) {
+          throw new Error("scopeType and scopeId are required when no default scope is configured");
+        }
+        let task = await params.memory.task.get(taskId);
+        if (!task) {
+          task = await params.memory.task.create({
+            taskId,
+            scope,
+            title: optionalString(args.title) ?? `${agent} session ${sessionId}`,
+            status: "completed",
+          });
+        }
+
+        const existingRecord = await findSessionMemoryRecord(params.memory, scope, sessionId, taskId);
+        const existingMetadata = asRecord(existingRecord?.metadata) ?? {};
+        const previousMessageCount = expectNumber(existingMetadata.messageCount) ?? 0;
+        const messageCount = expectNumber(args.messageCount);
+        const entries = parseSessionCommitEntries(args.entries);
+        const shouldAppendEntries =
+          entries.length > 0 &&
+          (messageCount === undefined || messageCount > previousMessageCount || existingRecord === null);
+        const appendedEntries = [];
+        if (shouldAppendEntries) {
+          for (const entry of entries) {
+            const appended = await params.memory.task.appendEntry({
+              taskId,
+              role: entry.role,
+              content: entry.content,
+              summary: entry.summary,
+              tokenCount: entry.tokenCount,
+              metadata: entry.metadata,
+            });
+            if (appended) {
+              appendedEntries.push(appended);
+            }
+          }
+          await params.memory.task.markEntriesSummarized(
+            taskId,
+            appendedEntries.map((entry) => entry.id),
+            rollingSummary,
+          );
+        }
+
+        const state = await params.memory.task.setRollingSummary(taskId, rollingSummary);
+        const nowIso = new Date().toISOString();
+        const source = existingRecord?.source || `${agent}_session_commit`;
+        const sessionMetadata = compactRecord({
+          ...existingMetadata,
+          agent,
+          sessionId,
+          taskId,
+          cwd: optionalString(args.cwd) ?? optionalString(existingMetadata.cwd),
+          timestamp: optionalString(args.timestamp) ?? optionalString(existingMetadata.timestamp),
+          messageCount: Math.max(
+            previousMessageCount,
+            messageCount ?? previousMessageCount + appendedEntries.length,
+          ),
+          lastCommittedAt: nowIso,
+          commitSource: "host",
+          resumeCount:
+            (expectNumber(existingMetadata.resumeCount) ?? 0) +
+            (existingRecord && appendedEntries.length > 0 ? 1 : 0),
+        });
+        const sessionPatch = {
+          scope,
+          kind: "note",
+          content: buildSessionCommitContent({
+            agent,
+            sessionId,
+            taskId,
+            cwd: optionalString(args.cwd) ?? optionalString(existingMetadata.cwd),
+            timestamp: optionalString(args.timestamp) ?? optionalString(existingMetadata.timestamp),
+            rollingSummary,
+          }),
+          summary: clampText(`${agent} session ${sessionId}: ${rollingSummary}`, 220),
+          confidence: 0.9,
+          importance: 0.6,
+          source,
+          tags: [agent, "session"],
+          metadata: sessionMetadata,
+        };
+        const sessionRecord = existingRecord
+          ? await params.memory.update(existingRecord.id, sessionPatch)
+          : await params.memory.remember(sessionPatch);
+
+        const durableRecords = [];
+        for (const memory of parseDurableMemories(args.durableMemories)) {
+          durableRecords.push(
+            await params.memory.remember({
+              scope: memory.scope ?? scope,
+              kind: memory.kind,
+              content: memory.content,
+              summary: memory.summary,
+              confidence: memory.confidence,
+              importance: memory.importance,
+              source: memory.source ?? `${agent}_session_commit`,
+              tags: memory.tags,
+              metadata: compactRecord({
+                ...memory.metadata,
+                sessionId,
+                taskId,
+                cwd: optionalString(args.cwd),
+                origin: "host_session_commit",
+              }),
+            }),
+          );
+        }
+
+        const sourceRecordIds = [
+          sessionRecord?.id,
+          ...durableRecords.map((record) => record.id),
+        ].filter((id): id is string => typeof id === "string");
+        const governanceMetadata = compactRecord({
+          lastLightGovernedAt: nowIso,
+          lastGovernedBy: agent,
+          sessionId,
+          taskId,
+          sourceRecordIds,
+          governanceReport,
+        });
+        const active = {
+          context: await writeActiveDocument({
+            memory: params.memory,
+            kind: "context",
+            scope,
+            content: activeContext ?? rollingSummary,
+            metadata: governanceMetadata,
+            maxChars: ACTIVE_CONTEXT_MAX_CHARS,
+          }),
+          experience: activeExperience
+            ? await writeActiveDocument({
+                memory: params.memory,
+                kind: "experience",
+                scope,
+                content: activeExperience,
+                metadata: governanceMetadata,
+                maxChars: ACTIVE_EXPERIENCE_MAX_CHARS,
+              })
+            : undefined,
+        };
+        const maintenanceRequest = await buildMaintenanceRequestIfDue(params.memory, scope, nowIso);
+
+        return {
+          task,
+          state,
+          sessionRecord,
+          appendedEntries: appendedEntries.length,
+          durableRecords,
+          active,
+          maintenanceRequest,
+        };
+      },
+    },
+    {
+      name: "memory_task",
+      description: "Append entries to task context or build a prompt-ready task window.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["append", "window"] },
+          taskId: { type: "string" },
+          title: { type: "string" },
+          role: { type: "string" },
+          content: { type: "string" },
+          message: { type: "string" },
+          toolContext: { type: "string" },
+          maxChars: { type: "number" },
+          scopeType: SCOPE_TYPE_SCHEMA,
+          scopeId: { type: "string" },
+        },
+        required: ["action", "taskId"],
+      },
+      mutatesMemory: true,
+      execute: async (args) => {
+        const action = expectString(args.action, "action");
+        const taskId = expectString(args.taskId, "taskId");
+        if (action === "append") {
+          let task = await params.memory.task.get(taskId);
+          if (!task) {
+            const scope = parseScopeArgs(args, params.defaultScopes)?.[0];
+            if (!scope) {
+              throw new Error("scopeType and scopeId are required when creating a task");
+            }
+            task = await params.memory.task.create({
+              taskId,
+              scope,
+              title: optionalString(args.title) ?? taskId,
+            });
+          }
+          const entry = await params.memory.task.appendEntry({
+            taskId,
+            role: expectString(args.role, "role") as "user" | "assistant" | "system" | "tool",
+            content: expectString(args.content, "content"),
+          });
+          return { task, entry };
+        }
+        if (action === "window") {
+          return await params.memory.task.buildWindow({
+            taskId,
+            currentQuery: expectString(args.message, "message"),
+            toolContext: optionalString(args.toolContext),
+            maxChars: expectNumber(args.maxChars),
+          });
+        }
+        throw new Error("action must be append or window");
+      },
+    },
+    {
+      name: "memory_maintenance",
+      description: "Prepare or apply host-mediated active memory maintenance, or run inferencer-backed experience maintenance.",
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["prepare", "apply", "calibrate", "rebuild", "attribute", "decay", "reflect", "profile"] },
+          agent: { type: "string" },
+          scopeType: SCOPE_TYPE_SCHEMA,
+          scopeId: { type: "string" },
+          maxChars: { type: "number" },
+          recentLimit: { type: "number" },
+          offset: { type: "number" },
+          activeContext: { type: "string" },
+          activeExperience: { type: "string" },
+          governanceReport: { type: "object", additionalProperties: true },
+          response: { type: "string" },
+          outcome: { type: "string", enum: ["positive", "neutral", "negative"] },
+          recordIds: { type: "array", items: { type: "string" }, maxItems: 20 },
+          // Custom (P1-2): decay tuning params
+          ageDays: { type: "number" },
+          recallFreshDays: { type: "number" },
+          targetImportance: { type: "number" },
+          dryRun: { type: "boolean" },
+          // Custom (P1-1): reflect tuning params
+          sinceDays: { type: "number" },
+          clusterSize: { type: "number" },
+          maxClusters: { type: "number" },
+          // Custom (P1-3): profile tuning params
+          profileLimit: { type: "number" },
+        },
+        required: ["action"],
+      },
+      mutatesMemory: true,
+      execute: async (args) => {
+        const action = expectString(args.action, "action");
+        const scope = requireScope(args, params.defaultScopes);
+        if (action === "prepare") {
+          return {
+            request: await buildMaintenanceRequest(params.memory, scope, new Date().toISOString()),
+          };
+        }
+        if (action === "apply") {
+          const activeContext = optionalString(args.activeContext);
+          const activeExperience = optionalString(args.activeExperience);
+          if (!activeContext && !activeExperience) {
+            throw new Error("activeContext or activeExperience is required for apply");
+          }
+          const nowIso = new Date().toISOString();
+          const governanceMetadata = compactRecord({
+            lastLightGovernedAt: nowIso,
+            lastDeepGovernedAt: nowIso,
+            lastGovernedBy: optionalString(args.agent) ?? "host",
+            governanceReport: asRecord(args.governanceReport) ?? undefined,
+          });
+          return {
+            context: activeContext
+              ? await writeActiveDocument({
+                  memory: params.memory,
+                  kind: "context",
+                  scope,
+                  content: activeContext,
+                  metadata: governanceMetadata,
+                  maxChars: ACTIVE_CONTEXT_MAX_CHARS,
+                })
+              : await params.memory.active.read("context", scope),
+            experience: activeExperience
+              ? await writeActiveDocument({
+                  memory: params.memory,
+                  kind: "experience",
+                  scope,
+                  content: activeExperience,
+                  metadata: governanceMetadata,
+                  maxChars: ACTIVE_EXPERIENCE_MAX_CHARS,
+                })
+              : await params.memory.active.read("experience", scope),
+          };
+        }
+        if (action === "calibrate") {
+          return {
+            result: await params.memory.maintenance.calibrateExperience({
+              scope,
+              maxChars: expectNumber(args.maxChars),
+            }),
+          };
+        }
+        if (action === "rebuild") {
+          return {
+            result: await params.memory.maintenance.rebuildExperience({
+              scope,
+              maxChars: expectNumber(args.maxChars),
+              recentLimit: optionalNumber(args.recentLimit),
+              offset: optionalNumber(args.offset),
+            }),
+          };
+        }
+        if (action === "attribute") {
+          // Custom (P0-2, 2026-08-07): when recordIds are provided, attribute
+          // "actually used" to those palace records: importance += 0.05 capped.
+          // The host calls this after a recalled memory genuinely guided work.
+          const recordIds = Array.isArray(args.recordIds)
+            ? args.recordIds.filter((v): v is string => typeof v === "string").slice(0, 20)
+            : [];
+          const boosted: { id: string; importance: number }[] = [];
+          if (recordIds.length > 0) {
+            for (const id of recordIds) {
+              const record = await params.memory.get(id);
+              if (!record) continue;
+              const next = Math.min(record.importance + 0.05, 0.95);
+              if (next > record.importance) {
+                await params.memory.update(id, { importance: next });
+                boosted.push({ id, importance: Number(next.toFixed(2)) });
+              }
+            }
+          }
+          const response = optionalString(args.response) ?? "";
+          return {
+            result: {
+              boostedRecords: boosted,
+              experienceAttribution: response
+                ? await params.memory.maintenance.attributeExperience({
+                    scope,
+                    response,
+                    outcome: (optionalString(args.outcome) as "positive" | "neutral" | "negative" | undefined) ?? "neutral",
+                  })
+                : { activatedEntries: [], outcome: optionalString(args.outcome) ?? "neutral" },
+            },
+          };
+        }
+        if (action === "decay") {
+          // Custom (P1-2): deterministic decay — demote stale, unused records.
+          // Never deletes; pinned and recently-recalled records are exempt.
+          return {
+            result: await params.memory.decay({
+              scopes: [scope],
+              ageDays: optionalNumber(args.ageDays),
+              recallFreshDays: optionalNumber(args.recallFreshDays),
+              targetImportance: optionalNumber(args.targetImportance),
+              dryRun: args.dryRun === true,
+            }),
+          };
+        }
+        if (action === "reflect") {
+          // Custom (P1-1): principle reflection — distill recent same-tag
+          // lesson/decision clusters into kind="principle" memories with
+          // supporting-evidence ids. Frequency-throttled (default 6 days).
+          return {
+            result: await params.memory.reflect({
+              scopes: [scope],
+              sinceDays: optionalNumber(args.sinceDays),
+              clusterSize: optionalNumber(args.clusterSize),
+              maxClusters: optionalNumber(args.maxClusters),
+              dryRun: args.dryRun === true,
+            }),
+          };
+        }
+        if (action === "profile") {
+          // Custom (P1-3): delta-based user profile refresh. Applies only the
+          // delta ops the LLM emits; unmentioned sections stay byte-identical.
+          return {
+            result: await params.memory.buildProfile({
+              scope,
+              limit: optionalNumber(args.profileLimit),
+              dryRun: args.dryRun === true,
+            }),
+          };
+        }
+        throw new Error("action must be prepare, apply, calibrate, rebuild, attribute, decay, reflect, or profile");
+      },
+    },
+  ];
+}
+
+export function createMemoryMcpHandler(params: {
+  memory: LeafMem;
+  runtime?: MemoryRuntime;
+  defaultScopes?: MemoryScope[];
+  onMemoryChanged?: () => Promise<void>;
+}) {
+  const tools = createMemoryToolSet(params);
+  const toolMap = new Map(tools.map((tool) => [tool.name, tool]));
+
+  return {
+    async handleRequest(payload: unknown) {
+      const request = asRecord(payload);
+      if (!request) {
+        return rpcError(null, -32600, "Invalid Request");
+      }
+      const id = normalizeId(request.id);
+      const method = typeof request.method === "string" ? request.method : "";
+
+      if (method === "initialize") {
+        const paramsRecord = asRecord(request.params);
+        const requestedVersion = typeof paramsRecord?.protocolVersion === "string"
+          ? paramsRecord.protocolVersion
+          : "";
+        const protocolVersion = SUPPORTED_PROTOCOL_VERSIONS.includes(
+          requestedVersion as (typeof SUPPORTED_PROTOCOL_VERSIONS)[number],
+        )
+          ? requestedVersion
+          : SUPPORTED_PROTOCOL_VERSIONS[0];
+        return rpcResult(id, {
+          protocolVersion,
+          serverInfo: { name: "leafmem", version: "0.1.0" },
+          capabilities: { tools: {} },
+          instructions: SERVER_INSTRUCTIONS,
+        });
+      }
+
+      if (method === "notifications/initialized") {
+        // Acknowledge but no response needed for notifications
+        return undefined;
+      }
+
+      if (method === "ping") {
+        return rpcResult(id, {});
+      }
+
+      if (method === "tools/list") {
+        return rpcResult(id, {
+          tools: tools.map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+          })),
+        });
+      }
+
+      if (method === "tools/call") {
+        const paramsRecord = asRecord(request.params);
+        const name = typeof paramsRecord?.name === "string" ? paramsRecord.name : "";
+        const args = asRecord(paramsRecord?.arguments) ?? {};
+        const tool = toolMap.get(name);
+        if (!tool) {
+          return rpcError(id, -32601, `Unknown tool: ${name}`);
+        }
+        try {
+          const result = await tool.execute(args);
+          if (tool.mutatesMemory) {
+            await params.onMemoryChanged?.();
+          }
+          const output = compactToolResult(name, result);
+          return rpcResult(id, {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(output, null, 2),
+              },
+            ],
+            isError: false,
+          });
+        } catch (error) {
+          return rpcError(id, -32602, error instanceof Error ? error.message : String(error));
+        }
+      }
+
+      return rpcError(id, -32601, `Unknown method: ${method}`);
+    },
+  };
+}
+
+function compactToolResult(name: string, result: unknown): unknown {
+  if (name !== "memory_context") {
+    return result;
+  }
+  const recall = asRecord(result);
+  if (!recall) {
+    return result;
+  }
+  return compactRecord({
+    ...recall,
+    hits: Array.isArray(recall.hits)
+      ? recall.hits.map((hit) => compactSearchHit(hit))
+      : undefined,
+    evidence: Array.isArray(recall.evidence)
+      ? recall.evidence.map((evidence) => compactEvidence(evidence))
+      : undefined,
+  });
+}
+
+function compactSearchHit(value: unknown): unknown {
+  const hit = asRecord(value);
+  if (!hit) {
+    return value;
+  }
+  const record = asRecord(hit.record);
+  return compactRecord({
+    ...hit,
+    record: record
+      ? compactRecord({
+          id: record.id,
+          scope: record.scope,
+          kind: record.kind,
+          summary: record.summary,
+          source: record.source,
+          tags: record.tags,
+          metadata: compactMetadata(record.metadata),
+          createdAt: record.createdAt,
+          updatedAt: record.updatedAt,
+        })
+      : undefined,
+    evidence: Array.isArray(hit.evidence)
+      ? hit.evidence.map((evidence) => compactEvidence(evidence))
+      : compactEvidence(hit.evidence),
+  });
+}
+
+function compactEvidence(value: unknown): unknown {
+  const evidence = asRecord(value);
+  if (!evidence) {
+    return value;
+  }
+  return compactRecord({
+    ...evidence,
+    metadata: compactMetadata(evidence.metadata),
+  });
+}
+
+function compactMetadata(value: unknown): unknown {
+  if (value === undefined) {
+    return undefined;
+  }
+  const json = JSON.stringify(value);
+  if (json.length <= 1_000) {
+    return value;
+  }
+  const metadata = asRecord(value);
+  if (!metadata) {
+    return { truncated: true };
+  }
+  return compactRecord({
+    sessionId: metadata.sessionId,
+    taskId: metadata.taskId,
+    cwd: metadata.cwd,
+    timestamp: metadata.timestamp,
+    lastImportedAt: metadata.lastImportedAt,
+    lastCommittedAt: metadata.lastCommittedAt,
+    truncated: true,
+  });
+}
+
+type SessionCommitEntry = {
+  role: "user" | "assistant" | "system" | "tool";
+  content: string;
+  summary?: string;
+  tokenCount?: number;
+  metadata?: Record<string, unknown>;
+};
+
+type SessionCommitDurableMemory = {
+  scope?: MemoryScope;
+  kind: string;
+  content: string;
+  summary?: string;
+  confidence?: number;
+  importance?: number;
+  source?: string;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+};
+
+type ActiveDocumentKind = "context" | "experience";
+
+async function writeActiveDocument(input: {
+  memory: LeafMem;
+  kind: ActiveDocumentKind;
+  scope: MemoryScope;
+  content: string;
+  metadata: Record<string, unknown>;
+  maxChars: number;
+}) {
+  const current = await input.memory.active.read(input.kind, input.scope);
+  return await input.memory.active.write({
+    kind: input.kind,
+    scope: input.scope,
+    content: clampText(input.content, input.maxChars),
+    metadata: compactRecord({
+      ...(asRecord(current?.metadata) ?? {}),
+      ...input.metadata,
+    }),
+  });
+}
+
+async function buildMaintenanceRequestIfDue(
+  memory: LeafMem,
+  scope: MemoryScope,
+  nowIso: string,
+) {
+  const [context, experience] = await Promise.all([
+    memory.active.read("context", scope),
+    memory.active.read("experience", scope),
+  ]);
+  if (!isMaintenanceDue([context?.metadata, experience?.metadata], nowIso)) {
+    return undefined;
+  }
+  return await buildMaintenanceRequest(memory, scope, nowIso);
+}
+
+async function buildMaintenanceRequest(
+  memory: LeafMem,
+  scope: MemoryScope,
+  nowIso: string,
+) {
+  const [context, experience, records] = await Promise.all([
+    memory.active.read("context", scope),
+    memory.active.read("experience", scope),
+    memory.list({ scopes: [scope], limit: 12 }),
+  ]);
+  return {
+    kind: "active_memory_maintenance",
+    scope,
+    generatedAt: nowIso,
+    intervalHours: 24,
+    active: { context, experience },
+    palaceRecords: records.map((record) => ({
+      id: record.id,
+      kind: record.kind,
+      content: clampText(record.content, 700),
+      summary: record.summary,
+      source: record.source,
+      tags: record.tags,
+      metadata: record.metadata,
+      updatedAt: record.updatedAt,
+    })),
+    instructions: [
+      "Use the host LLM to lightly deduplicate, decay stale details, and correct active memory against durable palace records.",
+      "Keep activeContext compact and current; keep activeExperience as reusable lessons only.",
+      "Return memory_maintenance.apply with activeContext, activeExperience, and a short governanceReport.",
+    ],
+  };
+}
+
+function isMaintenanceDue(metadataList: Array<unknown>, nowIso: string): boolean {
+  const now = Date.parse(nowIso);
+  const lastDeepAt = metadataList
+    .map((metadata) => optionalString(asRecord(metadata)?.lastDeepGovernedAt))
+    .map((value) => value ? Date.parse(value) : Number.NaN)
+    .filter((value) => Number.isFinite(value))
+    .sort((left, right) => right - left)[0];
+  return lastDeepAt === undefined || now - lastDeepAt >= MAINTENANCE_INTERVAL_MS;
+}
+
+async function findSessionMemoryRecord(
+  memory: LeafMem,
+  scope: MemoryScope,
+  sessionId: string,
+  taskId: string,
+): Promise<MemoryRecord | null> {
+  const records = await memory.list({ scopes: [scope] });
+  return (
+    records.find((record) => {
+      const metadata = asRecord(record.metadata) ?? {};
+      return (
+        optionalString(metadata.sessionId) === sessionId &&
+        optionalString(metadata.taskId) === taskId &&
+        (record.tags.includes("session") || record.source.includes("_session_"))
+      );
+    }) ?? null
+  );
+}
+
+function parseSessionCommitEntries(value: unknown): SessionCommitEntry[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new Error("entries must be an array");
+  }
+  return value.map((entry, index) => {
+    const record = asRecord(entry);
+    if (!record) {
+      throw new Error(`entries[${index}] must be an object`);
+    }
+    const role = expectString(record.role, `entries[${index}].role`);
+    if (role !== "user" && role !== "assistant" && role !== "system" && role !== "tool") {
+      throw new Error(`entries[${index}].role must be user, assistant, system, or tool`);
+    }
+    return {
+      role,
+      content: expectString(record.content, `entries[${index}].content`),
+      summary: optionalString(record.summary),
+      tokenCount: expectNumber(record.tokenCount),
+      metadata: asRecord(record.metadata) ?? undefined,
+    };
+  });
+}
+
+function parseDurableMemories(value: unknown): SessionCommitDurableMemory[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new Error("durableMemories must be an array");
+  }
+  return value.map((entry, index) => {
+    const record = asRecord(entry);
+    if (!record) {
+      throw new Error(`durableMemories[${index}] must be an object`);
+    }
+    const scopeType = optionalString(record.scopeType);
+    const scopeId = optionalString(record.scopeId);
+    const scope = scopeType || scopeId
+      ? {
+          type: parseMemoryScopeType(
+            expectString(record.scopeType, `durableMemories[${index}].scopeType`),
+            `durableMemories[${index}].scopeType`,
+          ),
+          id: expectString(record.scopeId, `durableMemories[${index}].scopeId`),
+        }
+      : undefined;
+    return {
+      scope,
+      kind: optionalString(record.kind) ?? "note",
+      content: expectString(record.content, `durableMemories[${index}].content`),
+      summary: optionalString(record.summary),
+      confidence: expectNumber(record.confidence),
+      importance: expectNumber(record.importance),
+      source: optionalString(record.source),
+      tags: Array.isArray(record.tags)
+        ? record.tags.filter((tag): tag is string => typeof tag === "string" && Boolean(tag.trim()))
+        : undefined,
+      metadata: asRecord(record.metadata) ?? undefined,
+    };
+  });
+}
+
+function buildSessionCommitContent(input: {
+  agent: string;
+  sessionId: string;
+  taskId: string;
+  cwd?: string;
+  timestamp?: string;
+  rollingSummary: string;
+}): string {
+  return [
+    `${input.agent} session: ${input.sessionId}`,
+    input.timestamp ? `Started: ${input.timestamp}` : "",
+    input.cwd ? `Working directory: ${input.cwd}` : "",
+    `Task id: ${input.taskId}`,
+    "",
+    "Session summary:",
+    input.rollingSummary,
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
+}
+
+function compactRecord(record: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
+}
+
+function clampText(text: string, maxChars: number): string {
+  return text.length <= maxChars ? text : text.slice(0, maxChars).trimEnd();
+}
+
+function requireScope(args: Record<string, unknown>, fallback?: MemoryScope[]): MemoryScope {
+  const scope = parseScopeArgs(args, fallback)?.[0];
+  if (!scope) {
+    throw new Error("scopeType and scopeId are required when no default scope is configured");
+  }
+  return scope;
+}
+
+function requireDestructiveScope(args: Record<string, unknown>, fallback?: MemoryScope[]): MemoryScope {
+  const requested = parseReadScopeArgs(args)?.[0];
+  const defaultScope = fallback?.[0];
+  if (defaultScope && requested && !sameScope(requested, defaultScope)) {
+    throw new Error("scopeType and scopeId must match the configured default scope");
+  }
+  const scope = requested ?? defaultScope;
+  if (!scope) {
+    throw new Error("scopeType and scopeId are required for update/delete when no default scope is configured");
+  }
+  return scope;
+}
+
+function parseScopeArgs(
+  args: Record<string, unknown>,
+  fallback?: MemoryScope[],
+): MemoryScope[] | undefined {
+  return parseReadScopeArgs(args) ?? fallback;
+}
+
+function parseReadScopeArgs(args: Record<string, unknown>): MemoryScope[] | undefined {
+  const scopeType = optionalString(args.scopeType);
+  const scopeId = optionalString(args.scopeId);
+  if (!scopeType && !scopeId) {
+    return undefined;
+  }
+  if (!scopeType || !scopeId) {
+    throw new Error("scopeType and scopeId must be provided together");
+  }
+  return [{ type: parseMemoryScopeType(scopeType), id: scopeId }];
+}
+
+function sameScope(left: MemoryScope, right: MemoryScope): boolean {
+  return left.type === right.type && left.id === right.id;
+}
+
+function expectString(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${label} must be a non-empty string`);
+  }
+  return value.trim();
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function expectNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function normalizeId(value: unknown): JsonRpcId {
+  if (typeof value === "string" || typeof value === "number" || value === null) {
+    return value;
+  }
+  return null;
+}
+
+function rpcResult(id: JsonRpcId, result: unknown) {
+  return {
+    jsonrpc: "2.0",
+    id,
+    result,
+  };
+}
+
+function rpcError(id: JsonRpcId, code: number, message: string) {
+  return {
+    jsonrpc: "2.0",
+    id,
+    error: { code, message },
+  };
+}

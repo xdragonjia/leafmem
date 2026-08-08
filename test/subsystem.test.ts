@@ -1,0 +1,239 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createSessionMemoryAdapter } from "../src/adapters/index.js";
+import { createLeafMem, InMemoryStore } from "../src/core/index.js";
+import { createEmbeddingProvider, RetrievalManager } from "../src/retrieval/index.js";
+import { createMemoryRuntime } from "../src/runtime/index.js";
+
+test("runtime combines active memory and task context layers", async () => {
+  const memory = createLeafMem({
+    store: new InMemoryStore(),
+    inferencer: async ({ kind, prompt }) => ({
+      ok: true,
+      text:
+        kind === "context"
+          ? `Current focus: ${prompt.slice(0, 60)}`
+          : kind === "task_summary"
+            ? `Task summary: ${prompt.slice(0, 60)}`
+            : `Experience note: ${prompt.slice(0, 60)}`,
+    }),
+  });
+  const runtime = createMemoryRuntime({
+    memory,
+    defaultScopes: [{ type: "task", id: "launch", weight: 1 }],
+  });
+
+  await runtime.captureTurn({
+    taskId: "release",
+    taskTitle: "Release checklist",
+    userMessage: "We are drafting the release checklist for the public launch.",
+    assistantMessage: "I will keep the checklist concise and action-oriented.",
+  });
+  await runtime.captureReflection({
+    summary: "Prefer concise release checklists with only actionable items.",
+    scopes: [{ type: "task", id: "launch" }],
+    taskId: "release",
+  });
+
+  const recall = await runtime.buildRecallContext({
+    taskId: "release",
+    userMessage: "What should I focus on for this launch task?",
+    toolContext: "Open items: checklist, docs, QA handoff.",
+    scopes: [{ type: "task", id: "launch" }],
+  });
+
+  assert.match(recall.injectedContext, /Active context:/);
+  assert.match(recall.injectedContext, /Active experience:/);
+  assert.match(recall.injectedContext, /Task summary:/);
+  assert.match(recall.injectedContext, /Key decisions:/);
+});
+
+test("retrieval manager can rerank builtin hits with an embedding provider", async () => {
+  const memory = createLeafMem({ store: new InMemoryStore() });
+
+  await memory.remember({
+    scope: { type: "user", id: "alice" },
+    kind: "note",
+    content: "Alpha apples only.",
+    importance: 1,
+  });
+  await memory.remember({
+    scope: { type: "user", id: "alice" },
+    kind: "note",
+    content: "Beta oranges only.",
+    importance: 0,
+  });
+
+  const raw = await memory.search("totally unrelated query", {
+    scopes: [{ type: "user", id: "alice" }],
+    maxResults: 2,
+    minScore: 0,
+  });
+  assert.equal(raw[0]?.record.content, "Alpha apples only.");
+
+  const retrieval = new RetrievalManager({
+    memory,
+    embeddingProvider: {
+      id: "mock",
+      async embedQuery() {
+        return [1];
+      },
+      async embedDocuments(texts) {
+        return texts.map((text) => (text.includes("Beta") ? [1] : [0]));
+      },
+    },
+  });
+
+  assert.equal(retrieval.usesRemoteEmbeddings, true);
+
+  const reranked = await retrieval.search("totally unrelated query", {
+    scopes: [{ type: "user", id: "alice" }],
+    maxResults: 2,
+    minScore: 0,
+  });
+  assert.equal(reranked[0]?.record?.content, "Beta oranges only.");
+});
+
+test("remote embeddings stay disabled by default even when API keys exist", async () => {
+  const previous = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = "test-key";
+
+  try {
+    const provider = await createEmbeddingProvider();
+    assert.equal(provider, null);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = previous;
+    }
+  }
+});
+
+test("experience calibration removes stale entries that are not supported by palace memory", async () => {
+  const memory = createLeafMem({ store: new InMemoryStore() });
+  const scope = { type: "task" as const, id: "launch" };
+
+  await memory.remember({
+    scope,
+    kind: "lesson",
+    content: "Keep release checklists short and actionable.",
+  });
+  await memory.active.write({
+    kind: "experience",
+    scope,
+    content: "Keep release checklists short and actionable.\nStale unused habit.",
+  });
+
+  await memory.maintenance.attributeExperience({
+    scope,
+    response: "Keep release checklists short and actionable in the final prompt.",
+    outcome: "positive",
+  });
+
+  const calibration = await memory.maintenance.calibrateExperience({ scope });
+  const experience = await memory.active.read("experience", scope);
+
+  assert.deepEqual(calibration.zombieRemoved, ["Stale unused habit."]);
+  assert.ok(experience);
+  assert.doesNotMatch(experience!.content, /Stale unused habit/);
+});
+
+test("session memory adapter defers active context distillation until flush", async () => {
+  const memory = createLeafMem({
+    store: new InMemoryStore(),
+    inferencer: async ({ kind, prompt }) => ({
+      ok: true,
+      text:
+        kind === "context"
+          ? `Context summary: ${prompt.slice(0, 80)}`
+          : kind === "task_summary"
+            ? `Task summary: ${prompt.slice(0, 80)}`
+            : `Summary: ${prompt.slice(0, 80)}`,
+    }),
+  });
+  const scope = { type: "session" as const, id: "codex-run" };
+  const adapter = createSessionMemoryAdapter({
+    memory,
+    defaultScopes: [scope],
+  });
+
+  await adapter.afterTurn({
+    taskId: "release",
+    taskTitle: "Release checklist",
+    userMessage: "We still need the final release checklist and QA handoff.",
+    assistantMessage: "I will keep the checklist concise and actionable.",
+    toolContext: "Files changed: README.md, release.md",
+  });
+
+  const beforeFlush = await memory.active.read("context", scope);
+  assert.equal(beforeFlush, null);
+
+  const task = await memory.task.get("release");
+  assert.ok(task);
+  const entries = await memory.task.listEntries("release");
+  assert.equal(entries.length, 2);
+
+  await adapter.flushSession();
+
+  const context = await memory.active.read("context", scope);
+  assert.ok(context);
+  assert.match(context!.content, /Context summary:/);
+
+  const taskState = await memory.task.getRollingSummary("release");
+  assert.ok(taskState?.rollingSummary);
+  assert.match(taskState!.rollingSummary!, /Task summary:/);
+});
+
+test("session memory adapter runs inferencer-backed maintenance only after 24 hours", async () => {
+  let now = new Date("2026-06-01T00:00:00.000Z");
+  const calls: string[] = [];
+  const memory = createLeafMem({
+    store: new InMemoryStore(),
+    now: () => now,
+    inferencer: async ({ kind, prompt }) => {
+      calls.push(kind);
+      if (kind === "context") {
+        return { ok: true, text: `Context summary: ${prompt.slice(0, 40)}` };
+      }
+      if (kind === "task_summary") {
+        return { ok: true, text: `Task summary: ${prompt.slice(0, 40)}` };
+      }
+      if (kind === "experience" || kind === "calibration") {
+        return { ok: true, text: "Keep QA signoff in release reviews." };
+      }
+      return { ok: true, text: "ok" };
+    },
+  });
+  const scope = { type: "agent" as const, id: "openclaw" };
+  const adapter = createSessionMemoryAdapter({
+    memory,
+    defaultScopes: [scope],
+  });
+
+  await adapter.afterTurn({
+    userMessage: "Remember that release reviews need QA signoff.",
+    assistantMessage: "I will keep QA signoff in release reviews.",
+  });
+  await adapter.flushSession();
+
+  const experience = await memory.active.read("experience", scope);
+  assert.equal(experience?.content, "Keep QA signoff in release reviews.");
+  assert.equal(experience?.metadata?.lastDeepGovernedAt, "2026-06-01T00:00:00.000Z");
+  assert.equal(calls.filter((kind) => kind === "calibration").length, 1);
+
+  await adapter.afterTurn({
+    userMessage: "No new maintenance should be needed yet.",
+    assistantMessage: "Noted.",
+  });
+  await adapter.flushSession();
+  assert.equal(calls.filter((kind) => kind === "calibration").length, 1);
+
+  now = new Date("2026-06-02T01:00:00.000Z");
+  await adapter.afterTurn({
+    userMessage: "The next release review is starting.",
+    assistantMessage: "I will keep the same review lesson active.",
+  });
+  await adapter.flushSession();
+  assert.equal(calls.filter((kind) => kind === "calibration").length, 2);
+});
