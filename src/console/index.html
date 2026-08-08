@@ -211,6 +211,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></svg>
       洞察
     </button>
+    <button data-page="graph" onclick="goPage('graph')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7 7.5 10.5 16"/><path d="M17 7.5 13.5 16"/><path d="M7.5 6h9"/></svg>
+      知识图谱
+    </button>
     <button data-page="events" onclick="goPage('events')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
       事件日志
@@ -255,7 +259,7 @@ const API_BASE = window.location.origin;
 const _q = new URLSearchParams(window.location.search);
 const state = {
   apiKey: _q.get('apiKey') || localStorage.getItem('leafmem_api_key') || '',
-  page: ['dashboard','explorer','recall','insights','events','agents'].includes(_q.get('page')) ? _q.get('page') : 'dashboard',
+  page: ['dashboard','explorer','recall','insights','events','graph','agents'].includes(_q.get('page')) ? _q.get('page') : 'dashboard',
   connected: false,
   scope: _q.get('scope') || localStorage.getItem('leafmem_scope') || 'shared',
   agentIds: [],
@@ -333,7 +337,7 @@ function chrome() {
   }
   const T = { dashboard:['仪表盘','存储健康与活动概览'], explorer:['记忆浏览','检索、筛选与管理记忆'],
     recall:['召回检查','模拟智能体实际检索到的内容'], insights:['洞察','蒸馏原则与用户画像'],
-    events:['事件日志','记忆操作审计流水'], agents:['宿主接入','各智能体宿主的安装与导入状态'] };
+    events:['事件日志','记忆操作审计流水'], graph:['知识图谱','实体关联力导向图'], agents:['宿主接入','各智能体宿主的安装与导入状态'] };
   document.getElementById('page-title').textContent = T[state.page][0];
   document.getElementById('page-sub').textContent = T[state.page][1];
   document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('on', b.dataset.page === state.page));
@@ -351,7 +355,7 @@ function renderPage() {
   closeDrawer();
   if (!state.connected) return renderConnect();
   ({ dashboard: renderDashboard, explorer: renderExplorer, recall: renderRecall,
-     insights: renderInsights, events: renderEvents, agents: renderAgents })[state.page](el);
+     insights: renderInsights, events: renderEvents, graph: renderGraph, agents: renderAgents })[state.page](el);
 }
 
 function renderConnect() {
@@ -387,9 +391,9 @@ async function renderDashboard(el) {
         <div class="kpi c1"><div class="lbl">记忆总数</div><div class="val">${stats.totalMemories}</div><div class="sub">${kinds.length} 种类型</div></div>
         <div class="kpi c2"><div class="lbl">蒸馏原则</div><div class="val">${gov?.stats?.principleCount ?? 0}</div><div class="sub">reflect() 沉淀</div></div>
         <div class="kpi c3"><div class="lbl">召回次数</div><div class="val">${gov?.stats?.totalRecallCount ?? 0}</div><div class="sub">${gov?.stats?.entityCount ?? 0} 实体 · ${gov?.stats?.entityLinkCount ?? 0} 关联</div></div>
-        <div class="kpi c4"><div class="lbl">范围数</div><div class="val">${Object.keys(stats.scopes || {}).length}</div><div class="sub">project · agent · repo</div></div>
+        <div class="kpi c4"><div class="lbl">任务上下文</div><div class="val">${stats.taskCount ?? 0}</div><div class="sub">${Object.keys(stats.scopes || {}).length} 个范围 · ${stats.activeDocCount ?? 0} 活动文档</div></div>
       </div>
-      <div class="grid2">
+      <div class="grid2" style="grid-template-columns:1fr 1fr 1fr">
         <div class="card">
           <h3>记忆类型分布 <span class="sub">${esc(scopeName(state.scope))}</span></h3>
           ${kinds.length ? kinds.slice(0, 8).map(([k, n]) => `
@@ -398,6 +402,15 @@ async function renderDashboard(el) {
               <div class="bar"><i style="width:${Math.max(2, (n / max) * 100)}%"></i></div>
               <span class="num">${n}</span>
             </div>`).join('') : '<div class="empty"><div class="msg">该范围暂无记忆</div></div>'}
+        </div>
+        <div class="card">
+          <h3>来源分布 <span class="sub">${fmtDate(stats.oldestMemory)} → ${fmtDate(stats.newestMemory)}</span></h3>
+          ${Object.entries(stats.sources || {}).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,n]) => `
+            <div class="bar-row">
+              <span class="lbl" style="width:150px" title="${esc(k)}">${esc(trunc(k,20))}</span>
+              <div class="bar"><i style="width:${Math.max(2,(n/Math.max(...Object.values(stats.sources),1))*100)}%"></i></div>
+              <span class="num">${n}</span>
+            </div>`).join('')}
         </div>
         <div class="card">
           <h3>最近活动 <span class="sub">最新事件</span></h3>
@@ -648,6 +661,169 @@ async function renderEvents(el) {
 }
 function evPill(t) { return { recall:'b', memory_written:'g', memory_updated:'y', memory_deleted:'r', recall_built:'b', projection_synced:'p', write:'g', reflect:'p', delete:'r' }[t] || 'gray'; }
 
+
+// ================================================================ 知识图谱
+const KIND_COLOR = { person:'#dc2626', project:'#2563eb', tech:'#7c3aed', tool:'#d97706', org:'#0d9488' };
+async function renderGraph(el) {
+  el.innerHTML = '<div class="loading">正在加载图谱…</div>';
+  try {
+    const d = await api('/v1/graph?limit=400');
+    const nodes = (d.nodes || []).map((n, i) => ({ ...n, x: 0, y: 0, vx: 0, vy: 0, _i: i }));
+    const idx = new Map(nodes.map((n, i) => [n.id, i]));
+    const edges = (d.edges || []).filter(e => idx.has(e.source_entity_id) && idx.has(e.target_entity_id))
+      .map(e => ({ s: idx.get(e.source_entity_id), t: idx.get(e.target_entity_id), rel: e.relation }));
+    if (!nodes.length) { el.innerHTML = '<div class="empty"><div class="glyph">⬡</div><div class="msg">暂无实体数据，写入记忆时会自动抽取实体</div></div>'; return; }
+    const kinds = [...new Set(nodes.map(n => n.kind))];
+    el.innerHTML = `<div class="inner">
+      <div class="card plain" style="position:relative">
+        <div style="position:absolute;top:14px;left:20px;z-index:2;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <span class="mono-sm">${nodes.length} 实体 · ${edges.length} 关联</span>
+          ${kinds.map(k => `<span class="pill" style="background:${(KIND_COLOR[k]||'#64748b')}18;color:${KIND_COLOR[k]||'#64748b'}">● ${esc(k)}</span>`).join('')}
+        </div>
+        <canvas id="graph-canvas" style="width:100%;height:640px;display:block;cursor:grab"></canvas>
+      </div>
+    </div>`;
+    startForceLayout(document.getElementById('graph-canvas'), nodes, edges);
+  } catch (err) { el.innerHTML = `<div class="empty"><div class="glyph">⚠</div><div class="msg">${esc(err.message)}</div></div>`; }
+}
+
+function startForceLayout(canvas, nodes, edges) {
+  const dpr = window.devicePixelRatio || 1;
+  const resize = () => { const r = canvas.getBoundingClientRect(); canvas.width = r.width * dpr; canvas.height = r.height * dpr; };
+  resize();
+  const ctx = canvas.getContext('2d');
+  const W = () => canvas.width / dpr, H = () => canvas.height / dpr;
+  const maxLink = Math.max(...nodes.map(n => n.link_count || 1), 1);
+  const radius = n => 5 + 9 * Math.sqrt((n.link_count || 1) / maxLink);
+  // 度统计：孤立节点（无边）静态外环，不参与力学，避免斥力推边
+  const degree = new Array(nodes.length).fill(0);
+  edges.forEach(e => { degree[e.s]++; degree[e.t]++; });
+  const connected = [], isolated = [];
+  nodes.forEach((n, i) => (degree[i] ? connected.push(n) : isolated.push(n)));
+  isolated.forEach((n, i) => {
+    const deg = (i / Math.max(isolated.length, 1)) * Math.PI * 2 - Math.PI / 2;
+    const rx = W() / 2 - 46, ry = H() / 2 - 46;
+    n.x = W() / 2 + Math.cos(deg) * rx;
+    n.y = H() / 2 + Math.sin(deg) * ry;
+    n._iso = true;
+  });
+  // 连通节点圆环种子
+  connected.forEach((n, i) => {
+    const deg = (i / Math.max(connected.length, 1)) * Math.PI * 2;
+    const ring = 90 + (i % 4) * 45;
+    n.x = W() / 2 + Math.cos(deg) * ring + (Math.random() - 0.5) * 24;
+    n.y = H() / 2 + Math.sin(deg) * ring + (Math.random() - 0.5) * 24;
+  });
+  let hovered = null, dragNode = null, mouseX = 0, mouseY = 0;
+
+  canvas.addEventListener('mousemove', (ev) => {
+    const r = canvas.getBoundingClientRect();
+    mouseX = ev.clientX - r.left; mouseY = ev.clientY - r.top;
+    if (dragNode) { dragNode.x = mouseX; dragNode.y = mouseY; dragNode.vx = 0; dragNode.vy = 0; return; }
+    hovered = null;
+    for (const n of nodes) {
+      if (Math.hypot(n.x - mouseX, n.y - mouseY) < radius(n) + 4) { hovered = n; break; }
+    }
+    canvas.style.cursor = hovered ? 'pointer' : 'grab';
+  });
+  canvas.addEventListener('mousedown', () => { dragNode = hovered; });
+  window.addEventListener('mouseup', () => { dragNode = null; });
+
+  let alpha = 1;
+  function tick() {
+    alpha = Math.max(0.03, alpha * 0.99);
+    // 斥力（仅连通节点，n^2 无压力）
+    for (let i = 0; i < connected.length; i++) {
+      for (let j = i + 1; j < connected.length; j++) {
+        const a = connected[i], b = connected[j];
+        let dx = a.x - b.x, dy = a.y - b.y;
+        let d2 = dx * dx + dy * dy || 1;
+        if (d2 < 90000) {
+          const f = 2600 * alpha / d2;
+          a.vx += dx * f; a.vy += dy * f; b.vx -= dx * f; b.vy -= dy * f;
+        }
+      }
+    }
+    // 弹簧（目标边长 110）
+    for (const e of edges) {
+      const a = nodes[e.s], b = nodes[e.t];
+      if (a._iso || b._iso) continue;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.hypot(dx, dy) || 1;
+      const f = (d - 110) * 0.012 * alpha;
+      a.vx += (dx / d) * f; a.vy += (dy / d) * f;
+      b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
+    }
+    // 向心 + 积分（孤立节点冻结）
+    for (const n of connected) {
+      if (n === dragNode) continue;
+      n.vx += (W() / 2 - n.x) * 0.012 * alpha;
+      n.vy += (H() / 2 - n.y) * 0.012 * alpha;
+      n.vx *= 0.6; n.vy *= 0.6;
+      n.x += n.vx; n.y += n.vy;
+      n.x = Math.max(30, Math.min(W() - 30, n.x));
+      n.y = Math.max(30, Math.min(H() - 30, n.y));
+    }
+    draw();
+    requestAnimationFrame(tick);
+  }
+
+  function draw() {
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W(), H());
+    // 边
+    ctx.strokeStyle = 'rgba(100,116,139,.28)';
+    ctx.lineWidth = 1;
+    for (const e of edges) {
+      ctx.beginPath();
+      ctx.moveTo(nodes[e.s].x, nodes[e.s].y);
+      ctx.lineTo(nodes[e.t].x, nodes[e.t].y);
+      ctx.stroke();
+    }
+    // 节点
+    for (const n of nodes) {
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, radius(n), 0, Math.PI * 2);
+      ctx.fillStyle = KIND_COLOR[n.kind] || '#64748b';
+      ctx.globalAlpha = hovered && hovered !== n ? 0.45 : 0.92;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      if (n === hovered) { ctx.strokeStyle = '#1a2332'; ctx.lineWidth = 2; ctx.stroke(); }
+    }
+    // 标签：hover 节点 + 大节点常显
+    ctx.font = '11px -apple-system, "PingFang SC", sans-serif';
+    ctx.textAlign = 'center';
+    for (const n of nodes) {
+      if (n === hovered || (n.link_count || 0) >= maxLink * 0.45) {
+        ctx.fillStyle = n === hovered ? '#1a2332' : 'rgba(26,35,50,.72)';
+        ctx.fillText(n.name, n.x, n.y + radius(n) + 13);
+      }
+    }
+    // hover 详情
+    if (hovered) {
+      const rel = edges.filter(e => nodes[e.s] === hovered || nodes[e.t] === hovered);
+      const lines = rel.slice(0, 5).map(e => {
+        const other = nodes[e.s] === hovered ? nodes[e.t] : nodes[e.s];
+        return `— ${e.rel} → ${other.name}`;
+      });
+      ctx.textAlign = 'left';
+      ctx.fillStyle = 'rgba(255,255,255,.96)';
+      const bx = Math.min(mouseX + 14, W() - 240), by = Math.min(mouseY + 10, H() - 20 - lines.length * 16);
+      ctx.fillRect(bx, by, 230, 26 + lines.length * 16);
+      ctx.strokeStyle = '#e5e9f0'; ctx.strokeRect(bx, by, 230, 26 + lines.length * 16);
+      ctx.fillStyle = '#1a2332';
+      ctx.font = 'bold 12px -apple-system, "PingFang SC", sans-serif';
+      ctx.fillText(`${hovered.name}（${hovered.kind} · ${hovered.link_count} 条记忆链接）`, bx + 10, by + 17);
+      ctx.font = '11px -apple-system, "PingFang SC", sans-serif';
+      ctx.fillStyle = '#5b6675';
+      lines.forEach((l, i) => ctx.fillText(l, bx + 10, by + 34 + i * 16));
+    }
+    ctx.restore();
+  }
+  tick();
+}
+
 // ================================================================ 宿主接入
 async function renderAgents(el) {
   el.innerHTML = '<div class="loading">正在扫描宿主…</div>';
@@ -724,6 +900,7 @@ function timeAgo(iso) {
   const h = Math.floor(m / 60); if (h < 24) return `${h} 小时前`;
   return `${Math.floor(h / 24)} 天前`;
 }
+function fmtDate(iso) { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : d.toISOString().slice(0, 10); }
 function fmtTime(iso) { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : d.toTimeString().slice(0, 5); }
 function toast(msg, isErr) {
   const w = document.getElementById('toasts');
