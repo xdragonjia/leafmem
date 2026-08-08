@@ -100,7 +100,15 @@ export class ActiveMemoryManager {
   async formatRecall(scope: MemoryScope): Promise<string> {
     const context = await this.read("context", scope);
     const experience = await this.read("experience", scope);
+    // Custom (2026-08-09): inject the distilled user profile into recall.
+    // Previously the profile was built by maintenance(profile) but never fed
+    // back into recall, so distilled knowledge never guided the agent — a
+    // dead loop. Capped to keep the active layer from crowding out hits.
+    const profile = await this.read("profile", scope);
     const blocks = [
+      profile?.content.trim()
+        ? `User profile:\n${clampChars(profile.content.trim(), 1500)}`
+        : "",
       context?.content.trim()
         ? `Active context:\n${context.content.trim()}`
         : "",
