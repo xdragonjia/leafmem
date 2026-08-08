@@ -83,7 +83,7 @@ export type MemoryEvidenceRef = {
   tags: string[];
   metadata?: Record<string, unknown>;
   tools: Array<{
-    name: "memory_record" | "memory_task";
+    name: "memory_recall";
     arguments: Record<string, string>;
   }>;
 };

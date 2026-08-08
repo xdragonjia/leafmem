@@ -534,17 +534,17 @@ function instructionBlock(agent: AgentId): string {
   return `<!-- leafmem-agent-instructions:start -->
 Memory lookup:
 
-- If a task may depend on user-specific preferences, prior project decisions, repo conventions, or earlier troubleshooting history, query LeafMem before answering or editing. Prefer a lightweight \`memory_context\` call with \`action: "recall"\` using the current request. For cross-agent continuity, omit scope first so LeafMem can search the shared user memory store; for narrow lookups or durable writes, use \`agent:${scopeId}\`. Skip this for trivial, fully self-contained requests.
-- After substantial work or when closing a session, distill the session with the current host model and call \`memory_session\` with \`action: "commit"\`, the rolling summary, any new transcript entries, and durable facts/preferences/decisions. Use \`agent:${scopeId}\` for the session memory unless a narrower project/repo scope is clearly available.
+- If a task may depend on user-specific preferences, prior project decisions, repo conventions, or earlier troubleshooting history, query LeafMem before answering or editing. Prefer a lightweight \`memory_recall\` call with \`action: "recall"\` using the current request. For cross-agent continuity, omit scope first so LeafMem can search the shared user memory store; for narrow lookups or durable writes, use \`agent:${scopeId}\`. Skip this for trivial, fully self-contained requests.
+- After substantial work or when closing a session, distill the session with the current host model and call \`memory_write\` with \`action: "commit"\`, the rolling summary, any new transcript entries, and durable facts/preferences/decisions. Use \`agent:${scopeId}\` for the session memory unless a narrower project/repo scope is clearly available.
 <!-- leafmem-agent-instructions:end -->`;
 }
 
 function mcpInstructionText(): string {
   return [
-    "Use memory_context with action='recall' and no scopeType/scopeId when continuity or prior decisions matter, so LeafMem can search shared memory across agents.",
-    "Use memory_record with action='write' for durable user preferences, facts, or explicit remember requests.",
-    "Use memory_session with action='commit' when the host agent has already distilled a session; include activeContext/activeExperience when available, and follow maintenanceRequest if returned.",
-    "Use memory_task with action='append' or action='window' for longer task-focused work.",
+    "Use memory_recall with action='recall' and no scopeType/scopeId when continuity or prior decisions matter, so LeafMem can search shared memory across agents.",
+    "Use memory_write with action='remember' for durable user preferences, facts, or explicit remember requests.",
+    "Use memory_write with action='commit' when the host agent has already distilled a session; include activeContext/activeExperience when available, and follow maintenanceRequest if returned.",
+    "Use memory_organize for periodic curation (reflect/profile/decay) and memory_govern for user-driven corrections (update/delete/attribute/pin).",
   ].join(" ");
 }
 
@@ -556,7 +556,7 @@ async function antigravityInstructionsInstalled(home: string): Promise<boolean> 
   return (
     await textIncludes(AGENTS.antigravity.instructionsPath!(home), "leafmem-agent-instructions:start")
   ) || (
-    await textIncludes(antigravityMcpInstructionsPath(home), "memory_context")
+    await textIncludes(antigravityMcpInstructionsPath(home), "memory_recall")
   );
 }
 

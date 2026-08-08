@@ -14,14 +14,12 @@ test("lists MCP tools and executes write/search flow", async () => {
   })) as { result?: { tools?: Array<{ name: string; inputSchema: { required?: string[] } }> } };
 
   const toolNames = list.result?.tools?.map((tool) => tool.name) ?? [];
-  const recordTool = list.result?.tools?.find((tool) => tool.name === "memory_record");
+  const recordTool = list.result?.tools?.find((tool) => tool.name === "memory_write");
   assert.deepEqual(toolNames.toSorted(), [
-    "memory_active",
-    "memory_context",
-    "memory_maintenance",
-    "memory_record",
-    "memory_session",
-    "memory_task",
+    "memory_govern",
+    "memory_organize",
+    "memory_recall",
+    "memory_write",
   ]);
   assert.deepEqual(recordTool?.inputSchema.required, ["action"]);
 
@@ -30,9 +28,9 @@ test("lists MCP tools and executes write/search flow", async () => {
     id: 2,
     method: "tools/call",
     params: {
-      name: "memory_record",
+      name: "memory_write",
       arguments: {
-        action: "write",
+        action: "remember",
         content: "User prefers concise Chinese replies.",
         kind: "preference",
         scopeType: "user",
@@ -52,7 +50,7 @@ test("lists MCP tools and executes write/search flow", async () => {
     id: 3,
     method: "tools/call",
     params: {
-      name: "memory_record",
+      name: "memory_recall",
       arguments: {
         action: "search",
         query: "What language should I reply in?",
@@ -84,7 +82,7 @@ test("MCP write and scope-bound tools use configured default scope", async () =>
     id: 1,
     method: "tools/list",
   })) as { result?: { tools?: Array<{ name: string; inputSchema: { required?: string[] } }> } };
-  const recordTool = list.result?.tools?.find((tool) => tool.name === "memory_record");
+  const recordTool = list.result?.tools?.find((tool) => tool.name === "memory_write");
   assert.deepEqual(recordTool?.inputSchema.required, ["action"]);
 
   await handler.handleRequest({
@@ -92,9 +90,9 @@ test("MCP write and scope-bound tools use configured default scope", async () =>
     id: 2,
     method: "tools/call",
     params: {
-      name: "memory_record",
+      name: "memory_write",
       arguments: {
-        action: "write",
+        action: "remember",
         content: "WorkBuddy should use the configured default scope.",
         kind: "preference",
       },
@@ -106,7 +104,7 @@ test("MCP write and scope-bound tools use configured default scope", async () =>
     id: 3,
     method: "tools/call",
     params: {
-      name: "memory_record",
+      name: "memory_recall",
       arguments: {
         action: "search",
         query: "configured default scope",
@@ -125,9 +123,9 @@ test("MCP write and scope-bound tools use configured default scope", async () =>
     id: 4,
     method: "tools/call",
     params: {
-      name: "memory_active",
+      name: "memory_write",
       arguments: {
-        action: "distill",
+        action: "active_distill",
         kind: "context",
         content: "WorkBuddy active context.",
       },
@@ -154,9 +152,9 @@ test("MCP mutating tools can trigger projection sync callbacks", async () => {
     id: 1,
     method: "tools/call",
     params: {
-      name: "memory_record",
+      name: "memory_write",
       arguments: {
-        action: "write",
+        action: "remember",
         content: "WorkBuddy projection should refresh after writes.",
       },
     },
@@ -167,7 +165,7 @@ test("MCP mutating tools can trigger projection sync callbacks", async () => {
     id: 2,
     method: "tools/call",
     params: {
-      name: "memory_context",
+      name: "memory_recall",
       arguments: {
         action: "recall",
         message: "projection refresh",
@@ -196,7 +194,7 @@ test("MCP read tools with a default write scope still search shared memory", asy
     id: 1,
     method: "tools/call",
     params: {
-      name: "memory_context",
+      name: "memory_recall",
       arguments: {
         action: "recall",
         message: "Tencent article valuation thesis",
@@ -232,7 +230,7 @@ test("MCP update and delete stay within the configured default scope", async () 
     id: 1,
     method: "tools/call",
     params: {
-      name: "memory_record",
+      name: "memory_govern",
       arguments: {
         action: "delete", id: codexRecord.id },
     },
@@ -246,7 +244,7 @@ test("MCP update and delete stay within the configured default scope", async () 
     id: 2,
     method: "tools/call",
     params: {
-      name: "memory_record",
+      name: "memory_govern",
       arguments: {
         action: "delete", id: codexRecord.id, scopeType: "agent", scopeId: "codex" },
     },
@@ -259,7 +257,7 @@ test("MCP update and delete stay within the configured default scope", async () 
     id: 3,
     method: "tools/call",
     params: {
-      name: "memory_record",
+      name: "memory_govern",
       arguments: {
         action: "update", id: workbuddyRecord.id, content: "Updated by WorkBuddy." },
     },
@@ -279,9 +277,9 @@ test("MCP rejects unsupported scopeType but allows custom agent scopeId", async 
     id: 1,
     method: "tools/call",
     params: {
-      name: "memory_record",
+      name: "memory_write",
       arguments: {
-        action: "write",
+        action: "remember",
         content: "Custom agents should use the agent scope type.",
         scopeType: "custom-agent",
         scopeId: "default",
@@ -297,9 +295,9 @@ test("MCP rejects unsupported scopeType but allows custom agent scopeId", async 
     id: 2,
     method: "tools/call",
     params: {
-      name: "memory_record",
+      name: "memory_write",
       arguments: {
-        action: "write",
+        action: "remember",
         content: "Custom agent memory.",
         scopeType: "agent",
         scopeId: "custom-agent",
@@ -321,9 +319,9 @@ test("memory_context exposes record markers through MCP", async () => {
     id: 1,
     method: "tools/call",
     params: {
-      name: "memory_record",
+      name: "memory_write",
       arguments: {
-        action: "write",
+        action: "remember",
         content: "Cursor session established the release checklist.",
         kind: "decision",
         scopeType: "agent",
@@ -343,7 +341,7 @@ test("memory_context exposes record markers through MCP", async () => {
     id: 2,
     method: "tools/call",
     params: {
-      name: "memory_context",
+      name: "memory_recall",
       arguments: {
         action: "recall",
         message: "release checklist",
@@ -356,9 +354,9 @@ test("memory_context exposes record markers through MCP", async () => {
   assert.match(recall.injectedContext, /source: cursor_session_import/);
   assert.match(recall.injectedContext, /tags: cursor, session, release/);
   assert.match(recall.injectedContext, /"sessionId":"cursor-1"/);
-  assert.match(recall.navigationContext, /memory_record/);
+  assert.match(recall.navigationContext, /memory_recall\(action=get/);
   assert.equal(recall.hits?.[0]?.record.source, "cursor_session_import");
-  assert.equal(recall.hits?.[0]?.evidence?.tools?.[0]?.name, "memory_record");
+  assert.equal(recall.hits?.[0]?.evidence?.tools?.[0]?.name, "memory_recall");
   assert.deepEqual(recall.hits?.[0]?.record.metadata, {
     sessionId: "cursor-1",
     taskId: "cursor-session-cursor-1",
@@ -375,9 +373,9 @@ test("memory_record list and delete work through MCP", async () => {
     id: 1,
     method: "tools/call",
     params: {
-      name: "memory_record",
+      name: "memory_write",
       arguments: {
-        action: "write",
+        action: "remember",
         content: "Test memory for deletion.",
         kind: "fact",
         scopeType: "user",
@@ -396,7 +394,7 @@ test("memory_record list and delete work through MCP", async () => {
     id: 2,
     method: "tools/call",
     params: {
-      name: "memory_record",
+      name: "memory_recall",
       arguments: {
         action: "list", scopeType: "user", scopeId: "bob" },
     },
@@ -411,7 +409,7 @@ test("memory_record list and delete work through MCP", async () => {
     id: 3,
     method: "tools/call",
     params: {
-      name: "memory_record",
+      name: "memory_govern",
       arguments: {
         action: "delete", id: recordId, scopeType: "user", scopeId: "bob" },
     },
@@ -426,7 +424,7 @@ test("memory_record list and delete work through MCP", async () => {
     id: 4,
     method: "tools/call",
     params: {
-      name: "memory_record",
+      name: "memory_recall",
       arguments: {
         action: "list", scopeType: "user", scopeId: "bob" },
     },
@@ -445,7 +443,7 @@ test("memory_session stores host-distilled session state without calling an infe
     id: 1,
     method: "tools/call",
     params: {
-      name: "memory_session",
+      name: "memory_write",
       arguments: {
         action: "commit",
         agent: "codex",
@@ -492,7 +490,7 @@ test("memory_session stores host-distilled session state without calling an infe
     id: 2,
     method: "tools/call",
     params: {
-      name: "memory_session",
+      name: "memory_write",
       arguments: {
         action: "commit",
         agent: "codex",
@@ -512,7 +510,7 @@ test("memory_session stores host-distilled session state without calling an infe
     id: 3,
     method: "tools/call",
     params: {
-      name: "memory_session",
+      name: "memory_write",
       arguments: {
         action: "commit",
         agent: "codex",
@@ -549,7 +547,7 @@ test("memory_session active governance can be deep-maintained by the host", asyn
     id: 1,
     method: "tools/call",
     params: {
-      name: "memory_session",
+      name: "memory_write",
       arguments: {
         action: "commit",
         agent: "workbuddy",
@@ -576,7 +574,7 @@ test("memory_session active governance can be deep-maintained by the host", asyn
     id: 2,
     method: "tools/call",
     params: {
-      name: "memory_maintenance",
+      name: "memory_organize",
       arguments: {
         action: "prepare",
         scopeType: "agent",
@@ -592,7 +590,7 @@ test("memory_session active governance can be deep-maintained by the host", asyn
     id: 3,
     method: "tools/call",
     params: {
-      name: "memory_maintenance",
+      name: "memory_organize",
       arguments: {
         action: "apply",
         agent: "workbuddy",
@@ -614,7 +612,7 @@ test("memory_session active governance can be deep-maintained by the host", asyn
     id: 4,
     method: "tools/call",
     params: {
-      name: "memory_session",
+      name: "memory_write",
       arguments: {
         action: "commit",
         agent: "workbuddy",
@@ -639,9 +637,9 @@ test("memory_context respects maxChars through MCP", async () => {
     id: 1,
     method: "tools/call",
     params: {
-      name: "memory_record",
+      name: "memory_write",
       arguments: {
-        action: "write",
+        action: "remember",
         content: "alpha ".repeat(100).trim(),
         scopeType: "user",
         scopeId: "alice",
@@ -654,7 +652,7 @@ test("memory_context respects maxChars through MCP", async () => {
     id: 2,
     method: "tools/call",
     params: {
-      name: "memory_context",
+      name: "memory_recall",
       arguments: {
         action: "recall",
         message: "alpha",

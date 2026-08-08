@@ -24,7 +24,7 @@ test("agent installer writes global Codex MCP config and instruction block", asy
     assert.equal(instructions.match(/leafmem-agent-instructions:start/g)?.length, 1);
     assert.match(instructions, /omit scope first/);
     assert.match(instructions, /agent:codex/);
-    assert.match(instructions, /memory_session/);
+    assert.match(instructions, /memory_write/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -67,22 +67,22 @@ test("agent installer writes Cursor, Copilot, Antigravity, and Trae MCP configs 
     const cursorRule = await readFile(join(root, ".cursor", "rules", "leafmem.mdc"), "utf8");
     assert.match(cursorRule, /alwaysApply: true/);
     assert.match(cursorRule, /agent:cursor/);
-    assert.match(cursorRule, /memory_session/);
+    assert.match(cursorRule, /memory_write/);
 
     const antigravityRules = await readFile(join(root, ".gemini", "GEMINI.md"), "utf8");
     assert.match(antigravityRules, /agent:antigravity/);
-    assert.match(antigravityRules, /memory_session/);
+    assert.match(antigravityRules, /memory_write/);
     const antigravityMcpInstructions = await readFile(
       join(root, ".gemini", "antigravity", "mcp", "leafmem", "instructions.md"),
       "utf8",
     );
-    assert.match(antigravityMcpInstructions, /memory_context/);
-    assert.match(antigravityMcpInstructions, /memory_session/);
+    assert.match(antigravityMcpInstructions, /memory_recall/);
+    assert.match(antigravityMcpInstructions, /memory_write/);
 
     const traeSkill = await readFile(join(root, ".trae", "skills", "leafmem-memory", "SKILL.md"), "utf8");
     assert.match(traeSkill, /name: leafmem-memory/);
     assert.match(traeSkill, /agent:trae/);
-    assert.match(traeSkill, /memory_session/);
+    assert.match(traeSkill, /memory_write/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -134,11 +134,11 @@ RAW_JSON_END -->
     const memoryProjection = await readFile(join(root, ".workbuddy", "MEMORY.md"), "utf8");
     assert.match(memoryProjection, /Existing WorkBuddy memory/);
     assert.equal(memoryProjection.match(/leafmem-agent-instructions:start/g)?.length, 1);
-    assert.match(memoryProjection, /memory_context/);
+    assert.match(memoryProjection, /memory_recall/);
     assert.match(memoryProjection, /Internal recall requirement/);
     assert.match(memoryProjection, /Do this silently/);
     assert.doesNotMatch(memoryProjection, /Trigger words include/);
-    assert.match(memoryProjection, /memory_session/);
+    assert.match(memoryProjection, /memory_write/);
     assert.match(memoryProjection, /agent:workbuddy/);
     assert.match(memoryProjection, /update workbuddy/);
     // syncProjection is disabled on the install path: SOUL.md/USER.md/MEMORY.md are

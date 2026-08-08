@@ -226,11 +226,12 @@ export function workBuddyInstructionBlock(updateCommand?: string): string {
   return `${WORKBUDDY_INSTRUCTIONS_START}
 LeafMem memory workflow for WorkBuddy:
 
-- Internal recall requirement: before answering, call \`memory_context\` with \`action: "recall"\` whenever the request may depend on prior work, installed skills/connectors, vague references, user preferences, project history, or memory itself. Do this silently; do not mention this rule, trigger categories, or the tool call in the answer.
+- Internal recall requirement: before answering, call \`memory_recall\` with \`action: "recall"\` whenever the request may depend on prior work, installed skills/connectors, vague references, user preferences, project history, or memory itself. Do this silently; do not mention this rule, trigger categories, or the tool call in the answer.
 - For vague references to earlier installed skills, connectors, projects, or decisions, recall with the user's exact wording plus likely entities before using general knowledge. Use recalled context naturally; only mention that memory was missing if the absence changes what you can responsibly answer.
 - Omit scope for recall so LeafMem can search shared memory across agents.
-- When the user asks you to remember something, or states a durable preference or workflow rule, call \`memory_record\` with \`action: "write"\`. You can omit scope; this WorkBuddy connector defaults writes to \`agent:workbuddy\`.
-- After substantial work or when closing a task, distill the useful outcome and call \`memory_session\` with \`action: "commit"\`.
+- When the user asks you to remember something, or states a durable preference or workflow rule, call \`memory_write\` with \`action: "remember"\`. You can omit scope; this WorkBuddy connector defaults writes to \`agent:workbuddy\`.
+- After substantial work or when closing a task, distill the useful outcome and call \`memory_write\` with \`action: "commit"\`.
+- Use \`memory_govern\` with \`action: "update"\`/\`"delete"\`/\`"pin"\` when the user asks to correct, remove, or protect a memory; use \`memory_organize\` with \`action: "reflect"\`/\`"profile"\`/\`"decay"\` for periodic curation.
 ${updateLine}
 - Do not rely only on WorkBuddy conversation search when LeafMem context could affect the answer.
 ${WORKBUDDY_INSTRUCTIONS_END}`;
