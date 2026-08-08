@@ -55,7 +55,7 @@ test("agent installer writes Cursor, Copilot, Antigravity, and Trae MCP configs 
     assert.deepEqual(antigravity.mcpServers.leafmem.args, [mcpPath]);
     assert.equal(antigravity.mcpServers.leafmem.env.LEAFMEM_STORAGE_PATH, storagePath);
 
-    const trae = JSON.parse(await readFile(join(root, "Library", "Application Support", "TRAE SOLO", "User", "mcp.json"), "utf8"));
+    const trae = JSON.parse(await readFile(join(root, "Library", "Application Support", "TRAE SOLO CN", "User", "mcp.json"), "utf8"));
     assert.equal(trae.mcpServers.leafmem.command, "node");
     assert.deepEqual(trae.mcpServers.leafmem.args, [mcpPath]);
     assert.equal(trae.mcpServers.leafmem.env.LEAFMEM_STORAGE_PATH, storagePath);

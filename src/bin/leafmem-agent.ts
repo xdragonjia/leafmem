@@ -43,8 +43,8 @@ const HELP = `leafmem-agent
 Install LeafMem globally for coding agents, or launch the local setup UI.
 
 Usage:
-  leafmem-agent install <codex|claude|cursor|copilot|antigravity|workbuddy|kunlunxiaozhi|trae|all>
-  leafmem-agent update <codex|claude|cursor|copilot|antigravity|workbuddy|kunlunxiaozhi|trae|all>
+  leafmem-agent install <workbuddy|kunlunxiaozhi|codex|claude|cursor|copilot|antigravity|trae|all>
+  leafmem-agent update <workbuddy|kunlunxiaozhi|codex|claude|cursor|copilot|antigravity|trae|all>
   leafmem-agent service <install|start|stop|restart|status|uninstall|url>
   leafmem-agent serve
   leafmem-agent ui

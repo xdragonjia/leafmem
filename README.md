@@ -28,7 +28,7 @@ Most agent memory systems drift toward either full chat history or one rolling s
 - Active memory and task context managers
 - Runtime layer for turn capture and prompt-ready recall
 - 6 consolidated MCP tools plus local stdio MCP server
-- Local setup for Codex, Claude Code, Cursor, GitHub Copilot, Antigravity, WorkBuddy, KunlunXiaoZhi, and Trae Solo
+- Local setup for Codex, Claude Code, Cursor, GitHub Copilot, Antigravity, WorkBuddy, KunlunXiaoZhi, and TRAE Work
 - Browser console and terminal TUI for agent setup
 - Hermes and OpenClaw compatibility adapters
 - Source, tags, metadata, and source history are preserved through writes and recall

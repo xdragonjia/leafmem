@@ -10,7 +10,7 @@ import { createWorkBuddyMemoryAdapter, writeWorkBuddyInstructions } from "../ada
 import { openSqliteDatabase } from "../system/sqlite.js";
 import { leafmemEnv } from "../system/env-compat.js";
 
-export const AGENT_IDS = ["codex", "claude", "cursor", "copilot", "antigravity", "workbuddy", "kunlunxiaozhi", "trae"] as const;
+export const AGENT_IDS = ["workbuddy", "kunlunxiaozhi", "codex", "claude", "cursor", "copilot", "antigravity", "trae"] as const;
 
 export type AgentId = (typeof AGENT_IDS)[number];
 
@@ -147,10 +147,10 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
     instructionsPath: (home) => join(home, ".kunlunxiaozhi", "MEMORY.md"),
   },
   trae: {
-    label: "Trae Solo",
+    label: "TRAE Work",
     scopeId: "trae",
-    defaultSessionsRoot: (home) => join(home, "Library", "Application Support", "TRAE SOLO", "User"),
-    configPath: (home) => join(home, "Library", "Application Support", "TRAE SOLO", "User", "mcp.json"),
+    defaultSessionsRoot: (home) => join(home, "Library", "Application Support", "TRAE SOLO CN", "User"),
+    configPath: (home) => join(home, "Library", "Application Support", "TRAE SOLO CN", "User", "mcp.json"),
     instructionsPath: (home) => join(home, ".trae", "skills", "leafmem-memory", "SKILL.md"),
   },
 };

@@ -474,7 +474,7 @@ await memory.maintenance.deepConsolidate({
 有两种接法：
 
 - 自己写宿主：直接用 `createMemoryMcpHandler()`
-- 给 Codex、Claude Code、Cursor、Copilot、WorkBuddy、Trae Solo 这类 MCP client 用：运行本地 `leafmem-mcp` stdio server
+- 给 Codex、Claude Code、Cursor、Copilot、WorkBuddy、TRAE Work 这类 MCP client 用：运行本地 `leafmem-mcp` stdio server
 
 如果你需要把 LeafMem 嵌进自己的宿主，可以直接使用 MCP handler：
 
@@ -627,9 +627,9 @@ node dist/bin/leafmem-agent.js install trae
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/copilot-instructions.md` | `~/Library/Application Support/Code/User` |
 | Antigravity | `~/.gemini/antigravity/mcp_config.json` | `~/.gemini/GEMINI.md` | `~/.gemini/antigravity/brain` |
 | WorkBuddy | `~/.workbuddy/mcp.json` | `~/.workbuddy/SOUL.md` / `USER.md` / `MEMORY.md` 映射 | n/a |
-| Trae Solo | `~/Library/Application Support/TRAE SOLO/User/mcp.json` | `~/.trae/skills/leafmem-memory/SKILL.md` | n/a |
+| TRAE Work | `~/Library/Application Support/TRAE SOLO CN/User/mcp.json` | `~/.trae/skills/leafmem-memory/SKILL.md` | n/a |
 
-这个安装入口默认不会给 Codex、Claude Code、Cursor、Copilot、Antigravity、Trae Solo 的 MCP server 设置 `agent:*` scope。这样 agent 调 `memory_context` 的 `action: "recall"` 时如果不传 scope，就可以从同一个 SQLite 里跨 agent 召回；需要写入新记忆或做窄查询时，再按指令使用当前 agent 的 scope，例如 `agent:codex`、`agent:claude`、`agent:cursor`、`agent:copilot`、`agent:antigravity` 或 `agent:trae`。
+这个安装入口默认不会给 Codex、Claude Code、Cursor、Copilot、Antigravity、TRAE Work 的 MCP server 设置 `agent:*` scope。这样 agent 调 `memory_context` 的 `action: "recall"` 时如果不传 scope，就可以从同一个 SQLite 里跨 agent 召回；需要写入新记忆或做窄查询时，再按指令使用当前 agent 的 scope，例如 `agent:codex`、`agent:claude`、`agent:cursor`、`agent:copilot`、`agent:antigravity` 或 `agent:trae`。
 
 WorkBuddy 是例外：它没有 LeafMem 可以稳定写入的全局指令文件，所以 installer 会在 MCP env 里设置 `LEAFMEM_SCOPE_TYPE=agent` 和 `LEAFMEM_SCOPE_ID=workbuddy`，让写入类工具默认落到 `agent:workbuddy`，减少普通用户配置负担。同时它会把 `SOUL.md`、`USER.md`、`MEMORY.md` 作为数据库投影保留下来，避免打断 WorkBuddy 原本的文件读取习惯。
 

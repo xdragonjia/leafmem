@@ -261,7 +261,7 @@ OpenClaw and Hermes adapters can import existing markdown memory files once, tre
 
 ## Local Agent Setup API
 
-The `leafmem-agent` CLI manages Codex, Claude Code, Cursor, GitHub Copilot, Antigravity, WorkBuddy, and Trae Solo setup. Details live in [`USAGE.md`](USAGE.md#12-mcp-的接入).
+The `leafmem-agent` CLI manages Codex, Claude Code, Cursor, GitHub Copilot, Antigravity, WorkBuddy, and TRAE Work setup. Details live in [`USAGE.md`](USAGE.md#12-mcp-的接入).
 
 ```bash
 node dist/bin/leafmem-agent.js install all
