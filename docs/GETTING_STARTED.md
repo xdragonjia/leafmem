@@ -98,3 +98,21 @@ leafmem-agent serve
 ```
 
 在 Insights 页能看到画像与 principle，在 Explorer 能看到记忆条目，即说明向量化与检索栈工作正常。
+
+
+---
+
+## 双宿主记忆拓扑（WorkBuddy + 昆仑小智）
+
+同时安装两个宿主时，安装器会询问记忆拓扑（也可用 `--memory` 指定）：
+
+- **shared（推荐，默认）**：两个宿主写入同一记忆池 `agent:workbuddy`，用户画像、蒸馏原则、召回完全共享；
+- **isolated**：各宿主写入各自 scope（`agent:kunlunxiaozhi` 等），记忆彼此隔离。
+
+```bash
+leafmem-agent install kunlunxiaozhi --memory shared    # 共用一套记忆
+leafmem-agent install kunlunxiaozhi --memory isolated  # 各自独立
+```
+
+控制台「宿主接入」页同样提供「共用一套记忆」开关。切换拓扑只改 mcp.json 的
+`LEAFMEM_SCOPE_ID`，历史数据可用 SQL 更新 scope_id 迁移。

@@ -21,6 +21,14 @@ export type AgentInstallOptions = {
   sessionsRoot?: string;
   skipMcp?: boolean;
   skipImport?: boolean;
+  /**
+   * Memory topology (2026-08-08 dual-config per user request):
+   * shared   = all WorkBuddy-family hosts write into the canonical
+   *            agent:workbuddy scope (one memory pool, shared profile/recall)
+   * isolated = each host keeps its own scope (agent:kunlunxiaozhi etc.)
+   * Defaults to isolated so existing single-host installs are unaffected.
+   */
+  sharedMemory?: boolean;
   skipInstructions?: boolean;
 };
 
@@ -32,6 +40,7 @@ export type ResolvedAgentInstallOptions = {
   skipMcp: boolean;
   skipImport: boolean;
   skipInstructions: boolean;
+  sharedMemory?: boolean;
 };
 
 export type AgentInstallResult = {
@@ -155,6 +164,7 @@ export function resolveAgentOptions(options: AgentInstallOptions = {}): Resolved
     skipMcp: options.skipMcp ?? false,
     skipImport: options.skipImport ?? false,
     skipInstructions: options.skipInstructions ?? false,
+    sharedMemory: options.sharedMemory,
   };
 }
 
@@ -464,7 +474,7 @@ async function writeJsonMcpConfig(
     ...(isWbFamily
       ? {
           LEAFMEM_SCOPE_TYPE: "agent",
-          LEAFMEM_SCOPE_ID: AGENTS[familyAgent].scopeId,
+          LEAFMEM_SCOPE_ID: options.sharedMemory ? "workbuddy" : AGENTS[familyAgent].scopeId,
           LEAFMEM_WORKBUDDY_HOME: AGENTS[familyAgent].defaultSessionsRoot(options.home),
         }
       : {}),

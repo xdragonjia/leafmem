@@ -55,6 +55,9 @@ Options:
   --mcp-path <path>      leafmem-mcp script path (default: sibling dist/bin/leafmem-mcp.js)
   --sessions-root <path> Override session root for a single agent import
   --home <path>          Home directory for agent config paths (default: current user home)
+  --memory <shared|isolated>  WorkBuddy/KunlunXiaoZhi memory topology:
+                              shared = one pooled memory across hosts (recommended),
+                              isolated = per-host separate scopes
   --skip-mcp             Do not install MCP configuration
   --skip-import          Do not import existing sessions
   --skip-instructions    Do not update agent instruction files
@@ -76,6 +79,8 @@ async function main(): Promise<void> {
 
   if (argv[0] === "install") {
     const { agents, options, serviceOptions, skipService } = parseInstallArgs(argv.slice(1));
+    const ask = (options as { _askShared?: () => Promise<boolean> })._askShared;
+    if (ask) options.sharedMemory = await ask();
     const results = [];
     for (const agent of agents) {
       results.push(await installAgent(agent, options));
@@ -135,6 +140,40 @@ function parseInstallArgs(argv: string[]) {
   const agents = parseAgentTarget(target);
   const parsed = parseSharedAgentOptions(argv, 1);
   const options = resolveAgentOptions(parsed.agentOptions);
+  // Memory topology dual-config (2026-08-08): --memory shared|isolated, or an
+  // interactive prompt on TTY when installing WorkBuddy-family hosts.
+  const memFlag = argv.find((a) => a === "--memory") ? argv[argv.indexOf("--memory") + 1] : undefined;
+  if (memFlag === "shared") options.sharedMemory = true;
+  else if (memFlag === "isolated") options.sharedMemory = false;
+  else if (
+    memFlag === undefined &&
+    process.stdin.isTTY &&
+    agents.some((a) => a === "workbuddy" || a === "kunlunxiaozhi")
+  ) {
+    process.stdout.write(
+      [
+        "",
+        "Memory topology for WorkBuddy / KunlunXiaoZhi hosts:",
+        "  1) shared   - both hosts write into ONE shared memory pool (agent:workbuddy)",
+        "  2) isolated - each host keeps its own separate memory scope",
+        "Choose [1/2, default 1]: ",
+      ].join("\n"),
+    );
+    // Synchronous-ish read is overkill; defer decision to caller via env-free answer:
+    // resolve with readline promise below in the async wrapper.
+    options.sharedMemory = true; // provisional; refined in async prompt below
+    const askShared = async () => {
+      const { createInterface } = await import("node:readline/promises");
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      try {
+        const ans = (await rl.question("")).trim();
+        return ans === "2" ? false : true;
+      } finally {
+        rl.close();
+      }
+    };
+    (options as { _askShared?: () => Promise<boolean> })._askShared = askShared;
+  }
   if (options.sessionsRoot && agents.length !== 1) {
     throw new Error("--sessions-root can only be used with a single agent");
   }

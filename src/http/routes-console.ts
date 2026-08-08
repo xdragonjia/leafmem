@@ -114,9 +114,57 @@ export async function handleConsoleRoutes(
       ).filter(
         (e) => ids.has(String(e.source_entity_id)) && ids.has(String(e.target_entity_id)),
       );
-      json(res, 200, { nodes, edges });
+      let totalMemoryLinks = 0;
+      try {
+        using db2 = openSqliteDatabase(storagePath);
+        totalMemoryLinks = Number(
+          (db2.prepare("SELECT COUNT(*) AS c FROM entity_links").get() as { c?: number } | undefined)?.c ?? 0,
+        );
+      } catch { /* best-effort */ }
+      json(res, 200, { nodes, edges, totalMemoryLinks });
     } catch {
-      json(res, 200, { nodes: [], edges: [] });
+      json(res, 200, { nodes: [], edges: [], totalMemoryLinks: 0 });
+    }
+    return;
+  }
+
+  // GET /v1/graph/entity?id= — entity detail: linked memories + relations.
+  if (path === "/v1/graph/entity" && req.method === "GET") {
+    const id = url.searchParams.get("id") ?? "";
+    try {
+      const storagePath = ctx.agents?.storagePath;
+      if (!storagePath || !id) {
+        json(res, 200, { entity: null, memories: [], relations: [] });
+        return;
+      }
+      using db = openSqliteDatabase(storagePath);
+      const entity = db
+        .prepare("SELECT id, name, kind, aliases_json FROM entities WHERE id = ?")
+        .get(id) as Record<string, unknown> | undefined;
+      const memories = db
+        .prepare(
+          `SELECT l.relation, l.confidence, m.id AS memory_id, m.content, m.kind AS memory_kind
+           FROM entity_links l
+           LEFT JOIN memory_items m ON m.id = l.memory_id
+           WHERE l.entity_id = ?
+           ORDER BY l.confidence DESC
+           LIMIT 60`,
+        )
+        .all(id) as Array<Record<string, unknown>>;
+      const relations = db
+        .prepare(
+          `SELECT r.relation, r.confidence, e.id AS other_id, e.name AS other_name, e.kind AS other_kind,
+                  CASE WHEN r.source_entity_id = ? THEN 'out' ELSE 'in' END AS dir
+           FROM entity_relations r
+           JOIN entities e ON e.id = CASE WHEN r.source_entity_id = ? THEN r.target_entity_id ELSE r.source_entity_id END
+           WHERE r.source_entity_id = ? OR r.target_entity_id = ?
+           ORDER BY r.confidence DESC
+           LIMIT 60`,
+        )
+        .all(id, id, id, id) as Array<Record<string, unknown>>;
+      json(res, 200, { entity: entity ?? null, memories, relations });
+    } catch {
+      json(res, 200, { entity: null, memories: [], relations: [] });
     }
     return;
   }
