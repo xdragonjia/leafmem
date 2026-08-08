@@ -1,214 +1,355 @@
-# LeafMem
+# 🍃 LeafMem
 
-Layered memory subsystem for AI agents.
+> 面向 AI Agent 的分层长期记忆引擎 —— 让 Agent 写得下、理得清、召得回，最终用记忆高效完成任务。
 
-LeafMem is a standalone long-term memory engine for AI agents. It is not a single memory table or one compressed summary. It keeps long-term memory, active working state, and task-local context in separate layers, then composes them when an agent needs recall.
+<p align="center">
+  <img alt="tests" src="https://img.shields.io/badge/tests-232%20passing-16a34a">
+  <img alt="node" src="https://img.shields.io/badge/node-%3E%3D22.13-5b6675">
+  <img alt="license" src="https://img.shields.io/badge/license-Proprietary-d97706">
+</p>
 
-LeafMem 是一个面向 AI 智能体的独立长期记忆引擎。它不是一张简单的记忆表，也不是单一滚动摘要，而是把长期记忆、当前工作状态和任务上下文分层保存，并在需要时组合召回。
+LeafMem 不是一张记忆表，也不是一份滚动摘要。它把**长期记忆、工作状态、任务上下文、实体图谱**分层保存，再在 Agent 需要时组合召回。整套系统服务于一个闭环：
 
-## Why / 为什么
+> **Agent 写记忆 → Agent 整理记忆 → 人 + Agent 共同管理 → 召回记忆指导任务**
 
-Most agent memory systems drift toward either full chat history or one rolling summary. LeafMem keeps the layers separate:
+---
 
-- Palace: durable records with scope, kind, source, tags, confidence, importance, and metadata
-- Active memory: compressed `context` and reusable `experience`
-- Task context: task transcript entries, rolling summaries, and decisions
-- Retrieval: local weighted scoring, optional embedding rerank, optional QMD backend
+## 📖 目录
 
-这样做的好处是：写入更可控，召回更容易解释，跨 agent 共享记忆时也能保留来源和标记，而不会把所有上下文揉成一团。
+1. [系统介绍](#-一系统介绍) —— 架构、四大 MCP 工具、分层记忆、自动化任务、纪律文件
+2. [安装与升级](#-二安装与升级) —— 引导你的 Agent 完成安装 / 升级
+3. [使用说明](#-三使用说明) —— 用户怎么用、Agent 怎么用
+4. [基准测试](#-基准测试)
+5. [文档索引](#-文档索引)
 
-## Highlights / 功能摘要
+---
 
-- SQLite by default, with WAL mode and FTS5
-- In-memory store for tests and ephemeral sessions
-- Scope-aware memory records: `user`, `task`, `agent`, `session`, `document`, `project`, `repo`
-- CJK-aware tokenizer for Chinese/Japanese/Korean text
-- Local builtin retrieval with no external API requirement
-- Optional OpenAI, Gemini, Voyage, or script-based embeddings
-- Active memory and task context managers
-- Runtime layer for turn capture and prompt-ready recall
-- 6 consolidated MCP tools plus local stdio MCP server
-- Local setup for Codex, Claude Code, Cursor, GitHub Copilot, Antigravity, WorkBuddy, KunlunXiaoZhi, and TRAE Work
-- Browser console and terminal TUI for agent setup
-- Hermes and OpenClaw compatibility adapters
-- Source, tags, metadata, and source history are preserved through writes and recall
+## 🧭 一、系统介绍
 
-## Install / 安装
+### 1.1 整体架构
 
-```bash
-npm install @xdragonjia/leafmem
+```mermaid
+flowchart TB
+    subgraph Hosts["🖥️ 宿主 Agent"]
+        WB["WorkBuddy"]
+        KXZ["昆仑小智"]
+        CODEX["Codex / Claude Code / Cursor …"]
+    end
+
+    subgraph MCP["🔌 MCP 4 工具（闭环）"]
+        W["memory_write<br/>写记忆"]
+        R["memory_recall<br/>召回"]
+        O["memory_organize<br/>整理"]
+        G["memory_govern<br/>管理"]
+    end
+
+    subgraph Layers["🗂️ 分层记忆（SQLite · WAL · FTS5）"]
+        PALACE["Palace 长期记忆<br/>note/lesson/decision/principle…"]
+        ACTIVE["Active 工作状态<br/>context / experience / profile"]
+        TASK["Task 任务上下文<br/>transcript / rolling summary"]
+        GRAPH["实体知识图谱<br/>entities / relations / links"]
+    end
+
+    subgraph Retrieval["🔎 召回引擎"]
+        BUILTIN["内置加权检索"]
+        FTS["FTS5 BM25"]
+        ENTITY["实体图谱加权"]
+        RERANK["BGE-M3 向量重排（可选）"]
+    end
+
+    subgraph Ops["🤖 自动化治理"]
+        DECAY["decay 衰减"]
+        REFLECT["reflect 蒸馏原则"]
+        PROFILE["profile 刷新画像"]
+        COMMIT["session commit 会话沉淀"]
+    end
+
+    subgraph Console["🖱️ 记忆控制台"]
+        UI["仪表盘 / 记忆浏览 / 洞察<br/>知识图谱 / 事件日志 / 召回检查 / 宿主接入"]
+    end
+
+    WB & KXZ & CODEX --> W & R & O & G
+    W --> PALACE & ACTIVE & TASK
+    W --> GRAPH
+    O --> PALACE & ACTIVE
+    O --> GRAPH
+    G --> PALACE
+    R --> Retrieval
+    Retrieval --> PALACE & ACTIVE & TASK & GRAPH
+    Ops --> O
+    PALACE & GRAPH & TASK --> Console
 ```
 
-Or from source:
+**设计要点**：写入可控、召回可解释、跨 Agent 共享时仍保留来源与标记，而不是把所有上下文揉成一团。
+
+### 1.2 四大 MCP 工具（闭环）
+
+LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个工具内部再按 `action` 细分：
+
+| 工具 | 环节 | action | 说明 |
+|------|------|--------|------|
+| `memory_write` | ✍️ 写记忆 | `remember` / `commit` / `task_append` / `active_distill` | 写入记录、提交会话沉淀、追加任务条目、蒸馏 active |
+| `memory_recall` | 🔎 召回 | `recall` / `search` / `get` / `list` / `task_window` / `active_get` | 组装召回上下文、检索、读单条/列表、任务窗口、读 active |
+| `memory_organize` | 🧹 整理 | `prepare` / `apply` / `reflect` / `profile` / `decay` / `calibrate` / `rebuild` | 维护、蒸馏原则、刷新画像、衰减、experience 校准重建 |
+| `memory_govern` | 👥 管理 | `update` / `delete` / `attribute` / `pin` | 更新/删除记录、归因召回价值、固定防衰减 |
+
+> 💡 这四个工具就是 Agent 与 LeafMem 交互的全部入口。安装器会把使用纪律注入宿主的指令文件，Agent 读到后就知道何时调用。
+
+### 1.3 分层记忆模型
+
+| 层 | 内容 | 特征 |
+|----|------|------|
+| **Palace** 长期记忆 | 持久记录，带 `scope`/`kind`/`source`/`tags`/`confidence`/`importance`/`metadata` | 可跨 Agent 共享，保留来源与标记 |
+| **Active** 工作状态 | `context`（当前上下文）/ `experience`（可复用经验）/ `profile`（用户画像） | 压缩、随治理更新 |
+| **Task** 任务上下文 | transcript 条目、rolling summary、决策 | 按 taskId 聚合 |
+| **实体图谱** | `entities` / `entity_relations` / `entity_links` | 支撑召回加权与控制台可视化 |
+
+**Scope 体系**：`user` / `task` / `agent` / `session` / `document` / `project` / `repo` —— 决定一条记忆对谁可见。
+
+### 1.4 召回引擎
+
+`memory_recall(action=recall)` 组装的是**四层上下文**：
+
+1. **active 层** —— 用户画像 + 当前 context + experience（画像已注入，保证蒸馏知识真正参与）
+2. **navigation 层** —— 命中的记忆导航
+3. **task 层** —— 任务窗口（如有 taskId）
+4. **palace/retrieval 层** —— 加权检索结果
+
+加权信号：**词法重叠 + hash 向量 + 实体图谱加权 + FTS5 BM25 + recency + importance + principle 加成**，过期记录自动降权。可选 BGE-M3 向量重排进一步提升。
+
+### 1.5 常规自动化任务
+
+安装后建议配置这些周期性治理任务（宿主内 automation）：
+
+| 任务 | 频率 | 作用 |
+|------|------|------|
+| `decay` 衰减 | 每周 | 陈旧且未被召回的低重要性记忆降权（不删除，pinned 豁免） |
+| `reflect` 蒸馏原则 | 每周 | 同标签 lesson/decision 聚类蒸馏为 `principle` |
+| `profile` 刷新画像 | 每周 | 基于 preference/identity 记忆 delta 更新用户画像 |
+| session `commit` 会话沉淀 | 每次会话收尾 | 宿主蒸馏的 rollingSummary 落库，触发治理 |
+
+> ⚠️ 这些整理动作**必须被真正触发**才有价值。LeafMem 的每周健康检查任务已内置 `decay → reflect → profile` 三连，避免"画像建了却从不召回、原则蒸馏了却不更新"的死结。
+
+### 1.6 嵌入纪律文件
+
+安装器会向宿主写入记忆使用纪律（recall-first、写入规范、scope 铁律等）。对 WorkBuddy 系宿主，纪律会投影到：
+
+- `SOUL.md` —— 记忆工作流纪律（recall 前置、write 时机、commit 收尾）
+- `MEMORY.md` —— 长期记忆摘要
+- `USER.md` / `IDENTITY.md` / `AGENTS.md` —— 用户画像与身份
+
+> 🔒 **纪律铁律**：写入时 `importance`/`confidence` 必须是数字而非字符串；`tags` 是扁平数组。违反会被拒收。
+
+---
+
+## 🚀 二、安装与升级
+
+LeafMem 的安装/升级**优先由你的 Agent 引导完成**——你只需要对 Agent 说一句话，它会引导你配置 API Key、选择双宿主拓扑、并完成 MCP 接入。
+
+### 2.1 通过 Agent 安装（推荐）
+
+直接对你的 Agent（WorkBuddy / 昆仑小智）说：
+
+> **“帮我安装 LeafMem 记忆引擎，并接入当前宿主。”**
+
+Agent 会依次引导你：
+
+1. **确认 Node.js 版本**（`>= 22.13.0`）
+2. **安装依赖** —— `npm install @xdragonjia/leafmem` 或从源码构建
+3. **选择双宿主记忆拓扑** ——
+   - `shared`（推荐）：WorkBuddy 与昆仑小智共用同一记忆池 `agent:workbuddy`
+   - `isolated`：各宿主独立记忆
+4. **配置 API Key** —— 免费的硅基流动 BGE-M3 向量化（可选）+ DeepSeek inferencer（可选）
+5. **写入宿主 MCP 配置 + 注入使用纪律**
+6. **信任 MCP** —— 安装后需要在宿主 MCP 管理页点击「信任」激活
+
+### 2.2 命令行安装
 
 ```bash
-git clone https://github.com/xdragonjia/leafmem.git
-cd leafmem
-npm install
-npm run build
-```
-
-Requirements:
-
-- Node.js `>= 22.13.0`
-- ESM environment
-
-Verify:
-
-```bash
-npm run check
-npm test
-```
-
-## Quick Start / 最小示例
-
-```ts
-import { createLeafMem } from "@xdragonjia/leafmem";
-import { createMemoryRuntime } from "@xdragonjia/leafmem/runtime";
-
-const memory = createLeafMem({
-  storage: { backend: "sqlite", path: ".leafmem/memory.sqlite" },
-});
-
-const runtime = createMemoryRuntime({
-  memory,
-  defaultScopes: [{ type: "user", id: "alice" }],
-});
-
-await runtime.captureTurn({
-  taskId: "reply-style",
-  taskTitle: "Reply style guidance",
-  userMessage: "Remember that I prefer concise Chinese replies.",
-});
-
-const recall = await runtime.buildRecallContext({
-  taskId: "reply-style",
-  userMessage: "How should I answer this user?",
-  maxChars: 800,
-});
-
-console.log(recall.injectedContext);
-```
-
-## MCP / Agent Setup
-
-Run the local MCP server:
-
-```bash
-npm run build
-node dist/bin/leafmem-mcp.js
-```
-
-Install LeafMem globally into supported coding agents:
-
-```bash
+# 全局安装到所有支持的宿主
 node dist/bin/leafmem-agent.js install all
+
+# 单宿主
+node dist/bin/leafmem-agent.js install workbuddy
+node dist/bin/leafmem-agent.js install kunlunxiaozhi
+
+# 指定记忆拓扑
+node dist/bin/leafmem-agent.js install kunlunxiaozhi --memory shared
 ```
 
-Update LeafMem and refresh agent entries:
+支持的宿主：
+
+```text
+workbuddy | kunlunxiaozhi | codex | claude | cursor | copilot | antigravity | trae | all
+```
+
+所有宿主默认指向同一个 SQLite：`~/.leafmem/memory.sqlite`
+
+### 2.3 通过 Agent 升级（推荐）
+
+对 Agent 说：
+
+> **“帮我升级 LeafMem 到最新版本。”**
+
+Agent 会拉取最新代码、重建、刷新各宿主的 MCP 配置与纪律注入。若工具接口变更，Agent 会提醒你**重新到 MCP 管理页点信任**。
+
+### 2.4 命令行升级
 
 ```bash
 node dist/bin/leafmem-agent.js update all
 ```
 
-This writes agent MCP config, imports existing local sessions, adds global memory-use instructions where the host supports an instruction file, and installs a user-level local service for the browser console. All supported agents point at the same default SQLite store:
-
-```text
-~/.leafmem/memory.sqlite
-```
-
-Supported targets:
-
-```text
-codex | claude | cursor | copilot | antigravity | workbuddy | kunlunxiaozhi | trae | all
-```
-
-Start the browser setup console:
+### 2.5 控制台与本地服务
 
 ```bash
+# 启动浏览器控制台
 node dist/bin/leafmem-agent.js ui
-```
 
-Manage the persistent local console service:
-
-```bash
+# 管理常驻服务
 node dist/bin/leafmem-agent.js service install
 node dist/bin/leafmem-agent.js service status
 node dist/bin/leafmem-agent.js service url
-```
 
-Start the terminal setup UI:
-
-```bash
+# 终端版
 node dist/bin/leafmem-agent.js tui
-node dist/bin/leafmem-agent.js tui --once
 ```
 
-这些入口都会复用同一套 agent manager：探测 MCP 配置、写入全局配置、导入历史 session，并显示每个 agent 已写入的 memory/task 数量。
+### 2.6 API Key 快速上手
 
-## Getting Started (API keys) / 快速上手
+LeafMem **开箱即用**（本地内置检索，零外部依赖）。如需向量化召回与反思蒸馏，按 [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) 配置：
 
-LeafMem runs out of the box with local builtin retrieval. To enable vectorized recall and reflection distillation, configure free embedding (SiliconFlow BGE-M3) and an optional inferencer (DeepSeek or any OpenAI-compatible model). See [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md).
+- **免费向量化**：硅基流动 BGE-M3
+- **可选 inferencer**：DeepSeek 或任意 OpenAI 兼容模型
 
-LeafMem 开箱即用（本地内置检索）。如需启用向量化召回与反思蒸馏，请按 [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) 配置免费的硅基流动向量化模型与可选的 DeepSeek inferencer。
+---
 
-## Benchmarks / 基准测试
+## 📚 三、使用说明
 
-Full methodology and per-category analysis live in [`benchmarks/BENCHMARKS.md`](benchmarks/BENCHMARKS.md). Numbers below were re-measured on this codebase on 2026-08-08 (builtin deterministic; BGE-M3 rerank via the SiliconFlow embedding API). See the benchmark document for reproduction commands.
+LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使用**。
 
-| Benchmark | Mode | R@5 | R@10 | NDCG@10 | LLM required |
-|-----------|------|-----|------|---------|--------------|
-| LongMemEval (500q) | Builtin, zero dependency | 89.6% | 94.6% | 0.834 | No |
-| LongMemEval (500q) | + BGE-M3 rerank | 95.8% | 97.6% | 0.916 | No |
-| LoCoMo (1986q) | Builtin, zero dependency | 84.1% | 92.0% | 0.733 | No |
-| LoCoMo (1986q) | + BGE-M3 rerank | 88.4% | 94.9% | 0.790 | No |
+### 3.1 用户怎么用
 
-README 只保留摘要数字。复现命令、数据集说明和结果解释请看 benchmark 文档。
+你不需要记命令，只需在对话里用自然语言触发：
 
-## Documentation / 文档
+| 你想做什么 | 对 Agent 说 | Agent 实际调用 |
+|-----------|------------|---------------|
+| 让它记住一件事 | “记住：以后先给结论再给证据” | `memory_write(action=remember)` |
+| 回忆之前的决定 | “我们之前是怎么定 X 方案的？” | `memory_recall(action=recall)` |
+| 改一条记忆 | “把那条偏好改成简洁英文回复” | `memory_govern(action=update)` |
+| 删一条记忆 | “删掉那条过时的记录” | `memory_govern(action=delete)` |
+| 保护重要记忆 | “把这条原则固定住，别被衰减” | `memory_govern(action=pin)` |
+| 主动整理 | “整理一下最近的记忆” | `memory_organize(action=reflect/profile/decay)` |
 
-| Document | 内容 |
-|----------|------|
-| [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) | API key setup guide (free SiliconFlow embeddings + optional DeepSeek inferencer), dual-host data strategy |
-| [`docs/USAGE.md`](docs/USAGE.md) | Step-by-step integration guide, including MCP, agent setup, UI/TUI, imports, and storage choices |
-| [`docs/WORKBUDDY.md`](docs/WORKBUDDY.md) | 普通用户把 LeafMem 安装并接入 WorkBuddy 的最短路径 |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layer design, module structure, recall flow, turn capture flow, SQLite schema |
-| [`docs/API.md`](docs/API.md) | Core APIs, runtime, retrieval, MCP tools, adapters, HTTP routes, package exports |
-| [`benchmarks/BENCHMARKS.md`](benchmarks/BENCHMARKS.md) | Benchmark methodology, commands, and full result notes |
+#### 记忆控制台
 
-## Package Exports / 包入口
+打开 `http://127.0.0.1:3377/console`（或 `leafmem-agent ui`），功能：
+
+| 页面 | 作用 |
+|------|------|
+| 📊 仪表盘 | 记忆总数、蒸馏原则、召回次数、类型/来源分布、最近活动 |
+| 📖 记忆浏览 | 检索、筛选（类型/来源/标签）、查看、删除记录 |
+| 💡 洞察 | 蒸馏原则列表、用户画像 |
+| 🕸️ 知识图谱 | 实体关系力导向图（预模拟稳定布局、邻接高亮、点击详情） |
+| ⏱️ 事件日志 | 写/改/删/召回的审计流水 |
+| 🔎 召回检查 | 模拟 Agent 检索，看实际召回了什么 |
+| 🔌 宿主接入 | 各宿主安装状态、MCP/纪律/session 导入 |
+| ❓ 帮助文档 | 本文档，支持目录跳转与搜索 |
+
+### 3.2 Agent 怎么用
+
+安装器已把纪律注入宿主，Agent 按以下闭环自主运行：
+
+#### ① 写记忆（`memory_write`）
+
+- **recall-first**：回答前先 `memory_recall(action=recall)`，除非请求完全自包含
+- **remember**：用户表达持久偏好/工作规则 → `memory_write(action=remember)`，可省略 scope（默认落当前宿主）
+- **commit**：重要工作完成或会话收尾 → 宿主先用自己的模型蒸馏 `rollingSummary`，再 `memory_write(action=commit)`，并附带 `activeContext`/`activeExperience`
+
+#### ② 整理记忆（`memory_organize`）
+
+| action | 作用 |
+|--------|------|
+| `reflect` | 同标签 lesson/decision 聚类蒸馏为 `principle`（节流，内部判断到期） |
+| `profile` | 基于 preference/identity delta 更新用户画像（只改 LLM 输出的 section） |
+| `decay` | 陈旧未召回的低重要性记忆降权（pinned 豁免，不删除） |
+| `prepare` / `apply` | 宿主中介式 active 维护：prepare 生成请求，apply 落库 |
+| `calibrate` / `rebuild` | experience 校准 / 重建 |
+
+#### ③ 管理记忆（`memory_govern`）
+
+- `update` / `delete`：用户要求修正或删除时（需显式 scope）
+- `attribute`：某条被召回的记忆**真的指导了工作**后，归因加权
+- `pin`：固定重要记忆防衰减
+
+#### ④ 召回（`memory_recall`）
+
+- 组装 active + navigation + task + palace 四层上下文
+- `search` / `get` / `list` 返回完整记录；`recall` 返回 prompt-ready 文本（record 内容已并入 injectedContext）
+
+### 3.3 纪律文件使用约定
+
+- **scope 铁律**：默认 scope 由 mcp.json 注入（如 `agent:workbuddy`），写入时不传 scope；必须指定时用当前宿主 scope
+- **召回省略 scope**：跨 Agent 召回共享记忆时不传 scope，让 LeafMem 搜共享池
+- **参数类型**：`importance`/`confidence` 是数字；`tags` 是扁平数组（XML 逐项）
+
+---
+
+## 📈 基准测试
+
+在 2026-08-08 于本代码库重测（内置确定性；BGE-M3 重排走硅基流动向量化）。完整方法与复现见 [`benchmarks/BENCHMARKS.md`](benchmarks/BENCHMARKS.md)。
+
+| Benchmark | 模式 | R@5 | R@10 | NDCG@10 | 需 LLM |
+|-----------|------|-----|------|---------|--------|
+| LongMemEval (500q) | 内置，零依赖 | 89.6% | 94.6% | 0.834 | 否 |
+| LongMemEval (500q) | + BGE-M3 重排 | 95.8% | 97.6% | 0.916 | 否 |
+| LoCoMo (1986q) | 内置，零依赖 | 84.1% | 92.0% | 0.733 | 否 |
+| LoCoMo (1986q) | + BGE-M3 重排 | 88.4% | 94.9% | 0.790 | 否 |
+
+---
+
+## 📂 文档索引
+
+| 文档 | 内容 |
+|------|------|
+| [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) | API Key 配置、双宿主数据策略 |
+| [`docs/USAGE.md`](docs/USAGE.md) | MCP、宿主接入、UI/TUI、导入、存储 |
+| [`docs/WORKBUDDY.md`](docs/WORKBUDDY.md) | WorkBuddy 最短接入路径 |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 分层设计、召回流、SQLite schema |
+| [`docs/API.md`](docs/API.md) | 核心 API、4 工具、HTTP 路由 |
+| [`benchmarks/BENCHMARKS.md`](benchmarks/BENCHMARKS.md) | 基准方法与完整结果 |
+
+---
+
+## 📦 包入口
 
 ```text
-@xdragonjia/leafmem
-@xdragonjia/leafmem/core
-@xdragonjia/leafmem/active
-@xdragonjia/leafmem/task
-@xdragonjia/leafmem/retrieval
-@xdragonjia/leafmem/maintenance
-@xdragonjia/leafmem/runtime
-@xdragonjia/leafmem/mcp
-@xdragonjia/leafmem/adapters
-@xdragonjia/leafmem/system
-@xdragonjia/leafmem/cloud
-@xdragonjia/leafmem/platform
-@xdragonjia/leafmem/http
-@xdragonjia/leafmem/auth
-@xdragonjia/leafmem/entity
-@xdragonjia/leafmem/inspect
-@xdragonjia/leafmem/bridge
-@xdragonjia/leafmem/products/coding
-@xdragonjia/leafmem/products/runtime
+@xdragonjia/leafmem            # 主入口
+@xdragonjia/leafmem/core       # 分层记忆核心
+@xdragonjia/leafmem/mcp        # 4 工具 + stdio MCP server
+@xdragonjia/leafmem/active     # Active 记忆（context/experience/profile）
+@xdragonjia/leafmem/task       # 任务上下文
+@xdragonjia/leafmem/entity     # 实体图谱
+@xdragonjia/leafmem/retrieval  # 检索（内置/向量/QMD）
+@xdragonjia/leafmem/maintenance# 治理（decay/reflect/profile）
+@xdragonjia/leafmem/runtime    # 召回上下文组装
+@xdragonjia/leafmem/http       # 控制台 HTTP
+@xdragonjia/leafmem/adapters   # Hermes/OpenClaw 兼容
 ```
 
-## Current Boundaries / 当前边界
+---
 
-- Builtin search is local and deterministic. Very large stores should use embedding rerank or QMD.
-- Remote embeddings are opt-in. API keys alone do not enable remote calls.
-- QMD support requires the `qmd` CLI in `PATH`.
-- Turn capture currently uses lightweight proposal extraction unless you provide an inferencer.
-- Markdown host compatibility is one-way SQLite to markdown after first import.
-- Generic adapters are thin by design. Host-specific wrappers should reuse host provider/model/auth when available.
+## ⚠️ 当前边界
 
-## License / 许可
+- 内置检索本地且确定；超大存储建议启用向量重排或 QMD
+- 远程向量化是显式开关，仅配 API Key 不会触发远程调用
+- QMD 需 `qmd` CLI 在 `PATH`
+- Turn capture 未配 inferencer 时用轻量提案抽取
+- Markdown 宿主兼容为导入后 SQLite → markdown 单向
 
-Proprietary. LeafMem is currently distributed under a private license (see [`LICENSE`](./LICENSE)).
+---
+
+## 🔒 许可
+
+专有许可（Proprietary）。LeafMem 当前以私有许可分发，详见 [`LICENSE`](./LICENSE)。
+
+<p align="center"><sub>🍃 LeafMem · Layered long-term memory for AI agents</sub></p>
