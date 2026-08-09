@@ -233,6 +233,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
       记忆浏览
     </button>
+    <button data-page="tasks" onclick="goPage('tasks')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+      任务上下文
+    </button>
     <button data-page="insights" onclick="goPage('insights')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></svg>
       洞察
@@ -248,10 +252,6 @@
     <button data-page="recall" onclick="goPage('recall')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
       召回检查
-    </button>
-    <button data-page="tasks" onclick="goPage('tasks')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
-      任务上下文
     </button>
     <button data-page="agents" onclick="goPage('agents')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
@@ -282,7 +282,7 @@
 </div>
 
 <div id="drawer">
-  <div class="dw-head"><b>记忆详情</b><button class="btn sm" onclick="closeDrawer()">关闭 ✕</button></div>
+  <div class="dw-head"><b id="drawer-title">记忆详情</b><button class="btn sm" onclick="closeDrawer()">关闭 ✕</button></div>
   <div class="dw-body" id="drawer-body"></div>
 </div>
 <div id="toasts"></div>
@@ -590,6 +590,7 @@ async function deleteMemory(id, scopeStr) {
 // ================================================================ 抽屉
 async function openDrawer(id) {
   const dw = document.getElementById('drawer'), body = document.getElementById('drawer-body');
+  const t = document.getElementById('drawer-title'); if (t) t.textContent = '记忆详情';
   dw.classList.add('open');
   let m = (state.explorerCache || []).find(x => x.id === id);
   if (!m) {
@@ -986,13 +987,13 @@ async function renderTasks(el) {
           <thead><tr><th>任务 ID</th><th>标题</th><th style="width:140px">范围</th><th style="width:90px">状态</th><th style="width:100px">更新</th><th style="width:70px"></th></tr></thead>
           <tbody>
             ${tasks.length ? tasks.map(t => `
-              <tr onclick="openTaskDetail('${esc(t.task_id)}')" style="cursor:pointer" title="展开该任务的工作态详情">
+              <tr onclick="openTaskDrawer('${esc(t.task_id)}')" style="cursor:pointer" title="右侧浮窗查看工作态详情">
                 <td class="mono-sm">${esc(trunc(t.task_id, 38))}</td>
                 <td>${esc(t.title)}</td>
                 <td><span class="pill p">${esc(t.scope_type)}:${esc(trunc(t.scope_id, 12))}</span></td>
                 <td><span class="pill ${t.status === 'completed' ? 'g' : 'b'}">${esc(t.status)}</span></td>
                 <td class="mono-sm">${timeAgo(new Date(t.updated_at).toISOString())}</td>
-                <td class="mono-sm">详情 →</td>
+                <td class="mono-sm">详情 ⮕</td>
               </tr>`).join('') : '<tr><td colspan="6"><div class="empty"><div class="glyph">⌀</div><div class="msg">暂无任务上下文</div></div></td></tr>'}
           </tbody>
         </table>
@@ -1002,28 +1003,32 @@ async function renderTasks(el) {
   } catch (err) { el.innerHTML = `<div class="empty"><div class="glyph">⚠</div><div class="msg">${esc(err.message)}</div></div>`; }
 }
 
-async function openTaskDetail(id) {
-  const box = document.getElementById('task-detail');
-  if (!box) return;
-  box.innerHTML = '<div class="loading">正在加载任务详情…</div>';
-  box.scrollIntoView({ behavior: 'smooth' });
-  try {
-    const d = await api('/v1/tasks/detail?id=' + encodeURIComponent(id));
+function openTaskDrawer(id) {
+  const dw = document.getElementById('drawer'), body = document.getElementById('drawer-body');
+  const title = document.getElementById('drawer-title');
+  if (title) title.textContent = '任务工作态详情';
+  dw.classList.add('open');
+  body.innerHTML = '<div class="loading">正在加载任务详情…</div>';
+  api('/v1/tasks/detail?id=' + encodeURIComponent(id)).then(d => {
     const t = d.task;
-    if (!t) { box.innerHTML = '<div class="empty"><div class="msg">任务不存在</div></div>'; return; }
-    box.innerHTML = `<div class="card" style="margin-top:14px">
-      <h3>${esc(t.title)} <span class="sub">${esc(t.task_id)}</span></h3>
-      <div class="mono-sm" style="margin:6px 0 12px">范围 ${esc(t.scope_type)}:${esc(t.scope_id)} · 状态 ${esc(t.status)} · 更新于 ${timeAgo(new Date(t.updated_at).toISOString())}</div>
-      ${d.rollingSummary ? `<div class="dw-lbl">Rolling Summary（任务进展摘要）</div><div style="font-size:13px;line-height:1.7;white-space:pre-wrap;background:#f8fafc;padding:10px 12px;border-radius:8px">${esc(d.rollingSummary)}</div>` : '<div class="empty"><div class="msg">暂无 rolling summary</div></div>'}
-      <div class="dw-lbl" style="margin-top:12px">Transcript 条目（${(d.entries || []).length}）</div>
-      ${(d.entries || []).length ? d.entries.map(e => `
-        <div style="padding:8px 0;border-bottom:1px solid var(--line)">
-          <div class="mono-sm">${esc(e.role)} · ${timeAgo(new Date(e.created_at).toISOString())}</div>
-          <div style="font-size:12.5px;line-height:1.6;margin-top:3px">${esc(trunc(e.content, 300))}</div>
-        </div>`).join('') : '<div class="empty"><div class="msg">该任务未追加 transcript 条目（transcript 由 task_append 显式写入）</div></div>'}
-      <div style="margin-top:10px" class="mono-sm">提示：长期有价值的知识会经 commit/durableMemories 沉淀为记忆记录；任务上下文本身是工作态，随任务结束归档。</div>
-    </div>`;
-  } catch (err) { box.innerHTML = `<div class="empty"><div class="msg">${esc(err.message)}</div></div>`; }
+    if (!t) { body.innerHTML = '<div class="empty"><div class="msg">任务不存在</div></div>'; return; }
+    body.innerHTML = `
+      <div class="dw-sec"><div style="display:flex;gap:6px;flex-wrap:wrap">
+        <span class="pill p">${esc(t.scope_type)}:${esc(t.scope_id)}</span>
+        <span class="pill ${t.status === 'completed' ? 'g' : 'b'}">${esc(t.status)}</span>
+      </div></div>
+      <div class="dw-sec"><div class="dw-lbl">任务</div><div class="dw-text">${esc(t.title)}</div>
+        <div class="mono-sm" style="margin-top:4px">${esc(t.task_id)}</div></div>
+      ${d.rollingSummary ? `<div class="dw-sec"><div class="dw-lbl">Rolling Summary（进展摘要）</div><div class="dw-text">${esc(d.rollingSummary)}</div></div>` : '<div class="dw-sec"><div class="dw-lbl">Rolling Summary</div><div class="empty"><div class="msg">暂无</div></div></div>'}
+      <div class="dw-sec"><div class="dw-lbl">Transcript 条目（${(d.entries || []).length}）</div>
+        ${(d.entries || []).length ? d.entries.map(e => `
+          <div style="padding:7px 0;border-bottom:1px solid var(--line)">
+            <div class="mono-sm">${esc(e.role)} · ${timeAgo(new Date(e.created_at).toISOString())}</div>
+            <div style="font-size:12.5px;line-height:1.6;margin-top:3px">${esc(e.content)}</div>
+          </div>`).join('') : '<div class="empty"><div class="msg">该任务未追加 transcript（由 task_append 显式写入）</div></div>'}
+      </div>
+      <div class="mono-sm" style="margin-top:10px">任务上下文是 Agent 工作态，不是记忆类型；长期知识经 commit 沉淀为记忆记录。</div>`;
+  }).catch(err => { body.innerHTML = `<div class="empty"><div class="msg">${esc(err.message)}</div></div>`; });
 }
 
 // ================================================================ 宿主接入
@@ -1264,7 +1269,12 @@ function docsSearchNow(q) {
     node.parentNode.replaceChild(frag, node);
   }
   if (counter) counter.textContent = count ? `${count} 处命中` : '无匹配';
-  if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (first) {
+    const page = document.getElementById('page');
+    const r = first.getBoundingClientRect();
+    const pr = page.getBoundingClientRect();
+    page.scrollTo({ top: page.scrollTop + (r.top - pr.top) - pr.height * 0.4, behavior: 'smooth' });
+  }
   // 目录按标题辅助过滤
   document.querySelectorAll('#docs-toc a').forEach(a => {
     a.style.display = a.textContent.toLowerCase().includes(query) ? '' : 'none';
