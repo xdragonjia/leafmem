@@ -206,6 +206,8 @@
   .doc-code-lang{position:absolute;top:6px;right:10px;font-size:10.5px;color:#94a3b8;font-family:var(--mono);text-transform:uppercase}
   .doc-mermaid .doc-code-lang{color:#b45309}
   .doc-flash{animation:docflash 1.2s ease}
+  mark.doc-hit{background:#fde047;color:#1a2332;padding:0 2px;border-radius:2px}
+  mark.doc-hit.doc-hit-first{outline:2px solid #d97706;outline-offset:1px}
   @keyframes docflash{0%{background:#dcfce7}100%{background:transparent}}
   #docs-toc{display:flex;flex-direction:column;gap:2px}
   #docs-toc a{display:block;padding:6px 10px;border-radius:6px;font-size:12.5px;color:var(--ink2);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -447,7 +449,7 @@ async function renderDashboard(el) {
         <div class="kpi c1" style="cursor:pointer" onclick="jumpExplorer()" title="去记忆浏览"><div class="lbl">记忆总数</div><div class="val">${stats.totalMemories}</div><div class="sub">${kinds.length} 种类型</div></div>
         <div class="kpi c2" style="cursor:pointer" onclick="jumpInsights()" title="去洞察"><div class="lbl">蒸馏原则</div><div class="val">${gov?.stats?.principleCount ?? 0}</div><div class="sub">reflect() 沉淀</div></div>
         <div class="kpi c3" style="cursor:pointer" onclick="jumpEvents('recall_built')" title="去事件日志（召回）"><div class="lbl">召回次数</div><div class="val">${gov?.stats?.totalRecallCount ?? 0}</div><div class="sub">${gov?.stats?.entityCount ?? 0} 实体 · ${gov?.stats?.entityLinkCount ?? 0} 关联</div></div>
-        <div class="kpi c4" style="cursor:pointer" onclick="jumpTasks()" title="去任务上下文（工作态，非记忆类型）"><div class="lbl">任务上下文</div><div class="val">${stats.taskCount ?? 0}</div><div class="sub">工作态 · ${Object.keys(stats.scopes || {}).length} 范围 · ${stats.activeDocCount ?? 0} 个活动记忆文档</div></div>
+        <div class="kpi c4" style="cursor:pointer" onclick="jumpTasks()" title="去任务上下文（工作态，非记忆类型）"><div class="lbl">任务上下文</div><div class="val">${stats.taskCount ?? 0}</div><div class="sub">工作态 · 非记忆类型 · ${Object.keys(stats.scopes || {}).length} 个范围</div></div>
       </div>
       <div class="grid2" style="grid-template-columns:1fr 1fr 1fr">
         <div class="card">
@@ -481,11 +483,11 @@ async function renderDashboard(el) {
         </div>
       </div>
       ${gov?.profile?.present ? `
-      <div class="card">
-        <h3>用户画像 <span class="sub">更新于 ${timeAgo(gov.profile.updatedAt)} · ${(gov.profile.sections ?? []).length} 个分节</span></h3>
+      <div class="card" style="cursor:pointer" onclick="jumpInsights()" title="去洞察 · 用户画像">
+        <h3>用户画像 <span class="sub">更新于 ${timeAgo(gov.profile.updatedAt)} · ${(gov.profile.sections ?? []).length} 个分节 →</span></h3>
         ${gov.profile.preamble ? `<div class="dw-text" style="color:var(--ink2)">${esc(trunc(gov.profile.preamble, 400))}</div>` : ''}
         <div class="tags-row">${(gov.profile.sections ?? []).map(s => `<span class="pill b">${esc(s.title)}</span>`).join('')}</div>
-        <div class="sub" style="font-size:12px;color:var(--ink2);margin-top:10px">完整内容见「洞察」→ 用户画像。</div>
+        <div class="sub" style="font-size:12px;color:var(--ink2);margin-top:10px">完整内容见「洞察」→ 用户画像（点击跳转）</div>
       </div>` : ''}
     </div>`;
   } catch (err) { el.innerHTML = `<div class="empty"><div class="glyph">⚠</div><div class="msg">${esc(err.message)}</div></div>`; }
@@ -1257,7 +1259,7 @@ function docsSearchNow(q) {
     while (idx !== -1) {
       frag.appendChild(document.createTextNode(text.slice(last, idx)));
       const mark = document.createElement('mark');
-      mark.className = 'doc-hit';
+      mark.className = 'doc-hit' + (count === 0 ? ' doc-hit-first' : '');
       mark.textContent = text.slice(idx, idx + query.length);
       frag.appendChild(mark);
       count++;
@@ -1270,10 +1272,13 @@ function docsSearchNow(q) {
   }
   if (counter) counter.textContent = count ? `${count} 处命中` : '无匹配';
   if (first) {
+    // 立即跳转（不用 smooth）：smooth 会被后续布局变化打断，直接赋值最可靠；
+    // 首个命中额外加脉冲高亮，视觉上明确"滚到了哪里"。
     const page = document.getElementById('page');
     const r = first.getBoundingClientRect();
     const pr = page.getBoundingClientRect();
-    page.scrollTo({ top: page.scrollTop + (r.top - pr.top) - pr.height * 0.4, behavior: 'smooth' });
+    page.scrollTop = page.scrollTop + (r.top - pr.top) - pr.height * 0.35;
+    first.classList.add('doc-flash');
   }
   // 目录按标题辅助过滤
   document.querySelectorAll('#docs-toc a').forEach(a => {

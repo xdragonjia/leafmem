@@ -234,7 +234,7 @@ function serveConsole(
       const indexPath = path.join(baseDir, "index.html");
       if (fs.existsSync(indexPath)) {
         const content = fs.readFileSync(indexPath);
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
         res.end(content);
         return;
       }
@@ -246,7 +246,10 @@ function serveConsole(
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
     const content = fs.readFileSync(filePath);
-    res.writeHead(200, { "Content-Type": contentType });
+    // console 是开发期高频迭代的单页应用，html/js 一律禁缓存，避免用户浏览器跑旧 JS
+    const headers: Record<string, string> = { "Content-Type": contentType };
+    if (ext === ".html" || ext === ".js" || ext === ".css") headers["Cache-Control"] = "no-store";
+    res.writeHead(200, headers);
     res.end(content);
   } catch {
     res.writeHead(500);
