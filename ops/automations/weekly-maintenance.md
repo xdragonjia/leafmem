@@ -17,7 +17,7 @@
 3. 真重复检测与合并（内容哈希，禁止前缀聚类）。
 4. 碎片簇整合（同日期+同 context ≥3 条 → 按九规则整合）。
 5. 原则蒸馏（reflect 宿主版）+ 用户画像刷新（profile 宿主版）+ 衰减降权（decay）。
-6. 镜像同步（ops/mirror-sync.js，默认 ~/.leafmem/mirror）。
+6. 镜像同步：node <LeafMem 安装目录>/ops/mirror-sync.js（安装目录 = `npm root -g` 结果下的 @xdragonjia/leafmem；默认写 ~/.leafmem/mirror，可 --mirror-dir 覆盖）。
 7. 报告：有整理动作才推送（规模变化/删除/整合/新 principle/画像变更/降权数）；
    无动作则静默通过，仅写当日记忆日志。
 </task>

@@ -12,7 +12,7 @@ LeafMem 观察记录脚本（2026-08-07，Phase 9 闭环）
   daily  —— 静默采集 + 追加日志；仅当出现 ALERT/WARN 时打印 [NEED_PUSH] 标记
   weekly —— 在 daily 基础上，额外生成周对比摘要（vs 上一次 weekly 记录）并总是打印 [NEED_PUSH]
 
-数据源：直接读 SQLite（/Users/dragon/.leafmem/memory.sqlite），快速且无需服务在线。
+数据源：直接读 SQLite（~/.leafmem/memory.sqlite，可 LEAFMEM_DB 覆盖），快速且无需服务在线。
 """
 import json
 import os
@@ -22,7 +22,7 @@ import time
 from datetime import datetime, timezone
 
 DB = os.path.expanduser("~/.leafmem/memory.sqlite")
-LOG_DIR = "/Users/dragon/WorkBuddy/outputs/项目/leafmem-productization/runs/observation"
+LOG_DIR = os.environ.get("LEAFMEM_OBSERVATION_LOG") or os.path.join(os.path.expanduser("~"), ".leafmem", "observation")
 LOG = os.path.join(LOG_DIR, "leafmem-observation-log.jsonl")
 SCOPE = "workbuddy"
 

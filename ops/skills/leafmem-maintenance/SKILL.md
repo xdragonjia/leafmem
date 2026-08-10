@@ -206,8 +206,8 @@ description: >
   </checkpoints>
 
   <references>
-    <file path="~/projects/leafmem/ops/mirror-sync.js">镜像同步脚本</file>
-    <file path="~/projects/leafmem/ops/consolidation.js">机械去重脚本（互补，需独立 key，可选）</file>
+    <file path="<LeafMem 安装目录>/ops/mirror-sync.js">镜像同步脚本（安装目录=`npm root -g`/@xdragonjia/leafmem）</file>
+    <file path="<LeafMem 安装目录>/ops/consolidation.js">机械去重脚本（互补，需独立 inferencer key，可选；源码用户直接用）</file>
   </references>
 
   <notes>
