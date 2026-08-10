@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.leafmem.agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/dragon/.workbuddy/binaries/node/versions/22.22.2/bin/node</string>
+    <string>/Users/dragon/projects/leafmem/dist/bin/leafmem-agent.js</string>
+    <string>serve</string>
+    <string>--config</string>
+    <string>/Users/dragon/.leafmem/agent-service.json</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LEAFMEM_RERANK_URL</key>
+    <string>https://api.siliconflow.cn/v1/rerank</string>
+    <key>LEAFMEM_RERANK_MODEL</key>
+    <string>BAAI/bge-reranker-v2-m3</string>
+    <key>LEAFMEM_RERANK_TIMEOUT_MS</key>
+    <string>3000</string>
+    <key>LEAFMEM_RERANK_TOP_K</key>
+    <string>40</string>
+    <key>OPENAI_API_KEY</key>
+    <string>__SILICONFLOW_API_KEY__</string>
+    <key>LEAFMEM_EMBEDDINGS_PROVIDER</key>
+    <string>openai</string>
+    <key>LEAFMEM_EMBEDDINGS_MODEL</key>
+    <string>BAAI/bge-m3</string>
+    <key>LEAFMEM_EMBEDDINGS_BASE_URL</key>
+    <string>https://api.siliconflow.cn</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/dragon/.leafmem/agent-service.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/dragon/.leafmem/agent-service.err.log</string>
+</dict>
+</plist>

@@ -11,6 +11,8 @@
 | `mirror-sync.js` | 导出全量记忆到 backups/leafmem-mirror/（MCP 降级兜底） | consolidation 自动调用；可手动跑 |
 | `sqlite-backup.sh` | SQLite 每日 .backup + 7 天轮转 | launchd 每日 03:15 |
 | `launchd/com.dragon.leafmem-sqlite-backup.plist` | 备份任务的 launchd 模板 | 部署于 ~/Library/LaunchAgents/ |
+| `launchd/com.leafmem.agent.plist.template` | 常驻服务 plist 模板（Key 为占位符，不入库） | install-agent-plist.sh 注入后部署 |
+| `launchd/install-agent-plist.sh` | 从模板注入 mcp.json 中的 API Key 并 bootstrap 服务 | 手动执行 |
 
 ## 部署位置（软链接，勿在部署位置直接改文件）
 
