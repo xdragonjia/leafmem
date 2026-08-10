@@ -223,7 +223,7 @@ Useful environment variables:
 ```bash
 LEAFMEM_STORAGE_PATH="$HOME/.leafmem/memory.sqlite"
 LEAFMEM_SCOPE_TYPE=agent
-LEAFMEM_SCOPE_ID=codex
+LEAFMEM_SCOPE_ID=kunlunxiaozhi
 LEAFMEM_RETRIEVAL_BACKEND=builtin
 LEAFMEM_EMBEDDINGS_PROVIDER=openai
 LEAFMEM_EMBEDDINGS_MODEL=text-embedding-3-small

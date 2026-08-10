@@ -18,7 +18,7 @@ test("agent import scheduler skips overlapping runs", async () => {
       storagePath: join(tmpdir(), "leafmem-scheduler-test.sqlite"),
       mcpPath: join(tmpdir(), "leafmem-mcp.js"),
     },
-    agents: ["codex"],
+    agents: ["workbuddy"],
     intervalMs: 60_000,
     importOne: async () => {
       calls += 1;

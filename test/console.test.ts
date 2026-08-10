@@ -56,11 +56,11 @@ describe("Console API routes", () => {
       body: JSON.stringify({ kind: "preference", content: "User prefers dark mode", tags: ["ui"] }),
     });
     const agentRecord = await memory.remember({
-      scope: { type: "agent", id: "codex" },
+      scope: { type: "agent", id: "kunlunxiaozhi" },
       kind: "note",
-      content: "Codex imported session remembers shared console visibility",
-      source: "codex_session_import",
-      tags: ["codex", "session"],
+      content: "昆仑小智 imported session remembers shared console visibility",
+      source: "kunlunxiaozhi_session_import",
+      tags: ["kunlunxiaozhi", "session"],
     });
     agentMemoryId = agentRecord.id;
   });
@@ -93,7 +93,7 @@ describe("Console API routes", () => {
     const data = (await res.json()) as Record<string, unknown>;
     assert.equal(data.totalMemories, 3);
     const scopes = data.scopes as Record<string, number>;
-    assert.equal(scopes["agent:codex"], 1);
+    assert.equal(scopes["agent:kunlunxiaozhi"], 1);
   });
 
   it("GET /v1/memories keeps project-only default and supports shared view", async () => {
@@ -107,7 +107,7 @@ describe("Console API routes", () => {
     const sharedData = (await sharedRes.json()) as Record<string, unknown>;
     const memories = sharedData.memories as Array<Record<string, unknown>>;
     assert.equal(memories.length, 3);
-    assert.ok(memories.some((record) => (record.scope as Record<string, unknown>).id === "codex"));
+    assert.ok(memories.some((record) => (record.scope as Record<string, unknown>).id === "kunlunxiaozhi"));
   });
 
   it("GET /v1/events returns paginated events", async () => {
@@ -146,7 +146,7 @@ describe("Console API routes", () => {
     assert.equal(res.status, 200);
     const data = (await res.json()) as Record<string, unknown>;
     const hits = data.hits as Array<Record<string, unknown>>;
-    assert.ok(hits.some((hit) => ((hit.record as Record<string, unknown>).scope as Record<string, unknown>).id === "codex"));
+    assert.ok(hits.some((hit) => ((hit.record as Record<string, unknown>).scope as Record<string, unknown>).id === "kunlunxiaozhi"));
   });
 
   it("DELETE /v1/memories/:id?view=shared does not delete agent-scoped memories with a project key", async () => {
@@ -174,10 +174,10 @@ describe("Console API routes", () => {
     const data = (await res.json()) as Record<string, unknown>;
     assert.equal(data.storagePath, join(agentHome, "memory.sqlite"));
     const agents = data.agents as Array<Record<string, unknown>>;
-    assert.equal(agents.length, 8);
-    const codex = agents.find((agent) => agent.agent === "codex");
-    assert.ok(codex);
-    assert.equal((codex.sessions as Record<string, unknown>).rootExists, false);
+    assert.equal(agents.length, 2);
+    const wb = agents.find((agent) => agent.agent === "workbuddy");
+    assert.ok(wb);
+    assert.equal((wb.sessions as Record<string, unknown>).rootExists, false);
   });
 
   it("GET /console serves the console HTML", async () => {

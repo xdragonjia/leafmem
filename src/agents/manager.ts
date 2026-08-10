@@ -10,7 +10,9 @@ import { createWorkBuddyMemoryAdapter, writeWorkBuddyInstructions } from "../ada
 import { openSqliteDatabase } from "../system/sqlite.js";
 import { leafmemEnv } from "../system/env-compat.js";
 
-export const AGENT_IDS = ["workbuddy", "kunlunxiaozhi", "codex", "claude", "cursor", "copilot", "antigravity", "trae"] as const;
+// Phase 9 (2026-08-10): product positioned for WorkBuddy + 昆仑小智 only.
+// Codex/Claude/Cursor/Copilot/Antigravity/TRAE removed per user decision.
+export const AGENT_IDS = ["workbuddy", "kunlunxiaozhi"] as const;
 
 export type AgentId = (typeof AGENT_IDS)[number];
 
@@ -92,46 +94,6 @@ type AgentDefinition = {
 };
 
 export const AGENTS: Record<AgentId, AgentDefinition> = {
-  codex: {
-    label: "Codex",
-    scopeId: "codex",
-    importBin: "leafmem-codex-import",
-    defaultSessionsRoot: (home) => join(home, ".codex", "sessions"),
-    configPath: (home) => join(home, ".codex", "config.toml"),
-    instructionsPath: (home) => join(home, ".codex", "AGENTS.md"),
-  },
-  claude: {
-    label: "Claude Code",
-    scopeId: "claude",
-    importBin: "leafmem-claude-import",
-    defaultSessionsRoot: (home) => join(home, ".claude", "projects"),
-    configPath: (home) => join(home, ".claude.json"),
-    instructionsPath: (home) => join(home, ".claude", "CLAUDE.md"),
-  },
-  cursor: {
-    label: "Cursor",
-    scopeId: "cursor",
-    importBin: "leafmem-cursor-import",
-    defaultSessionsRoot: (home) => join(home, "Library", "Application Support", "Cursor", "User"),
-    configPath: (home) => join(home, ".cursor", "mcp.json"),
-    instructionsPath: (home) => join(home, ".cursor", "rules", "leafmem.mdc"),
-  },
-  copilot: {
-    label: "GitHub Copilot",
-    scopeId: "copilot",
-    importBin: "leafmem-copilot-import",
-    defaultSessionsRoot: (home) => join(home, "Library", "Application Support", "Code", "User"),
-    configPath: (home) => join(home, ".copilot", "mcp-config.json"),
-    instructionsPath: (home) => join(home, ".copilot", "copilot-instructions.md"),
-  },
-  antigravity: {
-    label: "Antigravity",
-    scopeId: "antigravity",
-    importBin: "leafmem-antigravity-import",
-    defaultSessionsRoot: (home) => join(home, ".gemini", "antigravity", "brain"),
-    configPath: (home) => join(home, ".gemini", "antigravity", "mcp_config.json"),
-    instructionsPath: (home) => join(home, ".gemini", "GEMINI.md"),
-  },
   workbuddy: {
     label: "WorkBuddy",
     scopeId: "workbuddy",
@@ -145,13 +107,6 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
     defaultSessionsRoot: (home) => join(home, ".kunlunxiaozhi"),
     configPath: (home) => join(home, ".kunlunxiaozhi", "mcp.json"),
     instructionsPath: (home) => join(home, ".kunlunxiaozhi", "MEMORY.md"),
-  },
-  trae: {
-    label: "TRAE Work",
-    scopeId: "trae",
-    defaultSessionsRoot: (home) => join(home, "Library", "Application Support", "TRAE SOLO CN", "User"),
-    configPath: (home) => join(home, "Library", "Application Support", "TRAE SOLO CN", "User", "mcp.json"),
-    instructionsPath: (home) => join(home, ".trae", "skills", "leafmem-memory", "SKILL.md"),
   },
 };
 
@@ -251,20 +206,6 @@ export async function installInstructions(
   if (!path) {
     return false;
   }
-  if (agent === "cursor") {
-    return await writeCursorRule(path, instructionBlock(agent));
-  }
-  if (agent === "trae") {
-    return await writeTraeSkill(path, instructionBlock(agent));
-  }
-  if (agent === "antigravity") {
-    const changedGemini = await writeMarkedBlock(path, instructionBlock(agent));
-    const changedMcp = await writeTextIfChanged(
-      antigravityMcpInstructionsPath(options.home),
-      `${mcpInstructionText()}\n`,
-    );
-    return changedGemini || changedMcp;
-  }
   if (isWorkBuddyFamily(agent)) {
     return await writeWorkBuddyInstructions(path, workBuddyUpdateCommand(agent));
   }
@@ -286,11 +227,9 @@ export async function getAgentStatus(
   const sessionsRoot = options.sessionsRoot ?? config.defaultSessionsRoot(options.home);
   const instructionsPath = config.instructionsPath?.(options.home);
   const mcp = await inspectMcpConfig(agent, options);
-  const installedInstructions = agent === "antigravity"
-    ? await antigravityInstructionsInstalled(options.home)
-    : instructionsPath
-      ? await textIncludes(instructionsPath, "leafmem-agent-instructions:start")
-      : false;
+  const installedInstructions = instructionsPath
+    ? await textIncludes(instructionsPath, "leafmem-agent-instructions:start")
+    : false;
 
   return {
     agent,
@@ -316,68 +255,13 @@ export async function getAgentStatus(
 }
 
 async function installMcp(agent: AgentId, options: ResolvedAgentInstallOptions): Promise<void> {
-  if (agent === "codex") {
-    await writeCodexMcpConfig(options);
-    return;
-  }
-  if (agent === "claude") {
-    await runClaudeMcpInstall(options);
-    return;
-  }
-  if (agent === "cursor") {
-    await writeJsonMcpConfig(AGENTS.cursor.configPath(options.home), "cursor", options);
-    return;
-  }
-  if (agent === "antigravity") {
-    await writeJsonMcpConfig(AGENTS.antigravity.configPath(options.home), "antigravity", options);
-    return;
-  }
-  if (agent === "workbuddy") {
-    await writeJsonMcpConfig(AGENTS.workbuddy.configPath(options.home), "workbuddy", options);
-    return;
-  }
-  if (agent === "kunlunxiaozhi") {
-    await writeJsonMcpConfig(AGENTS.kunlunxiaozhi.configPath(options.home), "kunlunxiaozhi", options);
-    return;
-  }
-  if (agent === "trae") {
-    await writeJsonMcpConfig(AGENTS.trae.configPath(options.home), "trae", options);
-    return;
-  }
-  await writeJsonMcpConfig(AGENTS.copilot.configPath(options.home), "copilot", options);
+  await writeJsonMcpConfig(AGENTS[agent].configPath(options.home), agent, options);
 }
 
 async function inspectMcpConfig(
   agent: AgentId,
   options: ResolvedAgentInstallOptions,
 ): Promise<AgentStatus["mcp"]> {
-  if (agent === "codex") {
-    const text = await readText(AGENTS.codex.configPath(options.home));
-    const configured = text.includes("[mcp_servers.leafmem]");
-    return {
-      configured,
-      storagePathMatches: configured && text.includes(`LEAFMEM_STORAGE_PATH = "${escapeToml(options.storagePath)}"`),
-      command: configured ? "node" : undefined,
-      args: configured && text.includes(options.mcpPath) ? [options.mcpPath] : undefined,
-    };
-  }
-
-  if (agent === "claude") {
-    try {
-      const output = await execFileAsync("claude", ["mcp", "get", "leafmem"], 5000);
-      const text = `${output.stdout}\n${output.stderr}`;
-      const configured = text.includes("leafmem");
-      return {
-        configured,
-        storagePathMatches: configured && text.includes(options.storagePath),
-        command: configured ? "node" : undefined,
-        args: configured && text.includes(options.mcpPath) ? [options.mcpPath] : undefined,
-      };
-    } catch {
-      return { configured: false, storagePathMatches: false };
-    }
-  }
-
   const config = await readJsonObject(AGENTS[agent].configPath(options.home));
   const server = asObject(asObject(config.mcpServers).leafmem);
   const env = asObject(server.env);
@@ -421,41 +305,11 @@ async function countImported(agent: AgentId, storagePath: string): Promise<Agent
   }
 }
 
-async function writeCodexMcpConfig(options: ResolvedAgentInstallOptions): Promise<void> {
-  const configPath = AGENTS.codex.configPath(options.home);
-  const current = await readText(configPath);
-  const next = `${removeTomlTable(current, "mcp_servers.leafmem").trimEnd()}
 
-[mcp_servers.leafmem]
-command = "node"
-args = ["${escapeToml(options.mcpPath)}"]
-
-[mcp_servers.leafmem.env]
-LEAFMEM_STORAGE_PATH = "${escapeToml(options.storagePath)}"
-`;
-  await writeText(configPath, `${next.trimStart()}\n`);
-}
-
-async function runClaudeMcpInstall(options: ResolvedAgentInstallOptions): Promise<void> {
-  const json = JSON.stringify({
-    type: "stdio",
-    command: "node",
-    args: [options.mcpPath],
-    env: {
-      LEAFMEM_STORAGE_PATH: options.storagePath,
-    },
-  });
-  try {
-    await execFileAsync("claude", ["mcp", "remove", "--scope", "user", "leafmem"], 10000);
-  } catch {
-    // No existing user-level server to replace.
-  }
-  await execFileAsync("claude", ["mcp", "add-json", "--scope", "user", "leafmem", json], 10000);
-}
 
 async function writeJsonMcpConfig(
   configPath: string,
-  format: "cursor" | "copilot" | "antigravity" | "workbuddy" | "kunlunxiaozhi" | "trae",
+  format: AgentId,
   options: ResolvedAgentInstallOptions,
 ): Promise<void> {
   const config = await readJsonObject(configPath);
@@ -467,38 +321,20 @@ async function writeJsonMcpConfig(
   // and replace the absolute node path with a PATH-dependent bare "node".
   const existing = asObject(servers.leafmem);
   const existingEnv = asObject(existing.env);
-  const isWbFamily = format === "workbuddy" || format === "kunlunxiaozhi";
-  const familyAgent = isWbFamily ? format : "workbuddy";
+  // Phase 9: both remaining hosts are WorkBuddy-family (workbuddy/kunlunxiaozhi).
+  // sharedMemory → single agent:workbuddy pool (memories + graph + profile + active).
   const coreEnv = {
     LEAFMEM_STORAGE_PATH: options.storagePath,
-    ...(isWbFamily
-      ? {
-          LEAFMEM_SCOPE_TYPE: "agent",
-          LEAFMEM_SCOPE_ID: options.sharedMemory ? "workbuddy" : AGENTS[familyAgent].scopeId,
-          LEAFMEM_WORKBUDDY_HOME: AGENTS[familyAgent].defaultSessionsRoot(options.home),
-        }
-      : {}),
+    LEAFMEM_SCOPE_TYPE: "agent",
+    LEAFMEM_SCOPE_ID: options.sharedMemory ? "workbuddy" : AGENTS[format].scopeId,
+    LEAFMEM_WORKBUDDY_HOME: AGENTS[format].defaultSessionsRoot(options.home),
   };
   const env = { ...existingEnv, ...coreEnv };
   const command =
     typeof existing.command === "string" && existing.command.trim() !== ""
       ? existing.command
       : "node";
-  servers.leafmem =
-    format === "cursor" || format === "antigravity" || isWbFamily || format === "trae"
-      ? {
-          command,
-          args: [options.mcpPath],
-          env,
-          ...(format === "trae" ? { disabled: false } : {}),
-        }
-      : {
-          type: "local",
-          command,
-          args: [options.mcpPath],
-          env,
-          tools: ["*"],
-        };
+  servers.leafmem = { command, args: [options.mcpPath], env };
   config.mcpServers = servers;
   await writeJson(configPath, config);
 }
@@ -539,61 +375,10 @@ Memory lookup:
 <!-- leafmem-agent-instructions:end -->`;
 }
 
-function mcpInstructionText(): string {
-  return [
-    "Use memory_recall with action='recall' and no scopeType/scopeId when continuity or prior decisions matter, so LeafMem can search shared memory across agents.",
-    "Use memory_write with action='remember' for durable user preferences, facts, or explicit remember requests.",
-    "Use memory_write with action='commit' when the host agent has already distilled a session; include activeContext/activeExperience when available, and follow maintenanceRequest if returned.",
-    "Use memory_organize for periodic curation (reflect/profile/decay) and memory_govern for user-driven corrections (update/delete/attribute/pin).",
-  ].join(" ");
-}
 
-function antigravityMcpInstructionsPath(home: string): string {
-  return join(home, ".gemini", "antigravity", "mcp", "leafmem", "instructions.md");
-}
 
-async function antigravityInstructionsInstalled(home: string): Promise<boolean> {
-  return (
-    await textIncludes(AGENTS.antigravity.instructionsPath!(home), "leafmem-agent-instructions:start")
-  ) || (
-    await textIncludes(antigravityMcpInstructionsPath(home), "memory_recall")
-  );
-}
 
-async function writeCursorRule(path: string, block: string): Promise<boolean> {
-  const current = await readText(path);
-  if (current.trim()) {
-    return await writeMarkedBlock(path, block);
-  }
-  return await writeMarkedBlock(
-    path,
-    `---
-description: LeafMem host-mediated memory workflow
-globs:
-alwaysApply: true
----
 
-${block}`,
-  );
-}
-
-async function writeTraeSkill(path: string, block: string): Promise<boolean> {
-  const current = await readText(path);
-  if (current.trim()) {
-    return await writeMarkedBlock(path, block);
-  }
-  return await writeMarkedBlock(
-    path,
-    `---
-name: leafmem-memory
-description: Use LeafMem shared memory through MCP when prior decisions, user preferences, project conventions, or session continuity matter.
----
-
-# LeafMem Memory
-
-${block}`,
-  );
-}
 
 async function writeMarkedBlock(path: string, block: string): Promise<boolean> {
   const current = await readText(path);
@@ -668,31 +453,7 @@ function stringArray(value: unknown): string[] | undefined {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : undefined;
 }
 
-function removeTomlTable(content: string, tableName: string): string {
-  const lines = content.split("\n");
-  const output: string[] = [];
-  let skipping = false;
-  const tableHeader = `[${tableName}]`;
-  const nestedPrefix = `[${tableName}.`;
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed === tableHeader || trimmed.startsWith(nestedPrefix)) {
-      skipping = true;
-      continue;
-    }
-    if (skipping && trimmed.startsWith("[") && !trimmed.startsWith(nestedPrefix)) {
-      skipping = false;
-    }
-    if (!skipping) {
-      output.push(line);
-    }
-  }
-  return output.join("\n");
-}
 
-function escapeToml(value: string): string {
-  return value.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"");
-}
 
 function shellQuote(value: string): string {
   return /^[A-Za-z0-9_/:=.,+-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
@@ -719,6 +480,11 @@ function parseJsonOutput(stdout: string): Record<string, unknown> {
   return asObject(parsed);
 }
 
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
+}
+
 function execFileAsync(
   file: string,
   args: string[],
@@ -734,8 +500,4 @@ function execFileAsync(
       resolve({ stdout, stderr });
     });
   });
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }

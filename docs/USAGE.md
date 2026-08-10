@@ -243,7 +243,7 @@ import { createSessionMemoryAdapter } from "@xdragonjia/leafmem/adapters";
 
 const adapter = createSessionMemoryAdapter({
   memory,
-  defaultScopes: [{ type: "session", id: "codex-run-001" }],
+  defaultScopes: [{ type: "session", id: "workbuddy-run-001" }],
 });
 
 await adapter.beforePrompt({ userMessage: "下一步？", taskId: "release" });
@@ -502,10 +502,10 @@ OpenClaw、Hermes 这类 runtime / wrapper 自己能拿到 provider key 或 runt
 
 ```json
 {
-  "scope": { "type": "agent", "id": "codex" },
+  "scope": { "type": "agent", "id": "kunlunxiaozhi" },
   "kind": "preference",
   "content": "用户希望代码修复走根因路径，不要堆兜底补丁。",
-  "source": "codex",
+  "source": "kunlunxiaozhi",
   "tags": ["coding", "preference"],
   "metadata": {
     "project": "leafmem",
@@ -532,30 +532,19 @@ node dist/bin/leafmem-mcp.js
 ```bash
 LEAFMEM_STORAGE_PATH=/custom/path/memory.sqlite
 LEAFMEM_SCOPE_TYPE=agent
-LEAFMEM_SCOPE_ID=codex
+LEAFMEM_SCOPE_ID=kunlunxiaozhi
 LEAFMEM_RETRIEVAL_BACKEND=builtin
 LEAFMEM_EMBEDDINGS_PROVIDER=openai
 LEAFMEM_EMBEDDINGS_MODEL=text-embedding-3-small
 ```
 
-接到 Codex 的方式：
+接到昆仑小智的最简单方式：
 
 ```bash
-codex mcp add leafmem \
-  --env LEAFMEM_SCOPE_TYPE=agent \
-  --env LEAFMEM_SCOPE_ID=codex \
-  -- node /absolute/path/to/leafmem/dist/bin/leafmem-mcp.js
+node dist/bin/leafmem-agent.js install kunlunxiaozhi
 ```
 
-如果当前 Codex 会话没有立刻看到新 server，开一个新会话再试。
-
-接到 Claude Code 的方式：
-
-```bash
-claude mcp add-json -s project leafmem '{"type":"stdio","command":"node","args":["/absolute/path/to/leafmem/dist/bin/leafmem-mcp.js"],"env":{"LEAFMEM_SCOPE_TYPE":"agent","LEAFMEM_SCOPE_ID":"claude"}}'
-```
-
-这条命令会在当前项目写入 `.mcp.json`。可以用 `claude mcp get leafmem` 确认 server 已连接。
+这个命令会写入用户级 `~/.kunlunxiaozhi/mcp.json`。如果当前昆仑小智会话没有立刻看到新 server，开一个新会话再试。
 
 接到 WorkBuddy 的最简单方式：
 
@@ -588,48 +577,35 @@ node dist/bin/leafmem-agent.js install workbuddy
 
 因此在 WorkBuddy 里调用 `memory_write` 的 `action: "remember"`、`action: "active_distill"`、`memory_organize` 的 `action: "calibrate"` 这类需要 scope 的操作时，可以省略 `scopeType` / `scopeId`；LeafMem 会自动落到 `agent:workbuddy`。如果要跨工具查询共享记忆，调用 `memory_recall` 的 `action: "recall"` 时仍然可以不传 scope。
 
-### 全局安装到 coding agent
+### 安装到宿主（WorkBuddy / 昆仑小智）
 
-如果目标是把 LeafMem 当成跨 agent 的用户记忆模块，推荐用全局安装入口：
+LeafMem 面向两个宿主：WorkBuddy 与昆仑小智（同源 WorkBuddy 家族，配置结构一致）。推荐用安装入口：
 
 ```bash
 npm run build
 node dist/bin/leafmem-agent.js install all
 ```
 
-也可以只安装某一个 agent：
+也可以只安装某一个宿主：
 
 ```bash
-node dist/bin/leafmem-agent.js install codex
-node dist/bin/leafmem-agent.js install claude
-node dist/bin/leafmem-agent.js install cursor
-node dist/bin/leafmem-agent.js install copilot
-node dist/bin/leafmem-agent.js install antigravity
 node dist/bin/leafmem-agent.js install workbuddy
-node dist/bin/leafmem-agent.js install trae
+node dist/bin/leafmem-agent.js install kunlunxiaozhi
 ```
 
-默认会做三件事：
+默认会做两件事：
 
-- 安装全局 MCP 配置，所有 agent 指向同一个 `~/.leafmem/memory.sqlite`
-- 第一次运行时导入已有本地 session；重复运行会按已有 `messageCount` 只追加新增消息
-- 给支持指令文件或规则文件的 agent 写入 LeafMem 使用规则
+- 安装 MCP 配置，两个宿主指向同一个 `~/.leafmem/memory.sqlite`
+- 写入 LeafMem 使用规则到宿主的 MEMORY.md（含召回/写入/commit 纪律）
 
-各 agent 的默认落点：
+各宿主的默认落点：
 
-| Agent | MCP 配置 | 指令文件 | 历史 session 导入 |
-|-------|----------|----------|------------------|
-| Codex | `~/.codex/config.toml` | `~/.codex/AGENTS.md` | `~/.codex/sessions` |
-| Claude Code | `claude mcp add-json --scope user` | `~/.claude/CLAUDE.md` | `~/.claude/projects` |
-| Cursor | `~/.cursor/mcp.json` | `~/.cursor/rules/leafmem.mdc` | `~/Library/Application Support/Cursor/User` |
-| Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/copilot-instructions.md` | `~/Library/Application Support/Code/User` |
-| Antigravity | `~/.gemini/antigravity/mcp_config.json` | `~/.gemini/GEMINI.md` | `~/.gemini/antigravity/brain` |
-| WorkBuddy | `~/.workbuddy/mcp.json` | `~/.workbuddy/SOUL.md` / `USER.md` / `MEMORY.md` 映射 | n/a |
-| TRAE Work | `~/Library/Application Support/TRAE SOLO CN/User/mcp.json` | `~/.trae/skills/leafmem-memory/SKILL.md` | n/a |
+| 宿主 | MCP 配置 | 指令文件 | 记忆 scope |
+|------|----------|----------|-----------|
+| WorkBuddy | `~/.workbuddy/mcp.json` | `~/.workbuddy/MEMORY.md` | `agent:workbuddy` |
+| 昆仑小智 | `~/.kunlunxiaozhi/mcp.json` | `~/.kunlunxiaozhi/MEMORY.md` | `agent:kunlunxiaozhi`（共用记忆时 `agent:workbuddy`） |
 
-这个安装入口默认不会给 Codex、Claude Code、Cursor、Copilot、Antigravity、TRAE Work 的 MCP server 设置 `agent:*` scope。这样 agent 调 `memory_recall` 的 `action: "recall"` 时如果不传 scope，就可以从同一个 SQLite 里跨 agent 召回；需要写入新记忆或做窄查询时，再按指令使用当前 agent 的 scope，例如 `agent:codex`、`agent:claude`、`agent:cursor`、`agent:copilot`、`agent:antigravity` 或 `agent:trae`。
-
-WorkBuddy 是例外：它没有 LeafMem 可以稳定写入的全局指令文件，所以 installer 会在 MCP env 里设置 `LEAFMEM_SCOPE_TYPE=agent` 和 `LEAFMEM_SCOPE_ID=workbuddy`，让写入类工具默认落到 `agent:workbuddy`，减少普通用户配置负担。同时它会把 `SOUL.md`、`USER.md`、`MEMORY.md` 作为数据库投影保留下来，避免打断 WorkBuddy 原本的文件读取习惯。
+**共用一套记忆**：两个宿主都安装时，installer 通过 `sharedMemory` 选项决定 scope 拓扑——共用时两宿主统一落到 `agent:workbuddy` 单一记忆池，长期记忆、实体图谱、用户画像、active 工作状态四层全部共享；隔离时各自独立 scope。
 
 常用选项：
 
@@ -637,10 +613,10 @@ WorkBuddy 是例外：它没有 LeafMem 可以稳定写入的全局指令文件�
 node dist/bin/leafmem-agent.js install all \
   --storage-path ~/.leafmem/memory.sqlite
 
-node dist/bin/leafmem-agent.js install codex \
-  --sessions-root ~/.codex/sessions
+node dist/bin/leafmem-agent.js install kunlunxiaozhi \
+  --shared-memory
 
-node dist/bin/leafmem-agent.js install copilot \
+node dist/bin/leafmem-agent.js install workbuddy \
   --skip-import
 ```
 
@@ -655,7 +631,7 @@ node dist/bin/leafmem-agent.js install copilot \
 | `leafmem-agent ui` | 启动本地 Web 控制台 |
 | `leafmem-agent tui` | 启动终端控制台 |
 
-`install` 和 `update` 支持的 target：`codex`、`claude`、`cursor`、`copilot`、`antigravity`、`workbuddy`、`trae`、`all`。
+`install` 和 `update` 支持的 target：`workbuddy`、`kunlunxiaozhi`、`all`。
 
 `leafmem-agent` 的常用参数：
 
@@ -690,7 +666,7 @@ macOS 上会写入用户级 LaunchAgent：
 
 它运行 `leafmem-agent serve`，使用同一个 `~/.leafmem/memory.sqlite` 和一枚稳定的本地 API key。这样重启机器后 console URL 不会因为临时进程退出而失效。
 
-`serve` 只做轻量兜底同步：它定时读取各 agent 的本地 session 文件并复用幂等 importer 写入 LeafMem，不会启动 Codex、Claude 或其它宿主 agent，也不会调用额外模型。高质量 session summary 仍然建议由宿主 agent 在重要工作或会话收尾时主动调用 `memory_write` 的 `action: "commit"`。
+`serve` 只做轻量兜底同步：它定时读取宿主本地 session 文件并复用幂等 importer 写入 LeafMem，不会启动宿主 agent，也不会调用额外模型。高质量 session summary 仍然建议由宿主 agent 在重要工作或会话收尾时主动调用 `memory_write` 的 `action: "commit"`。
 
 常用命令：
 
@@ -795,7 +771,7 @@ export API_KEY=<printed-api-key>
 | Endpoint | 方法 | 用途 |
 |----------|------|------|
 | `/v1/agents/status` | `GET` | 返回共享库路径、MCP 脚本路径、每个 agent 的配置和导入状态 |
-| `/v1/agents/install` | `POST` | 安装单个 agent，body 为 `{"agent":"codex"}` |
+| `/v1/agents/install` | `POST` | 安装单个宿主，body 为 `{"agent":"kunlunxiaozhi"}` |
 | `/v1/agents/import` | `POST` | 导入单个 agent 的历史 session |
 | `/v1/agents/install-all` | `POST` | 安装全部 agent |
 | `/v1/agents/import-all` | `POST` | 导入全部 agent 的历史 session |
@@ -809,7 +785,7 @@ curl -H "Authorization: Bearer $API_KEY" \
 curl -X POST \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"agent":"claude"}' \
+  -d '{"agent":"kunlunxiaozhi"}' \
   "$BASE/v1/agents/install"
 
 curl -X POST \
@@ -819,77 +795,16 @@ curl -X POST \
   "$BASE/v1/agents/import-all"
 ```
 
-### 导入已有 agent session
+### 导入已有宿主记忆
 
-如果已经把 MCP server 接好了，又想让旧的本地 session 也进入 LeafMem，可以跑一次导入工具。它们会把每个 session 写成一份 task transcript，再写一条可搜索的 palace note。重复运行时，如果同一个 `taskId` 已经存在，会跳过，不会重复导入。
-
-先在 LeafMem 源码目录 build：
+WorkBuddy 家族宿主（WorkBuddy / 昆仑小智）不需要单独的导入工具——installer 在安装时通过 **takeover 接管**自动导入：读取宿主目录下的 `SOUL.md`、`USER.md`、`MEMORY.md` 与原生记忆文件，写入 LeafMem 数据库。重复运行 `install` / `update` 是幂等的，只增量吸收新内容。
 
 ```bash
-npm run build
+node dist/bin/leafmem-agent.js install workbuddy
+node dist/bin/leafmem-agent.js install kunlunxiaozhi
 ```
 
-通用参数：
-
-- `--storage-path <path>`：目标 SQLite，默认 `~/.leafmem/memory.sqlite`
-- `--scope-type <type>`：目标 scope type，默认 `agent`
-- `--scope-id <id>`：目标 scope id，默认按 agent 区分
-- `[sessions-root]`：可选的位置参数，用来覆盖默认 session 目录
-
-| 工具 | 默认读取位置 | 默认 scope id |
-|------|--------------|---------------|
-| `leafmem-codex-import` | `~/.codex/sessions` | `codex` |
-| `leafmem-claude-import` | `~/.claude/projects` | `claude` |
-| `leafmem-cursor-import` | `~/Library/Application Support/Cursor/User` | `cursor` |
-| `leafmem-copilot-import` | `~/Library/Application Support/Code/User` | `copilot` |
-| `leafmem-antigravity-import` | `~/.gemini/antigravity/brain` | `antigravity` |
-
-本地源码运行方式：
-
-```bash
-node dist/bin/leafmem-codex-import.js \
-  --storage-path ~/.leafmem/memory.sqlite \
-  --scope-type agent \
-  --scope-id codex
-
-node dist/bin/leafmem-claude-import.js \
-  --storage-path ~/.leafmem/memory.sqlite \
-  --scope-type agent \
-  --scope-id claude
-
-node dist/bin/leafmem-cursor-import.js \
-  --storage-path ~/.leafmem/memory.sqlite \
-  --scope-type agent \
-  --scope-id cursor
-
-node dist/bin/leafmem-copilot-import.js \
-  --storage-path ~/.leafmem/memory.sqlite \
-  --scope-type agent \
-  --scope-id copilot
-
-node dist/bin/leafmem-antigravity-import.js \
-  --storage-path ~/.leafmem/memory.sqlite \
-  --scope-type agent \
-  --scope-id antigravity
-```
-
-如果 session 不在默认目录，把目录放在命令后面即可：
-
-```bash
-node dist/bin/leafmem-claude-import.js /path/to/sessions \
-  --storage-path /path/to/memory.sqlite \
-  --scope-type agent \
-  --scope-id claude
-```
-
-导入结果会写入两类数据：
-
-- task context：`taskId` 形如 `<agent>:<session-id>`，保留用户/assistant transcript
-- palace memory：`source` 形如 `<agent>_session_import`，默认 tags 是 `<agent>` 和 `session`，内容是该 session 的滚动摘要
-
-重复导入同一个 session 时不会新建第二条 session memory。importer 会按已导入的 `messageCount` 只追加新增消息，然后更新同一个 task rolling summary 和 palace memory。几天后继续旧 session，也会落到同一个 `<agent>:<session-id>` 上。
-
-palace memory 的 metadata 会保留 `sessionId`、`sessionPath`、`cwd`、`timestamp`、`taskId`、`messageCount`、`lastImportedAt`、`lastMessageHash`、`resumeCount`，以及各 importer 能读到的 agent 原始标记。
+导入结果写入长期记忆，`source` 为 `workbuddy_import` / `workbuddy_native_import`。
 
 ## 13. 存储方式的选择
 

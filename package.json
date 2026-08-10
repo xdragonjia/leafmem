@@ -14,11 +14,6 @@
   "bin": {
     "leafmem-agent": "./dist/bin/leafmem-agent.js",
     "leafmem-mcp": "./dist/bin/leafmem-mcp.js",
-    "leafmem-codex-import": "./dist/bin/leafmem-codex-import.js",
-    "leafmem-claude-import": "./dist/bin/leafmem-claude-import.js",
-    "leafmem-antigravity-import": "./dist/bin/leafmem-antigravity-import.js",
-    "leafmem-copilot-import": "./dist/bin/leafmem-copilot-import.js",
-    "leafmem-cursor-import": "./dist/bin/leafmem-cursor-import.js",
     "leafmem-hermes": "./dist/bin/leafmem-hermes.js",
     "leafmem-openclaw": "./dist/bin/leafmem-openclaw.js"
   },

@@ -5,89 +5,6 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-test("agent installer writes global Codex MCP config and instruction block", async () => {
-  const root = await mkdtemp(join(tmpdir(), "leafmem-agent-codex-"));
-  const storagePath = join(root, "memory.sqlite");
-  const mcpPath = join(root, "leafmem-mcp.js");
-
-  try {
-    await runInstaller("codex", root, storagePath, mcpPath, "--skip-import");
-    await runInstaller("codex", root, storagePath, mcpPath, "--skip-import");
-
-    const config = await readFile(join(root, ".codex", "config.toml"), "utf8");
-    assert.equal(config.match(/\[mcp_servers\.leafmem\]/g)?.length, 1);
-    assert.match(config, new RegExp(escapeRegExp(`args = ["${mcpPath}"]`)));
-    assert.match(config, /LEAFMEM_STORAGE_PATH/);
-    assert.doesNotMatch(config, /LEAFMEM_SCOPE_ID/);
-
-    const instructions = await readFile(join(root, ".codex", "AGENTS.md"), "utf8");
-    assert.equal(instructions.match(/leafmem-agent-instructions:start/g)?.length, 1);
-    assert.match(instructions, /omit scope first/);
-    assert.match(instructions, /agent:codex/);
-    assert.match(instructions, /memory_write/);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("agent installer writes Cursor, Copilot, Antigravity, and Trae MCP configs and instructions", async () => {
-  const root = await mkdtemp(join(tmpdir(), "leafmem-agent-json-"));
-  const storagePath = join(root, "memory.sqlite");
-  const mcpPath = join(root, "leafmem-mcp.js");
-
-  try {
-    await runInstaller("cursor", root, storagePath, mcpPath, "--skip-import");
-    await runInstaller("copilot", root, storagePath, mcpPath, "--skip-import");
-    await runInstaller("antigravity", root, storagePath, mcpPath, "--skip-import");
-    await runInstaller("trae", root, storagePath, mcpPath, "--skip-import");
-
-    const cursor = JSON.parse(await readFile(join(root, ".cursor", "mcp.json"), "utf8"));
-    assert.equal(cursor.mcpServers.leafmem.command, "node");
-    assert.deepEqual(cursor.mcpServers.leafmem.args, [mcpPath]);
-    assert.equal(cursor.mcpServers.leafmem.env.LEAFMEM_STORAGE_PATH, storagePath);
-
-    const copilot = JSON.parse(await readFile(join(root, ".copilot", "mcp-config.json"), "utf8"));
-    assert.equal(copilot.mcpServers.leafmem.type, "local");
-    assert.deepEqual(copilot.mcpServers.leafmem.tools, ["*"]);
-
-    const antigravity = JSON.parse(await readFile(join(root, ".gemini", "antigravity", "mcp_config.json"), "utf8"));
-    assert.equal(antigravity.mcpServers.leafmem.command, "node");
-    assert.deepEqual(antigravity.mcpServers.leafmem.args, [mcpPath]);
-    assert.equal(antigravity.mcpServers.leafmem.env.LEAFMEM_STORAGE_PATH, storagePath);
-
-    const trae = JSON.parse(await readFile(join(root, "Library", "Application Support", "TRAE SOLO CN", "User", "mcp.json"), "utf8"));
-    assert.equal(trae.mcpServers.leafmem.command, "node");
-    assert.deepEqual(trae.mcpServers.leafmem.args, [mcpPath]);
-    assert.equal(trae.mcpServers.leafmem.env.LEAFMEM_STORAGE_PATH, storagePath);
-    assert.equal(trae.mcpServers.leafmem.disabled, false);
-
-    const instructions = await readFile(join(root, ".copilot", "copilot-instructions.md"), "utf8");
-    assert.match(instructions, /agent:copilot/);
-
-    const cursorRule = await readFile(join(root, ".cursor", "rules", "leafmem.mdc"), "utf8");
-    assert.match(cursorRule, /alwaysApply: true/);
-    assert.match(cursorRule, /agent:cursor/);
-    assert.match(cursorRule, /memory_write/);
-
-    const antigravityRules = await readFile(join(root, ".gemini", "GEMINI.md"), "utf8");
-    assert.match(antigravityRules, /agent:antigravity/);
-    assert.match(antigravityRules, /memory_write/);
-    const antigravityMcpInstructions = await readFile(
-      join(root, ".gemini", "antigravity", "mcp", "leafmem", "instructions.md"),
-      "utf8",
-    );
-    assert.match(antigravityMcpInstructions, /memory_recall/);
-    assert.match(antigravityMcpInstructions, /memory_write/);
-
-    const traeSkill = await readFile(join(root, ".trae", "skills", "leafmem-memory", "SKILL.md"), "utf8");
-    assert.match(traeSkill, /name: leafmem-memory/);
-    assert.match(traeSkill, /agent:trae/);
-    assert.match(traeSkill, /memory_write/);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
 test("agent installer writes WorkBuddy MCP config with a default scope", async () => {
   const root = await mkdtemp(join(tmpdir(), "leafmem-agent-workbuddy-"));
   const storagePath = join(root, "memory.sqlite");
@@ -156,8 +73,9 @@ test("agent installer import step tolerates missing session roots", async () => 
   const mcpPath = join(root, "leafmem-mcp.js");
 
   try {
-    const output = await runInstaller("codex", root, storagePath, mcpPath, "--skip-mcp", "--skip-instructions");
+    const output = await runInstaller("workbuddy", root, storagePath, mcpPath, "--skip-mcp", "--skip-instructions");
     const parsed = JSON.parse(output);
+    assert.equal(parsed.results[0].agent, "workbuddy");
     assert.equal(parsed.results[0].import, "imported");
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -186,8 +104,8 @@ test("agent TUI once mode prints setup status", async () => {
 
     assert.match(output, /LeafMem Agent TUI/);
     assert.match(output, /Storage:/);
-    assert.match(output, /Codex/);
-    assert.match(output, /Antigravity/);
+    assert.match(output, /WorkBuddy/);
+    assert.match(output, /昆仑小智/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -260,7 +178,7 @@ test("install all can create the local service without invoking launchctl", asyn
       "3392",
     ]);
     const parsed = JSON.parse(output);
-    assert.equal(parsed.results.length, 8);
+    assert.equal(parsed.results.length, 2);
     assert.equal(parsed.service.started, false);
     assert.match(parsed.service.url, /^http:\/\/127\.0\.0\.1:3392\/console\?apiKey=mm_/);
   } finally {
