@@ -1049,9 +1049,10 @@ async function renderAgents(el) {
     const topoUi = topo.shared
       ? `<span class="pill g">已共用</span>`
       : (Object.keys(topo.scopes).length >= 2 ? `<span class="pill y">独立记忆</span>` : `<span class="pill gray">未完全配置</span>`);
+    const primary = topo.primaryScopeId || 'workbuddy';
     const topoBtn = topo.shared
-      ? `<button class="btn sm" onclick="toggleTopology(false)" title="把两个宿主拆回各自独立 scope（agent:workbuddy / agent:kunlunxiaozhi）">分拆</button>`
-      : `<button class="btn sm primary" onclick="toggleTopology(true)" title="两个宿主统一落到 agent:workbuddy 单一记忆池：长期记忆、实体图谱、用户画像、工作状态四层全部共享">共用</button>`;
+      ? `<button class="btn sm" onclick="toggleTopology(false)" title="把宿主拆回各自独立 scope（各落自己的 agent:<宿主>）">分拆</button>`
+      : `<button class="btn sm primary" onclick="toggleTopology(true)" title="两个宿主统一落到主 scope agent:${esc(primary)} 单一记忆池：长期记忆、实体图谱、用户画像、工作状态四层全部共享">共用</button>`;
     el.innerHTML = `<div class="inner">
       <div class="card infra">
         <div class="item"><div class="lbl">共享 SQLite</div><div class="val">${esc(d.storagePath)}</div></div>
@@ -1097,9 +1098,10 @@ async function agentAction(path, agent) {
 }
 async function toggleTopology(shared) {
   const t = state.topology || { shared: false };
+  const primary = (state.topology && state.topology.primaryScopeId) || 'workbuddy';
   const msg = shared
-    ? '确认共用一套记忆？\nWorkBuddy 与昆仑小智将统一落到 agent:workbuddy 单一记忆池：\n长期记忆 + 实体图谱 + 用户画像 + 工作状态 四层全部共享。\n（修改的是两个宿主的 mcp.json，改完需在各宿主重连 MCP 生效）'
-    : '确认分拆为独立记忆？\nWorkBuddy 落 agent:workbuddy、昆仑小智落 agent:kunlunxiaozhi，互不可见。\n⚠️ 已写入共享池的历史记忆仍留在 agent:workbuddy，分拆后昆仑小智只能看到自己新写的。\n（改完需在各宿主重连 MCP 生效）';
+    ? '确认共用一套记忆？\n各宿主将统一落到主 scope agent:' + primary + ' 单一记忆池：\n长期记忆 + 实体图谱 + 用户画像 + 工作状态 四层全部共享。\n（修改各宿主的 mcp.json，改完需在各宿主重连 MCP 生效）'
+    : '确认分拆为独立记忆？\n各宿主将落回各自的 agent:<宿主> scope，互不可见。\n⚠️ 已写入主 scope agent:' + primary + ' 的历史记忆仍留在那里，分拆后其他宿主只能看到自己新写的。\n（改完需在各宿主重连 MCP 生效）';
   if (!confirm(msg)) return;
   await runMutation(() => api('/v1/agents/topology', { method: 'POST', body: JSON.stringify({ shared }) }));
   toast(shared ? '已切换为共用一套记忆' : '已分拆为独立记忆');

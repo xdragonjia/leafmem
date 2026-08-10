@@ -74,7 +74,7 @@ npm root -g
 ```
 
 > 注意：JSON 里 `~` 若宿主不展开，请替换为 `%USERPROFILE%` 的实际绝对路径（如 `C:\Users\张三\.leafmem\memory.sqlite`）。**两处 `<用户提供的硅基流动 Key>` 必须先向用户索取后再写入。**
-> 若用户同时安装了 WorkBuddy 并希望两宿主共用一套记忆，把 `LEAFMEM_SCOPE_ID` 改为 `workbuddy`（长期记忆/实体图谱/用户画像/工作状态四层共享同一记忆池）。
+> **共用一套记忆（主 scope 模型）**：双宿主共用时统一落"主 scope"——即**第一个安装的宿主自身 scope**。若 WorkBuddy 已先装好（主 scope=workbuddy），把这里的 `LEAFMEM_SCOPE_ID` 改为 `workbuddy`，并确认 WorkBuddy 侧也是 `workbuddy`；若昆仑小智先装（主 scope=kunlunxiaozhi），则保持 `kunlunxiaozhi`，后装的 WorkBuddy 改用它。共用时长期记忆/实体图谱/用户画像/工作状态四层共享同一记忆池。单宿主安装无需关心本段。
 
 ### 步骤 3 · 写入记忆使用规则
 

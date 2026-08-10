@@ -73,7 +73,7 @@ npm root -g
 ```
 
 > 若 JSON 里 `~` 宿主不展开，替换为主目录实际绝对路径。**两处 Key 必须先向用户索取再写入。**
-> 若用户同时装了昆仑小智且想共用一套记忆：两宿主 `LEAFMEM_SCOPE_ID` 都设为 `workbuddy`（长期记忆+实体图谱+用户画像+工作状态四层共享）；想隔离则昆仑小智用 `kunlunxiaozhi`。
+> **共用一套记忆（主 scope 模型）**：双宿主共用时统一落"主 scope"——即**第一个安装的宿主自身 scope**。若 WorkBuddy 先装（本文件场景，主 scope=workbuddy），后装的昆仑小智 `LEAFMEM_SCOPE_ID` 也设为 `workbuddy`；若昆仑小智已先装（主 scope=kunlunxiaozhi），则 WorkBuddy 改用它。共用时长期记忆+实体图谱+用户画像+工作状态四层共享同一记忆池；想隔离则各用各的自身 scope。
 
 ### 步骤 3 · 写入记忆使用规则
 

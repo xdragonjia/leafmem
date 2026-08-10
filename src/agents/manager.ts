@@ -322,11 +322,15 @@ async function writeJsonMcpConfig(
   const existing = asObject(servers.leafmem);
   const existingEnv = asObject(existing.env);
   // Phase 9: both remaining hosts are WorkBuddy-family (workbuddy/kunlunxiaozhi).
-  // sharedMemory → single agent:workbuddy pool (memories + graph + profile + active).
+  // sharedMemory → single pool at the primary scope (the first configured
+  // host's own scope; workbuddy-first installs → agent:workbuddy,
+  // 昆仑小智-only installs → agent:kunlunxiaozhi). Memories + graph + profile
+  // + active all share it.
+  const { primaryScopeId } = await getMemoryTopology({ home: options.home });
   const coreEnv = {
     LEAFMEM_STORAGE_PATH: options.storagePath,
     LEAFMEM_SCOPE_TYPE: "agent",
-    LEAFMEM_SCOPE_ID: options.sharedMemory ? "workbuddy" : AGENTS[format].scopeId,
+    LEAFMEM_SCOPE_ID: options.sharedMemory ? primaryScopeId : AGENTS[format].scopeId,
     LEAFMEM_WORKBUDDY_HOME: AGENTS[format].defaultSessionsRoot(options.home),
   };
   const env = { ...existingEnv, ...coreEnv };
@@ -493,6 +497,14 @@ export type MemoryTopology = {
   shared: boolean;
   /** per-host observed scope id from mcp.json env (undefined if host not configured) */
   scopes: Partial<Record<AgentId, string>>;
+  /**
+   * Canonical primary scope (the first configured host's own scope, in AGENT_IDS
+   * order). Shared topology = every configured host lands here. Never assume
+   * "workbuddy": a 昆仑小智-only install has primary = kunlunxiaozhi.
+   */
+  primaryScopeId: string;
+  /** number of configured hosts */
+  configuredCount: number;
 };
 
 export async function getMemoryTopology(
@@ -507,8 +519,13 @@ export async function getMemoryTopology(
     if (typeof id === "string" && id.trim() !== "") scopes[agent] = id;
   }
   const values = Object.values(scopes);
-  const shared = values.length >= 2 && values.every((v) => v === "workbuddy");
-  return { shared, scopes };
+  // Primary scope = the first configured host's own scope (AGENT_IDS order).
+  // Shared = all configured hosts (1+) landed in that primary scope.
+  // Single-host installs are trivially "shared" (nothing to split from).
+  const firstAgent = AGENT_IDS.find((agent) => scopes[agent] !== undefined);
+  const primaryScopeId = firstAgent ? AGENTS[firstAgent].scopeId : AGENTS[AGENT_IDS[0]!].scopeId;
+  const shared = values.length > 0 && values.every((v) => v === primaryScopeId);
+  return { shared, scopes, primaryScopeId, configuredCount: values.length };
 }
 
 export async function setMemoryTopology(
@@ -516,6 +533,7 @@ export async function setMemoryTopology(
   input: AgentInstallOptions = {},
 ): Promise<MemoryTopology> {
   const options = resolveAgentOptions(input);
+  const { primaryScopeId } = await getMemoryTopology(options);
   for (const agent of AGENT_IDS) {
     const path = AGENTS[agent].configPath(options.home);
     const cfg = await readJsonObject(path);
@@ -524,7 +542,7 @@ export async function setMemoryTopology(
     if (Object.keys(server).length === 0) continue; // host not configured
     const env = asObject(server.env);
     env.LEAFMEM_SCOPE_TYPE = "agent";
-    env.LEAFMEM_SCOPE_ID = shared ? "workbuddy" : AGENTS[agent].scopeId;
+    env.LEAFMEM_SCOPE_ID = shared ? primaryScopeId : AGENTS[agent].scopeId;
     server.env = env;
     servers.leafmem = server;
     cfg.mcpServers = servers;

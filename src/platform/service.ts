@@ -374,8 +374,17 @@ export class LeafMemPlatformService implements PlatformMemoryService {
       preamble: "",
       sections: [],
     };
+    // Known host scopes (dual-host positioning; must mirror AGENTS in
+    // src/agents/manager.ts). The profile lives under whichever host wrote it
+    // — a 昆仑小智-only install stores it at agent:kunlunxiaozhi, so never
+    // probe workbuddy only.
+    const KNOWN_HOST_SCOPES: MemoryScope[] = [
+      { type: "agent", id: "workbuddy" },
+      { type: "agent", id: "kunlunxiaozhi" },
+    ];
+    const seen = new Set(scopes.map((sc) => `${sc.type}:${sc.id}`));
     const profileScopes = input.context.allScopes
-      ? [{ type: "agent", id: "workbuddy" } as MemoryScope, ...scopes.filter((s) => s.type === "agent" && s.id !== "workbuddy")]
+      ? [...KNOWN_HOST_SCOPES, ...scopes.filter((sc) => !seen.has(`${sc.type}:${sc.id}`))]
       : scopes;
     for (const scope of profileScopes) {
       try {
