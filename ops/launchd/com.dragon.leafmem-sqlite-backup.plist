@@ -14,7 +14,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/bin/zsh</string>
-		<string>/Users/dragon/WorkBuddy/scripts/leafmem_sqlite_backup.sh</string>
+		<string>/Users/dragon/projects/leafmem/ops/sqlite-backup.sh</string>
 	</array>
 	<key>StandardErrorPath</key>
 	<string>/Users/dragon/.leafmem/backups/backup-stderr.log</string>
