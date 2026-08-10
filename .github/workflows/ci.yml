@@ -30,4 +30,4 @@ jobs:
         run: npm test
 
       - name: Publish hygiene audit
-        run: zsh ops/publish-audit.sh
+        run: bash ops/publish-audit.sh
