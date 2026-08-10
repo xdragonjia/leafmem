@@ -304,6 +304,8 @@ const state = {
   sharedMemory: true,
 };
 const PAGE_SIZE = 25;
+// 来源分布口径（仪表盘与浏览筛选器共用）：按条数取前 N 名单独展示，其余折叠。
+const SOURCE_TOP_N = 6;
 const KIND_PILL = { note:'b', lesson:'y', decision:'p', principle:'g' };
 
 // ================================================================ API
@@ -468,7 +470,7 @@ async function renderDashboard(el) {
         </div>
         <div class="card">
           <h3>来源分布 <span class="sub">${fmtDate(stats.oldestMemory)} → ${fmtDate(stats.newestMemory)}</span></h3>
-          ${Object.entries(stats.sources || {}).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,n]) => `
+          ${Object.entries(stats.sources || {}).sort((a,b)=>b[1]-a[1]).slice(0,SOURCE_TOP_N).map(([k,n]) => `
             <div class="bar-row" style="cursor:pointer" onclick="jumpExplorer(null,'${esc(k)}')" title="按来源筛选 ${esc(k)}">
               <span class="lbl" style="width:150px" title="${esc(k)}">${esc(trunc(k,20))}</span>
               <div class="bar"><i style="width:${Math.max(2,(n/Math.max(...Object.values(stats.sources),1))*100)}%"></i></div>
@@ -511,12 +513,13 @@ async function renderExplorer(el) {
     let mems = state.explorerCache;
     const kindOpts = [...new Set(mems.map(m => m.kind))].sort();
     // source 筛选：自由文本来源，长尾极重（一次性任务各占一条）。
-    // 与仪表盘口径一致：仅展示 ≥20 条的来源（带条数），其余折叠为"其他来源"。
+    // 与仪表盘共用同一口径：按条数取前 SOURCE_TOP_N 名单独列出（带条数），其余折叠。
     const sourceCounts = {};
     for (const m of mems) if (m.source) sourceCounts[m.source] = (sourceCounts[m.source] || 0) + 1;
     const sourceRanked = Object.entries(sourceCounts).sort((a, b) => b[1] - a[1]);
-    const sourceTop = sourceRanked.filter(([, c]) => c >= 20);
-    const sourceTail = sourceRanked.filter(([, c]) => c < 20);
+    const sourceTop = sourceRanked.slice(0, SOURCE_TOP_N);
+    const sourceTopKeys = new Set(sourceTop.map(([k]) => k));
+    const sourceTail = sourceRanked.slice(SOURCE_TOP_N);
     const sourceTailSet = new Set(sourceTail.map(([k]) => k));
     const sourceTailCount = sourceTail.reduce((sum, [, c]) => sum + c, 0);
     if (state.explorerKind) mems = mems.filter(m => m.kind === state.explorerKind);
@@ -546,7 +549,7 @@ async function renderExplorer(el) {
           <option value="">全部来源</option>
           ${sourceTop.map(([k, c]) => `<option value="${esc(k)}"${k === state.explorerSource ? ' selected' : ''}>${esc(k)}（${c}）</option>`).join('')}
           ${sourceTail.length ? `<option value="__tail__"${state.explorerSource === '__tail__' ? ' selected' : ''}>其他来源（${sourceTail.length} 种 · ${sourceTailCount} 条）</option>` : ''}
-          ${(state.explorerSource && state.explorerSource !== '__tail__' && !sourceTop.some(([k]) => k === state.explorerSource) && !sourceTailSet.has(state.explorerSource)) ? `<option value="${esc(state.explorerSource)}" selected>${esc(state.explorerSource)}</option>` : ''}
+          ${(state.explorerSource && state.explorerSource !== '__tail__' && !sourceTopKeys.has(state.explorerSource) && !sourceTailSet.has(state.explorerSource)) ? `<option value="${esc(state.explorerSource)}" selected>${esc(state.explorerSource)}</option>` : ''}
         </select>
         <span class="mono-sm">${mems.length} 条记录</span>
         <div class="spacer"></div>
