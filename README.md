@@ -3,7 +3,7 @@
 > 面向 AI Agent 的分层长期记忆引擎 —— 让 Agent 写得下、理得清、召得回，最终用记忆高效完成任务。
 
 <p align="center">
-  <img alt="tests" src="https://img.shields.io/badge/tests-232%20passing-16a34a">
+  <img alt="tests" src="https://img.shields.io/badge/tests-225%20passing-16a34a">
   <img alt="node" src="https://img.shields.io/badge/node-%3E%3D22.13-5b6675">
   <img alt="license" src="https://img.shields.io/badge/license-Proprietary-d97706">
 </p>
@@ -32,10 +32,9 @@
 
 ```mermaid
 flowchart TB
-    subgraph Hosts["🖥️ 宿主 Agent"]
+    subgraph Hosts["🖥️ 宿主 Agent（双宿主定位）"]
         WB["WorkBuddy"]
         KXZ["昆仑小智"]
-        CODEX["Codex / Claude Code / Cursor …"]
     end
 
     subgraph MCP["🔌 MCP 4 工具（闭环）"]
@@ -70,7 +69,7 @@ flowchart TB
         UI["仪表盘 / 记忆浏览 / 洞察<br/>知识图谱 / 事件日志 / 召回检查 / 宿主接入"]
     end
 
-    WB & KXZ & CODEX --> W & R & O & G
+    WB & KXZ --> W & R & O & G
     W --> PALACE & ACTIVE & TASK
     W --> GRAPH
     O --> PALACE & ACTIVE
@@ -136,18 +135,22 @@ LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个�
 
 **Inferencer（可选但推荐）**：DeepSeek 等 OpenAI 兼容模型，驱动三类高阶能力——reflect 蒸馏原则、profile 画像刷新、session commit 的深度治理。未配置时这些动作降级为本地确定性逻辑（不蒸馏），核心召回不受影响。
 
-### 1.5 常规自动化任务
+### 1.5 周期性维护（leafmem-maintenance 运维技能）
 
-安装后建议配置这些周期性治理任务（宿主内 automation）：
+记忆整理**不需要额外付费 API Key**——由宿主模型通过 MCP 完成。LeafMem 提供 `leafmem-maintenance` 运维技能（随仓库 `ops/skills/` 分发），配合每周自动化任务执行完整 SOP：
 
-| 任务 | 频率 | 作用 |
-|------|------|------|
-| `decay` 衰减 | 每周 | 陈旧且未被召回的低重要性记忆降权（不删除，pinned 豁免） |
-| `reflect` 蒸馏原则 | 每周 | 同标签 lesson/decision 聚类蒸馏为 `principle` |
-| `profile` 刷新画像 | 每周 | 基于 preference/identity 记忆 delta 更新用户画像 |
-| session `commit` 会话沉淀 | 每次会话收尾 | 宿主蒸馏的 rollingSummary 落库，触发治理 |
+| 步骤 | 内容 | LLM 依赖 |
+|------|------|---------|
+| 健康检查 | MCP 状态 / 存储容量 / canary 召回验证 | 无 |
+| 全量存档 | 删除前强制导出 JSON 存档 | 无 |
+| 真重复合并 | 内容 SHA256 哈希检测（禁止前缀聚类） | 无 |
+| 碎片整合 | 同日期+同 context ≥3 条簇 → 整合九规则 | 宿主模型 |
+| 原则蒸馏 | 同标签 lesson 聚类 → principle（reflect 宿主版） | 宿主模型 |
+| 画像刷新 | preference delta → profile sections 更新（profile 宿主版） | 宿主模型 |
+| 衰减降权 | `memory_organize(action=decay)` | 无 |
+| 镜像同步 | ops/mirror-sync.js 导出全量记忆 | 无 |
 
-> ⚠️ 这些整理动作**必须被真正触发**才有价值。LeafMem 的每周健康检查任务已内置 `decay → reflect → profile` 三连，避免"画像建了却从不召回、原则蒸馏了却不更新"的死结。
+> 💡 **节奏选择**：每周一次（记忆增量 ~20-50 条/周，每日无料可整；语义整理是 LLM 重活，每周成本可控）。每日异常告警由独立的只读观测任务负责，不需要每日整理。
 
 ### 1.6 嵌入纪律文件
 
@@ -174,13 +177,17 @@ LeafMem 的安装/升级**优先由你的 Agent 引导完成**——你只需要
 Agent 会依次引导你：
 
 1. **确认 Node.js 版本**（`>= 22.13.0`）
-2. **安装依赖** —— `npm install @xdragonjia/leafmem` 或从源码构建
+2. **安装依赖** —— `npm install -g @xdragonjia/leafmem` 或从源码构建
 3. **选择双宿主记忆拓扑** ——
-   - `shared`（推荐）：WorkBuddy 与昆仑小智共用同一记忆池 `agent:workbuddy`
-   - `isolated`：各宿主独立记忆
+   - `shared`（推荐）：WorkBuddy 与昆仑小智共用同一记忆池 `agent:workbuddy`（长期记忆 + 实体图谱 + 用户画像 + 工作状态四层全部共享）
+   - `isolated`：各宿主独立 scope
 4. **配置 API Key** —— 免费的硅基流动 BGE-M3 向量化（可选）+ DeepSeek inferencer（可选）
 5. **写入宿主 MCP 配置 + 注入使用纪律**
 6. **信任 MCP** —— 安装后需要在宿主 MCP 管理页点击「信任」激活
+
+> 🪟 **Windows 11 用户**：核心功能完全跨平台（Node 22 内置 SQLite，零原生依赖）。
+> 详细分步引导见包内 [`INSTALL-KUNLUNXIAOZHI.md`](INSTALL-KUNLUNXIAOZHI.md)——
+> 昆仑小智按文件执行，你只需装 Node.js、提供硅基流动 Key、点 MCP 信任。
 
 ### 2.2 命令行安装
 
@@ -196,10 +203,10 @@ node dist/bin/leafmem-agent.js install kunlunxiaozhi
 node dist/bin/leafmem-agent.js install kunlunxiaozhi --memory shared
 ```
 
-支持的宿主：
+支持的宿主（Phase 9 双宿主定位）：
 
 ```text
-workbuddy | kunlunxiaozhi | codex | claude | cursor | copilot | antigravity | trae | all
+workbuddy | kunlunxiaozhi | all
 ```
 
 所有宿主默认指向同一个 SQLite：`~/.leafmem/memory.sqlite`
@@ -275,7 +282,7 @@ LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使�
 | ⏱️ 事件日志 | 写/改/删/召回的审计流水 |
 | 🔎 召回检查 | 模拟 Agent 检索，看实际召回了什么 |
 | 📋 任务上下文 | Agent 工作态（transcript + rolling summary），分页浏览、点开看详情；与记忆是两套数据 |
-| 🔌 宿主接入 | 各宿主安装状态、MCP/纪律/session 导入 |
+| 🔌 宿主接入 | 双宿主状态卡片：已配置→「修复」（重检测修复 MCP/指令漂移），未配置→「配置」；共用记忆开关（四层共享说明） |
 | ❓ 帮助文档 | 本文档，支持目录跳转与全文搜索（mermaid 图实时渲染） |
 
 ### 3.2 Agent 怎么用
@@ -345,6 +352,7 @@ LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使�
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 分层设计、召回流、SQLite schema |
 | [`docs/API.md`](docs/API.md) | 核心 API、4 工具、HTTP 路由 |
 | [`benchmarks/BENCHMARKS.md`](benchmarks/BENCHMARKS.md) | 基准方法与完整结果 |
+| [`INSTALL-KUNLUNXIAOZHI.md`](INSTALL-KUNLUNXIAOZHI.md) | 昆仑小智分步安装引导（含 Win11，agent 驱动） |
 
 ---
 
@@ -369,9 +377,10 @@ LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使�
 ## ⚠️ 能力边界（如实说明）
 
 - **零外部依赖即可运行**：不配任何 API Key 也能召回，只是精度低于开启 BGE-M3 重排的版本（见基准表）
-- **蒸馏类能力依赖 inferencer**：reflect/profile/深度治理未配置模型时降级为本地逻辑，不做 LLM 蒸馏
+- **蒸馏类能力双路径**：① MCP 内置 inferencer（需付费 key）② leafmem-maintenance 运维技能由宿主模型蒸馏（免费）。未配置任何模型时降级为本地逻辑
 - **超大存储**：数万条以上建议开启向量重排或检索后端扩展，内置加权检索在千级规模表现最佳
 - **Markdown 宿主桥接为单向**：首次导入后以 SQLite 为准，markdown 仅作展示镜像
+- **平台**：核心（MCP/记忆/控制台）全平台（macOS/Windows/Linux）；launchd 常驻服务为 macOS 专属，Windows 用户手动启动或用任务计划程序
 
 ---
 
