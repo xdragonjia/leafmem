@@ -47,6 +47,31 @@ if [[ -n "$MARV" ]]; then bad "发现 marvmem 品牌残留:\n$MARV"; else ok "�
 # ---- 6. dist 是否存在且为最新构建 ----
 if [[ ! -d dist ]]; then bad "dist/ 不存在，先 npm run build"; else ok "dist/ 存在"; fi
 
+# ---- 6.5 npm 打包产物审计（最可靠：实际生成 tgz 再检查清单）----
+if command -v npm >/dev/null 2>&1; then
+  PACK_TMP=$(mktemp -d)
+  TGZ=$(npm pack --pack-destination "$PACK_TMP" --silent 2>/dev/null | tail -1)
+  if [[ -n "$TGZ" && -f "$PACK_TMP/$TGZ" ]]; then
+    PACK_LIST=$(tar -tzf "$PACK_TMP/$TGZ" 2>/dev/null)
+    BAD_PACK=""
+    echo "$PACK_LIST" | grep -qiE "\.sqlite|full-dump|agent-service\.json|(^|/)\.env$" && BAD_PACK="数据/密钥文件"
+    echo "$PACK_LIST" | grep -qE "package/node_modules" && BAD_PACK="node_modules"
+    echo "$PACK_LIST" | grep -qiE "com\.leafmem\.agent\.plist$" && BAD_PACK="部署 plist（含密钥）"
+    echo "$PACK_LIST" | grep -qiE "marvmem" && BAD_PACK="marvmem 残留"
+    if [[ -n "$BAD_PACK" ]]; then
+      bad "npm 打包产物不干净：$BAD_PACK"
+    else
+      ok "npm 打包产物干净（$(echo "$PACK_LIST" | grep -c '^package/' | tr -d ' ') 个文件）"
+    fi
+    rm -rf "$PACK_TMP"
+  else
+    rm -rf "$PACK_TMP"
+    echo "⚠️  npm pack 失败，跳过打包产物审计"
+  fi
+else
+  echo "⚠️  npm 不可用，跳过打包产物审计"
+fi
+
 # ---- 7. package.json 版本与 tag 一致性提示 ----
 VER=$(/usr/bin/python3 -c "import json;print(json.load(open('package.json'))['version'])")
 if git tag -l | grep -q "v$VER"; then ok "git tag v$VER 已存在"; else echo "⚠️  git tag v$VER 尚未创建（发布后建议补打）"; fi
