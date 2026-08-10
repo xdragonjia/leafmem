@@ -109,10 +109,14 @@ WorkBuddy 依次验证并向用户报告：
 ### 步骤 6 ·（必选）每周维护自动化
 
 🔴 **必须配置**。没有定期维护，记忆会碎片化、重复、过时，召回效果明显变差。
-用 WorkBuddy 的自动化能力创建**每周一次**维护任务，加载 `leafmem-maintenance` 技能
-（在本 releases 包 `ops/skills/leafmem-maintenance/` 内，或随仓库分发），按 SOP 执行
-健康检查→存档→去重→整合→蒸馏→镜像→报告。无需额外付费 Key——蒸馏由宿主模型完成。
-推荐每周一凌晨（如 04:00），无异常静默、有动作才推送。
+本 releases 包已内置现成的自动化提示词模板，直接读取并按其创建定时任务即可：
+
+- `ops/automations/weekly-maintenance.md` —— **必选**，每周深度整理（建议周一 04:00）
+- `ops/automations/daily-sentinel.md` —— 可选，每日只读健康哨兵（建议每日 10:00，无异常静默）
+
+用 WorkBuddy 读取 `ops/automations/weekly-maintenance.md` 的提示词创建每周一次的定时任务
+（首次运行自动加载 `leafmem-maintenance` 技能并按 SOP 执行
+健康检查→存档→去重→整合→蒸馏→镜像→报告）。无需额外付费 Key——蒸馏由宿主模型完成。
 
 ### 步骤 7 ·（必选）控制台自启动（开机自动恢复）
 

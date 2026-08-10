@@ -150,7 +150,14 @@ LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个�
 | 衰减降权 | `memory_organize(action=decay)` | 无 |
 | 镜像同步 | ops/mirror-sync.js 导出全量记忆 | 无 |
 
-> 💡 **节奏选择**：每周一次（记忆增量 ~20-50 条/周，每日无料可整；语义整理是 LLM 重活，每周成本可控）。每日异常告警由独立的只读观测任务负责，不需要每日整理。
+> 💡 **节奏选择**：每周一次（记忆增量 ~20-50 条/周，每日无料可整；语义整理是 LLM 重活，每周成本可控）。如需每日异常告警，可加一个只读哨兵（不整理、零成本）。
+
+**现成的自动化提示词模板**（随仓库/包分发，宿主读取即可创建定时任务）：
+
+| 模板 | 节奏 | 作用 | 必选 |
+|------|------|------|------|
+| `ops/automations/weekly-maintenance.md` | 每周一 04:00 | 深度整理（自动加载本技能） | ✅ |
+| `ops/automations/daily-sentinel.md` | 每日 10:00 | 只读健康哨兵，异常才提醒 | 可选 |
 
 ### 1.6 嵌入纪律文件
 
@@ -185,10 +192,6 @@ Agent 会依次引导你：
 5. **写入宿主 MCP 配置 + 注入使用纪律**
 6. **信任 MCP** —— 安装后需要在宿主 MCP 管理页点击「信任」激活
 
-> 🪟 **Windows 11 用户**：核心功能完全跨平台（Node 22 内置 SQLite，零原生依赖）。
-> 详细分步引导见包内 [`INSTALL-KUNLUNXIAOZHI.md`](INSTALL-KUNLUNXIAOZHI.md)——
-> 昆仑小智按文件执行，你只需装 Node.js、提供硅基流动 Key、点 MCP 信任。
-
 #### 2.1.1 给昆仑小智用户的引导语（昆仑小智 · 含 Win11）
 
 请将下面这句话连同 releases 包发给昆仑小智：
@@ -201,7 +204,17 @@ Agent 会依次引导你：
 昆仑小智会读取引导文件自动完成 MCP 配置、MEMORY.md 注入与自检；用户全程只需
 装 Node.js、给一枚硅基流动 Key、点一次 MCP 信任。
 
-> WorkBuddy 用户见 §2.1.2 与包内 [`INSTALL-WORKBUDDY.md`](INSTALL-WORKBUDDY.md)。
+#### 2.1.2 给 WorkBuddy 用户的引导语（三平台通用）
+
+请将下面这句话连同 releases 包发给 WorkBuddy：
+
+> 请帮我安装并配置 LeafMem 记忆引擎。安装引导文件就在本 releases 包内的
+> `INSTALL-WORKBUDDY.md`。请完整读取该文件，严格按其中「WorkBuddy 执行步骤」
+> 逐条执行；需要我手动操作的（安装 Node.js、提供硅基流动 API Key、点击 MCP 信任）
+> 请明确提示我。安装完成后按文件末尾的验收清单自检，并把结果告诉我。
+
+WorkBuddy 会读取引导文件自动完成 MCP 配置、MEMORY.md 注入与自检；用户全程只需
+装 Node.js、给一枚硅基流动 Key、点一次 MCP 信任。
 
 ### 2.2 命令行安装
 

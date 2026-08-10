@@ -117,7 +117,8 @@
     "docs/ARCHITECTURE.md",
     "docs/API.md",
     "INSTALL-KUNLUNXIAOZHI.md",
-    "INSTALL-WORKBUDDY.md"
+    "INSTALL-WORKBUDDY.md",
+    "ops/automations"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && mkdir -p dist/console dist/cloud && cp src/console/index.html dist/console/index.html && cp src/console/mermaid.min.js dist/console/mermaid.min.js && cp src/cloud/schema.sql dist/cloud/schema.sql",

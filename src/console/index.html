@@ -332,7 +332,7 @@ function scopeContext() {
   if (state.scope?.startsWith('agent:')) return { agentId: state.scope.slice('agent:'.length) };
   return {};
 }
-const SCOPE_LABEL = { shared: '共享记忆库', project: '当前项目' };
+const SCOPE_LABEL = { shared: '共享记忆库（全部宿主合集）', project: '仅本项目记忆' };
 function scopeName(s) { return SCOPE_LABEL[s] || (s?.startsWith('agent:') ? `宿主 · ${s.slice(6)}` : s); }
 
 // ================================================================ 连接
@@ -366,9 +366,10 @@ function chrome() {
   document.getElementById('connect-btn').textContent = state.connected ? '重新连接' : '连接';
   document.getElementById('api-key-input').style.display = state.connected ? 'none' : '';
   const sel = document.getElementById('scope-select');
+  const TIPS = { shared: '所有宿主（WorkBuddy+昆仑小智）的记忆合集；分拆拓扑下也同时看到两边', project: '仅本控制台服务自身项目的记忆（双宿主接入模式下通常为空）' };
   const opts = [['shared', SCOPE_LABEL.shared], ['project', SCOPE_LABEL.project],
     ...state.agentIds.map(id => [`agent:${id}`, `宿主 · ${id}`])];
-  sel.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}"${v === state.scope ? ' selected' : ''}>${esc(l)}</option>`).join('');
+  sel.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}"${v === state.scope ? ' selected' : ''} title="${esc(TIPS[v] || ('仅该宿主自己的记忆'))}">${esc(l)}</option>`).join('');
   if (![...sel.options].some(o => o.value === state.scope)) {
     sel.insertAdjacentHTML('beforeend', `<option value="${esc(state.scope)}" selected>${esc(scopeName(state.scope))}</option>`);
   }
