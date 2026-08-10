@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+		<key>HOME</key>
+		<string>/Users/dragon</string>
+	</dict>
+	<key>Label</key>
+	<string>com.dragon.leafmem-sqlite-backup</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/zsh</string>
+		<string>/Users/dragon/WorkBuddy/scripts/leafmem_sqlite_backup.sh</string>
+	</array>
+	<key>StandardErrorPath</key>
+	<string>/Users/dragon/.leafmem/backups/backup-stderr.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/dragon/.leafmem/backups/backup-stdout.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>3</integer>
+		<key>Minute</key>
+		<integer>15</integer>
+	</dict>
+</dict>
+</plist>
