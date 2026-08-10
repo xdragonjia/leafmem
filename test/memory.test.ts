@@ -408,3 +408,23 @@ test("recall includes related entity graph context", async () => {
   assert.ok(recall.injectedContext.includes("Related entity graph"));
   assert.ok(recall.injectedContext.includes("co_occurs"));
 });
+
+test("forget prunes dangling principle.supports references (2026-08-10)", async () => {
+  const memory = createLeafMem({ store: new InMemoryStore() });
+  const scope = { type: "agent" as const, id: "workbuddy" };
+  // 两条内容必须足够不同，否则 remember() 去重会把第二条合并进第一条（同 id），
+  // supports 就退化成单元素，测不出"只剔除被删的那条"的语义。
+  const source1 = await memory.remember({ scope, content: "PostgreSQL 连接池在高并发下偶发超时，根因是默认 max_connections 过小，需要调大到 200。", kind: "lesson" });
+  const source2 = await memory.remember({ scope, content: "飞书机器人 webhook 在周五 18 点推送失败，是租户限流策略触发，错峰到 17:30 即恢复。", kind: "lesson" });
+  assert.notEqual(source1.id, source2.id);
+  const principle = await memory.remember({
+    scope,
+    content: "蒸馏原则：数据库容量与消息推送时段都需要压测验证后再上线。",
+    kind: "principle",
+    metadata: { supports: [source1.id, source2.id], otherField: "must-survive" },
+  });
+  await memory.forget(source1.id);
+  const after = await memory.get(principle.id);
+  assert.deepEqual((after?.metadata as Record<string, unknown>).supports, [source2.id]);
+  assert.equal((after?.metadata as Record<string, unknown>).otherField, "must-survive");
+});

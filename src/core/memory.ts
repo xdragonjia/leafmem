@@ -379,6 +379,19 @@ export class LeafMem {
       await this.deleteRecord(records, id);
       await this.retrieval.deleteVector(id);
       await this.clearEntityLinks(id);
+      // Custom (2026-08-10): prune dangling principle.supports references to
+      // the deleted record. Every deletion path (MCP govern delete,
+      // consolidation scripts, API) lands in forget(), so cleaning here
+      // covers them all. In-place mutation: this.update() would deadlock —
+      // it enqueues on the same mutationQueue we already hold.
+      for (const record of records) {
+        const supports = (record.metadata as Record<string, unknown> | undefined)?.supports;
+        if (!Array.isArray(supports) || !supports.includes(id)) continue;
+        const meta = { ...record.metadata } as Record<string, unknown>;
+        meta.supports = (supports as unknown[]).filter((s) => s !== id);
+        record.metadata = meta;
+        await this.persistRecord(records, record);
+      }
       return true;
     });
   }
