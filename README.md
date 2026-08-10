@@ -157,7 +157,7 @@ LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个�
 | 模板 | 节奏 | 作用 | 必选 |
 |------|------|------|------|
 | `ops/automations/weekly-maintenance.md` | 每周一 04:00 | 深度整理（自动加载本技能） | ✅ |
-| `ops/automations/daily-sentinel.md` | 每日 10:00 | 只读健康哨兵，异常才提醒 | 可选 |
+| `ops/automations/daily-sentinel.md` | 每日 10:00 | 只读健康哨兵（含误删检测），异常才提醒 | ✅ |
 
 ### 1.6 嵌入纪律文件
 
@@ -192,7 +192,7 @@ Agent 会依次引导你：
 5. **写入宿主 MCP 配置 + 注入使用纪律**
 6. **信任 MCP** —— 安装后需要在宿主 MCP 管理页点击「信任」激活
 
-#### 2.1.1 给昆仑小智用户的引导语（昆仑小智 · 含 Win11）
+#### 2.1.1 给昆仑小智用户的引导语（macOS / Windows）
 
 请将下面这句话连同 releases 包发给昆仑小智：
 
@@ -204,7 +204,7 @@ Agent 会依次引导你：
 昆仑小智会读取引导文件自动完成 MCP 配置、MEMORY.md 注入与自检；用户全程只需
 装 Node.js、给一枚硅基流动 Key、点一次 MCP 信任。
 
-#### 2.1.2 给 WorkBuddy 用户的引导语（三平台通用）
+#### 2.1.2 给 WorkBuddy 用户的引导语（macOS / Windows）
 
 请将下面这句话连同 releases 包发给 WorkBuddy：
 
@@ -379,8 +379,8 @@ LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使�
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 分层设计、召回流、SQLite schema |
 | [`docs/API.md`](docs/API.md) | 核心 API、4 工具、HTTP 路由 |
 | [`benchmarks/BENCHMARKS.md`](benchmarks/BENCHMARKS.md) | 基准方法与完整结果 |
-| [`INSTALL-KUNLUNXIAOZHI.md`](INSTALL-KUNLUNXIAOZHI.md) | 昆仑小智分步安装引导（含 Win11，agent 驱动） |
-| [`INSTALL-WORKBUDDY.md`](INSTALL-WORKBUDDY.md) | WorkBuddy 分步安装引导（三平台，agent 驱动） |
+| [`INSTALL-KUNLUNXIAOZHI.md`](INSTALL-KUNLUNXIAOZHI.md) | 昆仑小智分步安装引导（macOS/Windows，agent 驱动） |
+| [`INSTALL-WORKBUDDY.md`](INSTALL-WORKBUDDY.md) | WorkBuddy 分步安装引导（macOS/Windows，agent 驱动） |
 
 ---
 
@@ -408,7 +408,7 @@ LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使�
 - **蒸馏类能力双路径**：① MCP 内置 inferencer（需付费 key）② leafmem-maintenance 运维技能由宿主模型蒸馏（免费）。未配置任何模型时降级为本地逻辑
 - **超大存储**：数万条以上建议开启向量重排或检索后端扩展，内置加权检索在千级规模表现最佳
 - **Markdown 宿主桥接为单向**：首次导入后以 SQLite 为准，markdown 仅作展示镜像
-- **平台**：核心（MCP/记忆/控制台）与开机自启均全平台对齐——macOS 用 launchd、Windows 用任务计划程序、Linux 用 systemd user，安装程序自动选择，三平台体验一致（开机自启 + 崩溃自恢复）
+- **平台**：支持 macOS / Windows。核心（MCP/记忆/控制台）与开机自启双平台对齐——macOS 用 launchd、Windows 用任务计划程序，安装程序自动选择，体验一致（开机自启 + 崩溃自恢复）
 
 ---
 

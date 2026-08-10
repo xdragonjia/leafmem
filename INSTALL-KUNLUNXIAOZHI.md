@@ -1,6 +1,6 @@
 # LeafMem × 昆仑小智 安装引导
 
-> 面向 **Windows 11 + 昆仑小智**（macOS 同样适用）。
+> 面向 **昆仑小智**（macOS / Windows 均适用）。
 > 本文件由昆仑小智（AI 助手）按步骤执行；**用户只需做两件手动的事**：
 > ① 安装 Node.js ② 提供硅基流动 API Key 并点击 MCP 信任。其余全部由昆仑小智完成。
 
@@ -111,7 +111,7 @@ LeafMem 记忆工作流（昆仑小智）：
 本 releases 包已内置现成的自动化提示词模板，直接读取并按其创建定时任务即可：
 
 - `ops/automations/weekly-maintenance.md` —— **必选**，每周深度整理（建议周一 04:00）
-- `ops/automations/daily-sentinel.md` —— 可选，每日只读健康哨兵（建议每日 10:00，无异常静默）
+- `ops/automations/daily-sentinel.md` —— **必选**，每日只读健康哨兵（每日 10:00，无异常静默；缺了它周中系统异常要等一周才发现）
 
 引导昆仑小智读取 `ops/automations/weekly-maintenance.md` 的提示词，用昆仑小智的自动化能力
 创建每周一次的定时任务（首次运行会自动加载 `leafmem-maintenance` 技能并按 SOP 执行
@@ -119,11 +119,10 @@ LeafMem 记忆工作流（昆仑小智）：
 
 ### 步骤 7 ·（必选）控制台自启动（开机自动恢复）
 
-让用户重启电脑后控制台依然可用，三平台由安装程序自动完成：
+让用户重启电脑后控制台依然可用，双平台由安装程序自动完成：
 
 - **macOS**：安装程序写入 `~/Library/LaunchAgents/com.leafmem.agent.plist`（launchd，开机自启+保活）。
 - **Windows**：安装程序用任务计划程序创建 `LeafMemAgent` 任务（登录时启动）。
-- **Linux**：安装程序写入 systemd user unit（`~/.config/systemd/user/leafmem-agent.service`，`enable --now`）。
 
 昆仑小智执行 `node <安装目录>\dist\bin\leafmem-agent.js service install` 即可，
 安装程序按当前平台选对机制。装完用 `service status` 确认 installed/running。
@@ -131,15 +130,13 @@ LeafMem 记忆工作流（昆仑小智）：
 
 ---
 
-## 三、平台说明（macOS / Windows / Linux 体验一致）
+## 三、平台说明（macOS / Windows 体验一致）
 
-- **核心记忆 / MCP / 控制台完全跨平台**：SQLite 用 Node 22 内置 `node:sqlite`，**零原生依赖**，无需编译，三平台直接可用。
-- **开机自启三平台对齐**（安装程序自动选择机制，无需用户操心）：
+- **核心记忆 / MCP / 控制台双平台可用**：SQLite 用 Node 22 内置 `node:sqlite`，**零原生依赖**，无需编译。
+- **开机自启双平台对齐**（安装程序自动选择机制，无需用户操心）：
   - macOS → launchd（`com.leafmem.agent.plist`）
   - Windows → 任务计划程序（`LeafMemAgent`，登录自启）
-  - Linux → systemd user unit（`leafmem-agent.service`，Restart=always）
-- 三者均实现「开机/登录后自动启动控制台 + 崩溃自恢复」，体验与 macOS 一致。
-- 若环境缺少对应服务管理器（如容器/无桌面会话），安装程序不报错，控制台可手动 `leafmem-agent serve --config ~/.leafmem/agent-service.json` 启动。
+- 两者均实现「开机/登录后自动启动控制台 + 崩溃自恢复」。
 
 ## 四、故障排查
 

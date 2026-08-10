@@ -1,6 +1,6 @@
 # LeafMem × WorkBuddy 安装引导
 
-> 面向 **WorkBuddy**（macOS / Windows 11 / Linux 均适用）。
+> 面向 **WorkBuddy**（macOS / Windows 均适用）。
 > 本文件由 WorkBuddy（AI 助手）按步骤执行；**用户只需做两件手动的事**：
 > ① 安装 Node.js ② 提供硅基流动 API Key 并点击 MCP 信任。其余全部由 WorkBuddy 完成。
 
@@ -112,7 +112,7 @@ WorkBuddy 依次验证并向用户报告：
 本 releases 包已内置现成的自动化提示词模板，直接读取并按其创建定时任务即可：
 
 - `ops/automations/weekly-maintenance.md` —— **必选**，每周深度整理（建议周一 04:00）
-- `ops/automations/daily-sentinel.md` —— 可选，每日只读健康哨兵（建议每日 10:00，无异常静默）
+- `ops/automations/daily-sentinel.md` —— **必选**，每日只读健康哨兵（每日 10:00，无异常静默；缺了它周中系统异常要等一周才发现）
 
 用 WorkBuddy 读取 `ops/automations/weekly-maintenance.md` 的提示词创建每周一次的定时任务
 （首次运行自动加载 `leafmem-maintenance` 技能并按 SOP 执行
@@ -120,11 +120,10 @@ WorkBuddy 依次验证并向用户报告：
 
 ### 步骤 7 ·（必选）控制台自启动（开机自动恢复）
 
-让用户重启电脑后控制台依然可用，三平台由安装程序自动完成：
+让用户重启电脑后控制台依然可用，双平台由安装程序自动完成：
 
 - **macOS** → `~/Library/LaunchAgents/com.leafmem.agent.plist`（launchd，开机自启+保活）
 - **Windows** → 任务计划程序 `LeafMemAgent` 任务（登录时启动）
-- **Linux** → systemd user unit `~/.config/systemd/user/leafmem-agent.service`（Restart=always）
 
 WorkBuddy 执行 `node <安装目录>/dist/bin/leafmem-agent.js service install` 即可，
 安装程序按当前平台选对机制。装完用 `service status` 确认 installed/running。
@@ -132,10 +131,10 @@ WorkBuddy 执行 `node <安装目录>/dist/bin/leafmem-agent.js service install`
 
 ---
 
-## 三、平台说明（macOS / Windows / Linux 体验一致）
+## 三、平台说明（macOS / Windows 体验一致）
 
-- **核心记忆 / MCP / 控制台完全跨平台**：SQLite 用 Node 22 内置 `node:sqlite`，零原生依赖，无需编译，三平台直接可用。
-- **开机自启三平台对齐**（安装程序自动选机制）：launchd / 任务计划程序 / systemd user，均实现开机自启 + 崩溃自恢复。
+- **核心记忆 / MCP / 控制台双平台可用**：SQLite 用 Node 22 内置 `node:sqlite`，零原生依赖，无需编译。
+- **开机自启双平台对齐**（安装程序自动选机制）：launchd（macOS）/ 任务计划程序（Windows），均实现开机自启 + 崩溃自恢复。
 
 ## 四、故障排查
 

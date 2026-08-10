@@ -135,6 +135,8 @@ export function recordBelongsToProject(
   const { recallScopes } = resolveContextScopes(context);
   const key = `${record.scope.type}:${record.scope.id}`.toLowerCase();
   return recallScopes.some(
-    (scope) => `${scope.type}:${scope.id}`.toLowerCase() === key,
+    (scope) =>
+      (scope.type === record.scope.type && scope.id === "*") ||
+      `${scope.type}:${scope.id}`.toLowerCase() === key,
   );
 }

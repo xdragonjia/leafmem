@@ -1202,7 +1202,9 @@ function matchesRequestedScopes(recordScope: MemoryScope, requestedScopes?: Memo
     return true;
   }
   const key = scopeKey(recordScope);
-  return requestedScopes.some((scope) => scopeKey(scope) === key);
+  return requestedScopes.some(
+    (scope) => scopeKey(scope) === key || (scope.type === recordScope.type && scope.id === "*"),
+  );
 }
 
 function resolveScopeWeight(recordScope: MemoryScope, requestedScopes?: MemoryScope[]): number {
@@ -1210,7 +1212,9 @@ function resolveScopeWeight(recordScope: MemoryScope, requestedScopes?: MemorySc
     return 0.5;
   }
   const key = scopeKey(recordScope);
-  const match = requestedScopes.find((scope) => scopeKey(scope) === key);
+  const match = requestedScopes.find(
+    (scope) => scopeKey(scope) === key || (scope.type === recordScope.type && scope.id === "*"),
+  );
   if (!match) {
     return 0;
   }

@@ -63,6 +63,13 @@ describe("Console API routes", () => {
       tags: ["kunlunxiaozhi", "session"],
     });
     agentMemoryId = agentRecord.id;
+    // Seed a host-independent user-scope memory (2026-08-10): shared view must include it.
+    await memory.remember({
+      scope: { type: "user", id: "dragon" },
+      kind: "preference",
+      content: "User-level preference shared across all hosts",
+      tags: ["user", "preference"],
+    });
   });
 
   afterEach(async () => {
@@ -91,9 +98,10 @@ describe("Console API routes", () => {
     const res = await apiFetch("/v1/stats?view=shared");
     assert.equal(res.status, 200);
     const data = (await res.json()) as Record<string, unknown>;
-    assert.equal(data.totalMemories, 3);
+    assert.equal(data.totalMemories, 4);
     const scopes = data.scopes as Record<string, number>;
     assert.equal(scopes["agent:kunlunxiaozhi"], 1);
+    assert.equal(scopes["user:dragon"], 1);
   });
 
   it("GET /v1/memories keeps project-only default and supports shared view", async () => {
@@ -106,8 +114,9 @@ describe("Console API routes", () => {
     assert.equal(sharedRes.status, 200);
     const sharedData = (await sharedRes.json()) as Record<string, unknown>;
     const memories = sharedData.memories as Array<Record<string, unknown>>;
-    assert.equal(memories.length, 3);
+    assert.equal(memories.length, 4);
     assert.ok(memories.some((record) => (record.scope as Record<string, unknown>).id === "kunlunxiaozhi"));
+    assert.ok(memories.some((record) => (record.scope as Record<string, unknown>).id === "dragon"));
   });
 
   it("GET /v1/events returns paginated events", async () => {

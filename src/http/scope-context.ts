@@ -11,7 +11,10 @@ export function memoryContextFromQuery(projectId: string, url: URL): MemoryConte
   }
 
   if (scope === "shared" || scope === "all" || view === "shared" || view === "all") {
-    return { projectId, agentIds: [...AGENT_IDS] };
+    // Wildcard user scope (2026-08-10): the shared view is a union of
+    // everything across hosts, so user-scoped memories (host-independent
+    // user facts/lessons) must not be silently excluded.
+    return { projectId, agentIds: [...AGENT_IDS], userId: "*" };
   }
 
   return { projectId };
