@@ -656,6 +656,58 @@ export class LeafMem {
    *
    * Returns { ran, reason?, sectionsBefore, sectionsAfter, applied }.
    */
+  /**
+   * 2026-08-10: host-model-driven profile merge (replaces the inferencer-only
+   * buildProfile path). The host model supplies updated profile content as
+   * section-based markdown; this method merges it at the SECTION level:
+   *   - incoming sections whose title matches an existing one → replace it
+   *   - incoming sections with new titles → append
+   *   - existing sections NOT mentioned in the incoming content → preserved verbatim
+   * This guarantees a partial update never wipes unrelated sections.
+   */
+  async mergeProfile(options: {
+    scope?: MemoryScope;
+    content: string;
+    dryRun?: boolean;
+  }): Promise<{ ran: boolean; sectionsBefore: number; sectionsAfter: number; merged: number; content: string }> {
+    const scope = options.scope ?? { type: "agent", id: "workbuddy" };
+    const dryRun = options.dryRun ?? false;
+    const existing = await this.active.read("profile", scope);
+    const existingContent = existing?.content ?? "";
+    const { preamble, sections } = parseProfileSections(existingContent);
+    const incoming = parseProfileSections(options.content).sections;
+
+    // Merge at section level: replace by title, append if new, preserve the rest.
+    let merged = sections.map((sec) => ({ title: sec.title, body: sec.body }));
+    let mergedCount = 0;
+    for (const inc of incoming) {
+      const idx = merged.findIndex((sec) => sec.title === inc.title);
+      if (idx >= 0) {
+        merged[idx] = { title: inc.title, body: inc.body };
+      } else {
+        merged.push({ title: inc.title, body: inc.body });
+      }
+      mergedCount += 1;
+    }
+
+    const nextContent = renderProfileSections(preamble, merged);
+    if (!dryRun && nextContent !== existingContent) {
+      await this.active.write({
+        kind: "profile",
+        scope,
+        content: nextContent,
+        metadata: { refreshedBy: "host_model", refreshedAt: this.now().toISOString() },
+      });
+    }
+    return {
+      ran: true,
+      sectionsBefore: sections.length,
+      sectionsAfter: merged.length,
+      merged: mergedCount,
+      content: dryRun ? nextContent : (await this.active.read("profile", scope))?.content ?? nextContent,
+    };
+  }
+
   async buildProfile(options: {
     scope?: MemoryScope;
     limit?: number;

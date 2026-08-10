@@ -428,3 +428,22 @@ test("forget prunes dangling principle.supports references (2026-08-10)", async 
   assert.deepEqual((after?.metadata as Record<string, unknown>).supports, [source2.id]);
   assert.equal((after?.metadata as Record<string, unknown>).otherField, "must-survive");
 });
+
+test("mergeProfile merges at section level, preserving unmentioned sections (2026-08-10)", async () => {
+  const memory = createLeafMem({ store: new InMemoryStore() });
+  const scope = { type: "agent" as const, id: "workbuddy" };
+  await memory.active.write({
+    kind: "profile",
+    scope,
+    content: "## 工作偏好\n- 白天工作为主。\n\n## 技术环境\n- 旧机用 MacPorts。\n\n## 写作风格\n- 克制、具体。\n",
+  });
+  // Host supplies only ONE updated section; others must survive.
+  const res = await memory.mergeProfile({ scope, content: "## 技术环境\n- M5 Max，brew 非标路径。\n" });
+  assert.equal(res.merged, 1);
+  assert.equal(res.sectionsAfter, 3);
+  const doc = await memory.active.read("profile", scope);
+  assert.ok(doc!.content.includes("M5 Max"), "updated section applied");
+  assert.ok(doc!.content.includes("白天工作为主"), "unmentioned section 1 preserved");
+  assert.ok(doc!.content.includes("克制、具体"), "unmentioned section 2 preserved");
+  assert.ok(!doc!.content.includes("MacPorts"), "stale content replaced");
+});

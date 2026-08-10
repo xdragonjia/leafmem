@@ -103,7 +103,8 @@ description: >
     <step order="7" name="画像刷新（profile 宿主版）">
       <description>基于 preference delta 更新用户画像，替代付费 inferencer 的 profile</description>
       <action>memory_recall(action="search", kind="preference") 拉全部 preference；memory_recall(action="active_get", kind="profile") 读当前画像</action>
-      <action>宿主模型比对差异，更新对应 section；memory_write(action="active_distill", kind="profile", content=更新全文)</action>
+      <action>宿主模型比对差异，**只输出需要更新的分节**（"## 分节标题\n新内容" markdown）；memory_write(action="active_distill", kind="profile", content=更新分节)</action>
+      <note>🔴 分节合并语义：引擎按分节标题合并——同名分节被替换、新分节追加、**未提到的分节原样保留**。宿主永远不要输出全文覆写，避免误删其他分节。</note>
     </step>
 
     <step order="8" name="衰减降权">

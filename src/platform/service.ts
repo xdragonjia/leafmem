@@ -1,6 +1,6 @@
 import type { LeafMem } from "../core/memory.js";
 import { parseProfileSections } from "../core/memory.js";
-import type { MemoryInput, MemoryRecallResult, MemoryRecord } from "../core/types.js";
+import type { MemoryInput, MemoryRecallResult, MemoryRecord, MemoryScope } from "../core/types.js";
 import type { MemoryCaptureResult, MemoryProposalExtractor, MemoryRuntime } from "../runtime/types.js";
 import { createMemoryRuntime, inferMemoryProposals } from "../runtime/runtime.js";
 import type { InspectEventStore } from "../inspect/types.js";
@@ -361,16 +361,23 @@ export class LeafMemPlatformService implements PlatformMemoryService {
    * Reads only; never writes. Fail-safe: entity stats degrade to zero.
    */
   async getGovernanceSnapshot(input: { context: MemoryContext }): Promise<import("./types.js").GovernanceSnapshot> {
-    const scopes = resolveContextScopes(input.context).recallScopes;
+    // Honor allScopes/anyScope the same way listMemories does: "全部记忆" must
+    // aggregate everything, not resolve to an empty project scope (2026-08-10).
+    const scopes = input.context.allScopes ? [] : resolveContextScopes(input.context).recallScopes;
     const allRecords = await this.memory.list({ scopes });
 
     // --- Profile (P1-3 delta-ops document, active kind=profile) ---
+    // When browsing everything (allScopes) or a scope without its own profile,
+    // still surface the shared agent:workbuddy profile so 洞察 is never empty.
     const profile: import("./types.js").GovernanceSnapshot["profile"] = {
       present: false,
       preamble: "",
       sections: [],
     };
-    for (const scope of scopes) {
+    const profileScopes = input.context.allScopes
+      ? [{ type: "agent", id: "workbuddy" } as MemoryScope, ...scopes.filter((s) => s.type === "agent" && s.id !== "workbuddy")]
+      : scopes;
+    for (const scope of profileScopes) {
       try {
         const doc = await this.memory.active.read("profile", scope);
         if (doc && doc.content.trim()) {

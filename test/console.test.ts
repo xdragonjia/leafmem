@@ -149,6 +149,22 @@ describe("Console API routes", () => {
     assert.equal((memories[0]!.scope as Record<string, unknown>).id, "dragon");
   });
 
+  it("GET /v1/governance?scope=all aggregates instead of emptying (2026-08-10)", async () => {
+    // Seed a principle + a recallCount so governance has non-zero content.
+    await memory.remember({
+      scope: { type: "agent", id: "kunlunxiaozhi" },
+      kind: "principle",
+      content: "Distilled principle for governance snapshot test",
+      metadata: { recallCount: 3, supports: [] },
+    });
+    const res = await apiFetch("/v1/governance?scope=all");
+    assert.equal(res.status, 200);
+    const data = (await res.json()) as Record<string, unknown>;
+    const stats = data.stats as Record<string, number>;
+    assert.ok(stats.principleCount >= 1, "principles must be visible under scope=all");
+    assert.ok(stats.totalRecallCount >= 3, "recall counts must be aggregated under scope=all");
+  });
+
   it("GET /v1/events returns paginated events", async () => {
     const res = await apiFetch("/v1/events?limit=10");
     assert.equal(res.status, 200);

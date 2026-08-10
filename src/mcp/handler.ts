@@ -453,7 +453,20 @@ export function createMemoryToolSet(params: {
               }),
             };
           }
-          throw new Error("kind must be 'context' or 'experience'");
+          if (kind === "profile") {
+            // 2026-08-10: host-model-driven profile refresh via SECTION-LEVEL
+            // merge. The host model supplies the updated section(s) as
+            // "## Title\nbody" markdown; mergeProfile replaces only the
+            // sections it names and preserves every other section verbatim,
+            // so a partial refresh can never wipe unrelated sections. This is
+            // the free path that replaced the inferencer-only buildProfile.
+            const merged = await params.memory.mergeProfile({ scope, content });
+            return {
+              merged,
+              document: await params.memory.active.read("profile", scope),
+            };
+          }
+          throw new Error("kind must be 'context', 'experience', or 'profile'");
         }
         throw new Error("action must be remember, commit, task_append, or active_distill");
       },
