@@ -143,16 +143,21 @@ test("agent service install writes stable config and LaunchAgent plist without s
     assert.equal(config.port, 3391);
     assert.match(config.apiKey, /^mm_/);
 
-    // Phase 9: plist (launchd) is macOS-only. On Linux/Windows the platform
-    // guard writes config but skips the plist and reports serviceUnsupported.
+    // Autostart artifact is platform-specific: macOS plist, Linux systemd
+    // user unit, Windows Task Scheduler entry (no on-disk file).
     if (process.platform === "darwin") {
       const plist = await readFile(join(root, "Library", "LaunchAgents", "com.leafmem.agent.plist"), "utf8");
       assert.match(plist, /<string>serve<\/string>/);
       assert.match(plist, /<key>RunAtLoad<\/key>/);
       assert.match(plist, new RegExp(escapeRegExp(join(root, ".leafmem", "agent-service.json"))));
-    } else {
-      assert.ok(typeof parsed.serviceUnsupported === "string");
+    } else if (process.platform === "linux") {
+      const unit = await readFile(join(root, ".config", "systemd", "user", "leafmem-agent.service"), "utf8");
+      assert.match(unit, /ExecStart=/);
+      assert.match(unit, /Restart=always/);
+      assert.match(unit, new RegExp(escapeRegExp(join(root, ".leafmem", "agent-service.json"))));
     }
+    // Windows: schtasks registers a Task Scheduler entry (no file); verified
+    // only on real Windows via isServiceInstalled, not asserted here.
   } finally {
     await rm(root, { recursive: true, force: true });
   }

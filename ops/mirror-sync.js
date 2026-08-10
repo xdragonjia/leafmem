@@ -12,6 +12,7 @@
 // Called by ops/consolidation.js after every run.
 
 import { writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -20,10 +21,16 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const { createLeafMem } = await import(join(REPO_ROOT, "dist", "core", "index.js"));
 
 const scope = { type: "agent", id: "workbuddy" };
-const DB_PATH = "/Users/dragon/.leafmem/memory.sqlite";
+// Phase 9.3: no personal paths — default to the current user's home so the
+// script ships usable to any machine (npm tarball / other users).
+const HOME = homedir();
+const DB_PATH = (() => {
+  const i = process.argv.indexOf("--db");
+  return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : join(HOME, ".leafmem", "memory.sqlite");
+})();
 const MIRROR_DIR = (() => {
   const i = process.argv.indexOf("--mirror-dir");
-  return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : "/Users/dragon/WorkBuddy/backups/leafmem-mirror";
+  return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : join(HOME, ".leafmem", "mirror");
 })();
 
 const memory = createLeafMem({ storage: { backend: "sqlite", path: DB_PATH } });

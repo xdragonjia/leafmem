@@ -1055,7 +1055,6 @@ async function renderAgents(el) {
         <div style="display:flex;align-items:center;gap:10px">
           <span style="font-size:12.5px;color:var(--ink2)" title="WorkBuddy/昆仑小智 是否共用一套记忆（长期记忆+实体图谱+用户画像+工作状态四层）">记忆拓扑 ${topoUi}</span>
           ${topoBtn}
-          <button class="btn primary" onclick="agentBulkAction('/v1/agents/install-all')">全部配置</button>
         </div>
       </div>
       <div class="agent-grid">${agents.map(agentCard).join('')}</div>
@@ -1099,9 +1098,6 @@ async function toggleTopology(shared) {
   if (!confirm(msg)) return;
   await runMutation(() => api('/v1/agents/topology', { method: 'POST', body: JSON.stringify({ shared }) }));
   toast(shared ? '已切换为共用一套记忆' : '已分拆为独立记忆');
-}
-async function agentBulkAction(path) {
-  await runMutation(() => api(path, { method: 'POST', body: JSON.stringify({ sharedMemory: !!(state.topology && state.topology.shared) }) }));
 }
 async function runMutation(fn, agent) {
   const btns = [...document.querySelectorAll('.agent-actions button, .infra button')];

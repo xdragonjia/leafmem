@@ -14,6 +14,9 @@ const DEFAULT_AGENT_SERVICE_PORT = 3377;
  *  Core memory/MCP/console paths are fully cross-platform (node:sqlite has
  *  no native deps); only the LaunchAgent persistence layer is darwin-only. */
 export const IS_MACOS = process.platform === "darwin";
+export const IS_WINDOWS = process.platform === "win32";
+export const IS_LINUX = process.platform === "linux";
+const WIN_TASK_NAME = "LeafMemAgent";
 
 export type AgentServiceConfig = {
   host: string;
@@ -79,7 +82,7 @@ export function resolveAgentServiceOptions(input: AgentServiceOptions = {}): Res
     host,
     port,
     configPath: input.configPath ?? defaultAgentServiceConfigPath(home),
-    plistPath: defaultAgentServicePlistPath(home),
+    plistPath: defaultAgentServiceArtifactPath(home),
     logPath: join(home, ".leafmem", "agent-service.out.log"),
     errorLogPath: join(home, ".leafmem", "agent-service.err.log"),
     cliPath: agentBinPath("leafmem-agent"),
@@ -95,22 +98,17 @@ export function defaultAgentServicePlistPath(home = homedir()): string {
   return join(home, "Library", "LaunchAgents", `${AGENT_SERVICE_LABEL}.plist`);
 }
 
+/** On-disk autostart artifact per platform. Windows uses Task Scheduler (no file). */
+export function defaultAgentServiceArtifactPath(home = homedir()): string {
+  if (IS_MACOS) return defaultAgentServicePlistPath(home);
+  if (IS_LINUX) return join(home, ".config", "systemd", "user", "leafmem-agent.service");
+  return "";
+}
+
 export async function installAgentService(input: AgentServiceOptions = {}): Promise<AgentServiceInstallResult> {
   const options = resolveAgentServiceOptions(input);
   const config = await ensureAgentServiceConfig(input);
-  // Windows/Linux: no launchd — write config only; user runs the console
-  // manually or via their own task scheduler. Core MCP works regardless.
-  if (!IS_MACOS) {
-    return {
-      configPath: options.configPath,
-      plistPath: options.plistPath,
-      url: serviceUrl(config),
-      apiKeyPrefix: apiKeyPrefix(config.apiKey),
-      started: false,
-      serviceUnsupported: `launchd service is macOS-only (current platform: ${process.platform}); run \`node ${options.cliPath} serve --config ${options.configPath}\` manually or register it with your OS task scheduler`,
-    };
-  }
-  await writeAgentServicePlist(options);
+  await writeAgentServiceArtifact(options);
   if (options.start) {
     await startAgentService(options);
   }
@@ -177,7 +175,7 @@ export function projectFromAgentServiceConfig(config: AgentServiceConfig): Proje
 export async function getAgentServiceStatus(input: AgentServiceOptions = {}): Promise<AgentServiceStatus> {
   const options = resolveAgentServiceOptions({ ...input, start: false });
   const config = await readAgentServiceConfig(options.configPath);
-  const installed = await fileExists(options.plistPath);
+  const installed = await isServiceInstalled(options);
   return {
     configured: Boolean(config),
     installed,
@@ -189,25 +187,48 @@ export async function getAgentServiceStatus(input: AgentServiceOptions = {}): Pr
 }
 
 export async function startAgentService(input: AgentServiceOptions | ResolvedAgentServiceOptions = {}): Promise<void> {
-  if (!IS_MACOS) {
-    throw new Error(`launchd service is macOS-only (current platform: ${process.platform})`);
-  }
   const options = "configPath" in input && "plistPath" in input ? input : resolveAgentServiceOptions(input);
-  await execLaunchctl(["bootstrap", launchctlDomain(), options.plistPath], true);
-  await execLaunchctl(["enable", `${launchctlDomain()}/${AGENT_SERVICE_LABEL}`], true);
-  await execLaunchctl(["kickstart", "-k", `${launchctlDomain()}/${AGENT_SERVICE_LABEL}`]);
+  if (IS_MACOS) {
+    await execLaunchctl(["bootstrap", launchctlDomain(), options.plistPath], true);
+    await execLaunchctl(["enable", `${launchctlDomain()}/${AGENT_SERVICE_LABEL}`], true);
+    await execLaunchctl(["kickstart", "-k", `${launchctlDomain()}/${AGENT_SERVICE_LABEL}`]);
+    return;
+  }
+  if (IS_LINUX) {
+    // systemd user session may be absent on headless/CI hosts; degrade gracefully.
+    await execCmd("systemctl", ["--user", "daemon-reload"], true);
+    await execCmd("systemctl", ["--user", "enable", "--now", "leafmem-agent.service"], true);
+    return;
+  }
+  if (IS_WINDOWS) {
+    await execCmd("schtasks", ["/Run", "/TN", WIN_TASK_NAME], true);
+  }
 }
 
 export async function stopAgentService(input: AgentServiceOptions = {}): Promise<void> {
-  if (!IS_MACOS) return; // nothing to stop outside launchd
   const options = resolveAgentServiceOptions({ ...input, start: false });
-  await execLaunchctl(["bootout", launchctlDomain(), options.plistPath], true);
+  if (IS_MACOS) {
+    await execLaunchctl(["bootout", launchctlDomain(), options.plistPath], true);
+    return;
+  }
+  if (IS_LINUX) {
+    await execCmd("systemctl", ["--user", "disable", "--now", "leafmem-agent.service"], true);
+    return;
+  }
+  if (IS_WINDOWS) {
+    await execCmd("schtasks", ["/End", "/TN", WIN_TASK_NAME], true);
+  }
 }
 
 export async function uninstallAgentService(input: AgentServiceOptions = {}): Promise<void> {
   const options = resolveAgentServiceOptions({ ...input, start: false });
   await stopAgentService(options);
+  if (IS_WINDOWS) {
+    await execCmd("schtasks", ["/Delete", "/TN", WIN_TASK_NAME, "/F"], true);
+    return;
+  }
   await rm(options.plistPath, { force: true });
+  if (IS_LINUX) await execCmd("systemctl", ["--user", "daemon-reload"], true);
 }
 
 export function serviceUrl(config: AgentServiceConfig): string {
@@ -218,6 +239,65 @@ async function writeAgentServiceConfig(path: string, config: AgentServiceConfig)
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
   await chmod(path, 0o600);
+}
+
+async function writeAgentServiceArtifact(options: ResolvedAgentServiceOptions): Promise<void> {
+  if (IS_WINDOWS) {
+    await execCmd("schtasks", [
+      "/Create", "/TN", WIN_TASK_NAME, "/TR", windowsTaskCommand(options),
+      "/SC", "ONLOGON", "/RL", "LIMITED", "/F",
+    ], true);
+    return;
+  }
+  if (IS_LINUX) {
+    await writeLinuxUnit(options);
+    return;
+  }
+  await writeAgentServicePlist(options);
+}
+
+function windowsTaskCommand(options: ResolvedAgentServiceOptions): string {
+  return `"${process.execPath}" "${options.cliPath}" serve --config "${options.configPath}"`;
+}
+
+async function writeLinuxUnit(options: ResolvedAgentServiceOptions): Promise<void> {
+  await mkdir(dirname(options.plistPath), { recursive: true });
+  const unit = [
+    "[Unit]",
+    "Description=LeafMem resident console service",
+    "After=network.target",
+    "",
+    "[Service]",
+    `ExecStart="${process.execPath}" "${options.cliPath}" serve --config "${options.configPath}"`,
+    "Restart=always",
+    "RestartSec=2",
+    "",
+    "[Install]",
+    "WantedBy=default.target",
+    "",
+  ].join("\n");
+  await writeFile(options.plistPath, unit);
+}
+
+async function isServiceInstalled(options: ResolvedAgentServiceOptions): Promise<boolean> {
+  if (IS_WINDOWS) {
+    try {
+      await execCmd("schtasks", ["/Query", "/TN", WIN_TASK_NAME]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return await fileExists(options.plistPath);
+}
+
+async function execCmd(file: string, args: string[], ignoreError = false): Promise<void> {
+  try {
+    await execFileAsync(file, args);
+  } catch (error) {
+    if (ignoreError) return;
+    throw error;
+  }
 }
 
 async function writeAgentServicePlist(options: ResolvedAgentServiceOptions): Promise<void> {

@@ -113,16 +113,17 @@ description: >
 
     <step order="9" name="镜像同步">
       <description>导出全量记忆到本地镜像，供 MCP 降级兜底</description>
-      <action>node ~/projects/leafmem/ops/mirror-sync.js（NODE_PATH 指 node workspace）</action>
+      <action>node <LeafMem 安装目录>/ops/mirror-sync.js（默认写 ~/.leafmem/mirror，可 --mirror-dir 覆盖）</action>
     </step>
 
     <step order="10" name="报告与留痕">
       <description>有动作才推送，无动作静默</description>
       <branch>
         <if>有删除/整合/蒸馏动作</if>
-        <then>env -u NODE_OPTIONS /Users/dragon/bin/lark-cli im +messages-send --chat-id oc_f2bf98565ce2f849b64335d58f0d09e8 发送规模变化/真重复删除数/碎片整合数/新 principle 数/画像 section 数/decay 降权数</then>
-        <else>仅写 ~/.workbuddy/memory/YYYY-MM-DD.md 当日日志，不推送</else>
+        <then>通过宿主可用的消息渠道（如飞书/企业微信/仅日志）发送：规模变化/真重复删除数/碎片整合数/新 principle 数/画像 section 数/decay 降权数</then>
+        <else>仅写宿主当日记忆日志，不推送</else>
       </branch>
+      <note>推送渠道由宿主环境决定；无配置渠道时退化为仅日志，不报错</note>
     </step>
   </workflow>
 

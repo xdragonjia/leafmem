@@ -102,17 +102,40 @@ LeafMem 记忆工作流（昆仑小智）：
 1. `memory_recall(action="recall", message="连通性测试")` 能正常返回（不报错即通）。
 2. `memory_write(action="remember", content="LeafMem 安装自检通过", kind="note")` 写入成功，再 recall 能命中。
 3. 控制台/状态里 embedding 与 rerank 已生效（若配置了硅基流动 Key）。
+4. 每周维护自动化任务已创建（步骤 6，必选）。
+5. `leafmem-agent service status` 显示 installed 且 running（步骤 7 自启动生效）。
 
-### 步骤 6 ·（可选）每周维护自动化
+### 步骤 6 ·（必选）每周维护自动化
 
-若用户希望自动整理记忆，引导其用昆仑小智的自动化能力创建每周任务，加载 `leafmem-maintenance` 技能（该技能 SKILL.md 在本 releases 包 `ops/skills/leafmem-maintenance/` 内，或随仓库分发）。无需额外付费 Key——蒸馏由宿主模型完成。
+🔴 **必须配置**。没有定期维护，记忆会随时间碎片化、重复、过时，召回效果会明显变差。
+引导用户用昆仑小智的自动化能力创建**每周一次**的维护任务，加载 `leafmem-maintenance`
+技能（在本 releases 包 `ops/skills/leafmem-maintenance/` 内，或随仓库分发），按技能 SOP 执行
+健康检查→存档→去重→整合→蒸馏→镜像→报告。无需额外付费 Key——蒸馏由宿主模型完成。
+推荐节奏：每周一凌晨（如 04:00），无异常时静默、有整理动作才推送。
+
+### 步骤 7 ·（必选）控制台自启动（开机自动恢复）
+
+让用户重启电脑后控制台依然可用，三平台由安装程序自动完成：
+
+- **macOS**：安装程序写入 `~/Library/LaunchAgents/com.leafmem.agent.plist`（launchd，开机自启+保活）。
+- **Windows**：安装程序用任务计划程序创建 `LeafMemAgent` 任务（登录时启动）。
+- **Linux**：安装程序写入 systemd user unit（`~/.config/systemd/user/leafmem-agent.service`，`enable --now`）。
+
+昆仑小智执行 `node <安装目录>\dist\bin\leafmem-agent.js service install` 即可，
+安装程序按当前平台选对机制。装完用 `service status` 确认 installed/running。
+若某平台无对应服务管理器（如无 systemd 的容器），安装程序不报错，控制台可手动启动。
 
 ---
 
-## 三、平台说明（Win11 适配结论）
+## 三、平台说明（macOS / Windows / Linux 体验一致）
 
-- **核心记忆 / MCP / 控制台完全跨平台**：SQLite 用 Node 22 内置 `node:sqlite`，**零原生依赖**，无需编译，Win11 直接可用。
-- **唯一 macOS 专属**：`launchd` 常驻服务（开机自启控制台）。Windows 无此机制，不影响 MCP 核心功能；如需控制台常驻，用户可手动 `node <LEAFMEM_MCP_JS 同级>\leafmem-agent.js serve --config ~\.leafmem\agent-service.json`，或用 Windows 任务计划程序注册。安装程序在非 macOS 平台会自动跳过 launchd 并给出提示，不报错。
+- **核心记忆 / MCP / 控制台完全跨平台**：SQLite 用 Node 22 内置 `node:sqlite`，**零原生依赖**，无需编译，三平台直接可用。
+- **开机自启三平台对齐**（安装程序自动选择机制，无需用户操心）：
+  - macOS → launchd（`com.leafmem.agent.plist`）
+  - Windows → 任务计划程序（`LeafMemAgent`，登录自启）
+  - Linux → systemd user unit（`leafmem-agent.service`，Restart=always）
+- 三者均实现「开机/登录后自动启动控制台 + 崩溃自恢复」，体验与 macOS 一致。
+- 若环境缺少对应服务管理器（如容器/无桌面会话），安装程序不报错，控制台可手动 `leafmem-agent serve --config ~/.leafmem/agent-service.json` 启动。
 
 ## 四、故障排查
 
