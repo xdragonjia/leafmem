@@ -6,7 +6,7 @@ LeafMem is a layered memory subsystem for AI agents. It keeps durable records, c
 
 | Layer | Purpose | Stored as |
 |-------|---------|-----------|
-| Palace | Durable long-term memory records | `memory_items` |
+| 长期记忆（Palace） | Durable long-term memory records | `memory_items` |
 | Active memory | Compressed current context and reusable experience | `active_documents` |
 | Task context | Per-task transcript entries, rolling summary, and decisions | `task_context*` tables |
 | Retrieval | Optional vector / QMD retrieval on top of palace records | built-in scoring, vector store, or QMD |

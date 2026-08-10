@@ -6,7 +6,7 @@
 
 LeafMem 是一个分层的记忆子系统，和常见的"一张表存所有记忆"或者"一个压缩摘要"的方案不同。它同时维护三个层次的记忆：
 
-- **Palace（长期记忆）**：每条记忆都完整保留，带有 scope、kind、confidence、importance、tags 等元数据。
+- **长期记忆**：每条记忆都完整保留，带有 scope、kind、confidence、importance、tags 等元数据。
 - **Active Memory（活跃记忆）**：把 palace 中的内容压缩成两份文档——`context` 负责追踪当前工作状态，`experience` 负责沉淀可复用的经验。
 - **Task Context（任务上下文）**：在单个任务粒度上管理对话 entries、rolling summary 和 key decisions。
 
@@ -68,7 +68,7 @@ scope 的 `weight` 字段是可选的，只在检索排序时作为加权因子�
 { type: "task", id: "release-2026-04-18" }
 ```
 
-## 5. Palace 的使用
+## 5. 长期记忆的使用
 
 ### 写入记忆
 
@@ -835,7 +835,7 @@ const memory = createLeafMem({ store: new InMemoryStore() });
 
 ## 15. 当前的限制
 
-- Palace 对外暴露的是 `MemoryStore` 接口（`load()` / `save()`），不是直接的 SQL 查询 API。
+- 长期记忆存储对外暴露的是 `MemoryStore` 接口（`load()` / `save()`），不是直接的 SQL 查询 API。
 - Builtin retrieval 基于确定性的本地评分，remote embeddings 是可选的 rerank 层。
 - 使用 QMD backend 需要运行环境中已安装 `qmd` CLI。
 - Turn capture 中的记忆提取使用的是启发式正则匹配，不是 LLM 调用。

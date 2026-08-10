@@ -46,7 +46,7 @@ flowchart TB
     end
 
     subgraph Layers["🗂️ 分层记忆（SQLite · WAL · FTS5）"]
-        PALACE["Palace 长期记忆<br/>note/lesson/decision/principle…"]
+        PALACE["长期记忆<br/>note/lesson/decision/principle…"]
         ACTIVE["Active 工作状态<br/>context / experience / profile"]
         TASK["Task 任务上下文<br/>transcript / rolling summary"]
         GRAPH["实体知识图谱<br/>entities / relations / links"]
@@ -116,7 +116,7 @@ LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个�
 
 | 层 | 内容 | 特征 |
 |----|------|------|
-| **Palace** 长期记忆 | 持久记录，带 `scope`/`kind`/`source`/`tags`/`confidence`/`importance`/`metadata` | 可跨 Agent 共享，保留来源与标记 |
+| **长期记忆** | 持久记录，带 `scope`/`kind`/`source`/`tags`/`confidence`/`importance`/`metadata` | 可跨 Agent 共享，保留来源与标记 |
 | **Active** 工作状态 | `context`（当前上下文）/ `experience`（可复用经验）/ `profile`（用户画像） | 压缩、随治理更新 |
 | **Task** 任务上下文 | transcript 条目、rolling summary、决策 | 按 taskId 聚合 |
 | **实体图谱** | `entities` / `entity_relations` / `entity_links` | 支撑召回加权与控制台可视化 |

@@ -371,6 +371,7 @@ function instructionBlock(agent: AgentId): string {
 Memory lookup:
 
 - If a task may depend on user-specific preferences, prior project decisions, repo conventions, or earlier troubleshooting history, query LeafMem before answering or editing. Prefer a lightweight \`memory_recall\` call with \`action: "recall"\` using the current request. For cross-agent continuity, omit scope first so LeafMem can search the shared user memory store; for narrow lookups or durable writes, use \`agent:${scopeId}\`. Skip this for trivial, fully self-contained requests.
+- During long-running or multi-step tasks, call \`memory_write\` with \`action: "task_append"\` at each key sub-step completion or decision (taskId + role + content), so later sessions can restore progress via \`memory_recall\` \`action: "task_window"\`.
 - After substantial work or when closing a session, distill the session with the current host model and call \`memory_write\` with \`action: "commit"\`, the rolling summary, any new transcript entries, and durable facts/preferences/decisions. Use \`agent:${scopeId}\` for the session memory unless a narrower project/repo scope is clearly available.
 <!-- leafmem-agent-instructions:end -->`;
 }

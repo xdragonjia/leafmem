@@ -4,7 +4,7 @@ This document collects the API and configuration details that do not need to liv
 
 ## Core API
 
-### Palace Memory
+### 长期记忆（Palace Memory）
 
 ```ts
 import { createLeafMem } from "@xdragonjia/leafmem";
