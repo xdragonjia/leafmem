@@ -128,7 +128,9 @@
     "mcp:serve": "node dist/bin/leafmem-mcp.js",
     "test": "tsx --test test/*.test.ts",
     "bench:lme": "node --experimental-strip-types benchmarks/longmemeval/bench.ts",
-    "bench:locomo": "node --experimental-strip-types benchmarks/locomo/bench.ts"
+    "bench:locomo": "node --experimental-strip-types benchmarks/locomo/bench.ts",
+    "prepublishOnly": "zsh ops/publish-audit.sh",
+    "audit": "zsh ops/publish-audit.sh"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
@@ -138,5 +140,13 @@
   "engines": {
     "node": ">=22.13.0"
   },
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xdragonjia/leafmem.git"
+  },
+  "homepage": "https://github.com/xdragonjia/leafmem#readme",
+  "bugs": {
+    "url": "https://github.com/xdragonjia/leafmem/issues"
+  }
 }

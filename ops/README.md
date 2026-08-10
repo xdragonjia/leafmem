@@ -13,6 +13,7 @@
 | `launchd/com.dragon.leafmem-sqlite-backup.plist` | 备份任务的 launchd 模板 | 部署于 ~/Library/LaunchAgents/ |
 | `launchd/com.leafmem.agent.plist.template` | 常驻服务 plist 模板（Key 为占位符，不入库） | install-agent-plist.sh 注入后部署 |
 | `launchd/install-agent-plist.sh` | 从模板注入 mcp.json 中的 API Key 并 bootstrap 服务 | 手动执行 |
+| `publish-audit.sh` | 发布卫生审计：密钥/个人数据/数据文件/软链/marvmem 残留，发现即阻断 | npm prepublishOnly + CI + 手动 |
 
 ## 部署位置（软链接，勿在部署位置直接改文件）
 
