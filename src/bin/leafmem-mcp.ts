@@ -54,12 +54,19 @@ async function main(): Promise<void> {
   const config = parseCliConfig(process.argv.slice(2), process.env);
   const defaultScope = config.defaultScopes?.[0];
   if (defaultScope?.type === "agent" && defaultScope.id === "workbuddy") {
-    const inferencer = createOpenClawInferencer({
-      api: "openai-completions",
-      model: "deepseek-v4-flash",
-      baseUrl: "https://api.deepseek.com",
-      apiKey: process.env.DEEPSEEK_API_KEY,
-    });
+    // 2026-08-10: inferencer is optional (paid path). The free path is the
+    // leafmem-maintenance skill (host-model distillation via MCP). Only build
+    // an inferencer when a key is actually present — otherwise leave it
+    // undefined so reflect/profile degrade to no_inferencer explicitly
+    // instead of constructing a client with an undefined key.
+    const inferencer = process.env.DEEPSEEK_API_KEY
+      ? createOpenClawInferencer({
+          api: "openai-completions",
+          model: "deepseek-v4-flash",
+          baseUrl: "https://api.deepseek.com",
+          apiKey: process.env.DEEPSEEK_API_KEY,
+        })
+      : undefined;
     const sqlitePath = config.storagePath ?? defaultMemoryMcpStoragePath();
     const memory = createLeafMem({
       storage: {

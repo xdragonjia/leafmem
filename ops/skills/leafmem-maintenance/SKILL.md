@@ -1,6 +1,6 @@
 ---
 name: leafmem-maintenance
-version: "1.1.0"
+version: "1.2.0"
 agent_created: true
 author: xiaoxia
 description: >
@@ -14,7 +14,7 @@ description: >
 <skill>
   <metadata>
     <name>leafmem-maintenance</name>
-    <version>1.1.0</version>
+    <version>1.2.0</version>
     <agent_created>true</agent_created>
     <author>xiaoxia</author>
     <date>2026-08-10</date>
@@ -46,8 +46,9 @@ description: >
   </triggers>
 
   <identity_note>
-    与 ops/consolidation.js 的分工：consolidation.js 做大批量机械去重（需独立 inferencer key，可选）；
-    本技能做语义级精修（整合/蒸馏/画像），LLM 工作由宿主模型通过 MCP 完成，免费。
+    与 ops/consolidation.js 的关系：consolidation.js 是旧版 LLM 去重脚本（硬依赖 DEEPSEEK_API_KEY，
+    2026-08-10 key 移除后已不可运行，仅存档于仓库作参考）。本技能是它的现行替代——语义级精修
+    （整合/蒸馏/画像）由宿主模型通过 MCP 完成，免费；supports 断链清理已由 memory.forget() 内置级联覆盖。
   </identity_note>
 
   <workflow>
@@ -207,10 +208,11 @@ description: >
 
   <references>
     <file path="<LeafMem 安装目录>/ops/mirror-sync.js">镜像同步脚本（安装目录=`npm root -g`/@xdragonjia/leafmem）</file>
-    <file path="<LeafMem 安装目录>/ops/consolidation.js">机械去重脚本（互补，需独立 inferencer key，可选；源码用户直接用）</file>
+    <file path="<LeafMem 安装目录>/ops/consolidation.js">⚠️ 历史脚本（硬依赖已移除的 DEEPSEEK_API_KEY，不可运行；仅作存档参考，去重职责已由本技能步骤 3 承担）</file>
   </references>
 
   <notes>
+    <note id="2026-08-10-v12">v1.2.0：明确 consolidation.js 已被本技能替代（其硬依赖的 DEEPSEEK_API_KEY 已移除，脚本不可运行）；supports 断链清理由 forget() 内置级联覆盖，无需脚本兜底。</note>
     <note id="2026-08-10">v1.0.0 首版：Phase 9 收编每周健康检查的整理职责；宿主模型蒸馏免付费 key；每周节奏。</note>
     <note id="2026-08-10b">v1.1.0：按 skill-creator 标准重构为 XML v2.0（author/三段式 description/10 标准模块/checkpoints/never-因为-替代格式）。</note>
   </notes>
