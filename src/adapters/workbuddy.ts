@@ -232,6 +232,7 @@ LeafMem memory workflow for WorkBuddy:
 - When the user asks you to remember something, or states a durable preference or workflow rule, call \`memory_write\` with \`action: "remember"\`. You can omit scope; this WorkBuddy connector defaults writes to \`agent:workbuddy\`.
 - During long-running or multi-step tasks, call \`memory_write\` with \`action: "task_append"\` whenever a key sub-step completes, an important decision is made, or task state changes (pass taskId + role + content). This records the running task context so a later session can restore progress via \`memory_recall\` with \`action: "task_window"\`.
 - After substantial work or when closing a task, distill the useful outcome and call \`memory_write\` with \`action: "commit"\`.
+- \`source\` discipline: omit \`source\` on \`memory_write\` unless a standard channel name applies (e.g. \`manual\`, \`automation\`, \`skill\`, \`user-feedback\`). NEVER invent one-off source strings (task names, dates, migration labels) — ad-hoc sources fragment provenance into dozens of single-record buckets and wreck the console source filter.
 - Use \`memory_govern\` with \`action: "update"\`/\`"delete"\`/\`"pin"\` when the user asks to correct, remove, or protect a memory; use \`memory_organize\` with \`action: "reflect"\`/\`"profile"\`/\`"decay"\` for periodic curation.
 ${updateLine}
 - Do not rely only on WorkBuddy conversation search when LeafMem context could affect the answer.
