@@ -120,7 +120,16 @@ LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个�
 | **Task** 任务上下文 | transcript 条目、rolling summary、决策 | 按 taskId 聚合 |
 | **Entity** 实体图谱 | `entities` / `entity_relations` / `entity_links` | 支撑召回加权与控制台可视化 |
 
-**Scope 体系**：`user` / `task` / `agent` / `session` / `document` / `project` / `repo` —— 决定一条记忆对谁可见。
+**Scope 体系**（一条记忆"对谁可见"的标记，写入时自动带上）：
+
+| scope | 单机场景的实际作用 | 典型内容 |
+|-------|------------------|---------|
+| `agent:<宿主>` | **最常用**。共用拓扑下两宿主统一落 `agent:workbuddy`，互相可见可写；分拆拓扑下各落各的（`agent:workbuddy` / `agent:kunlunxiaozhi`），互不可见 | 宿主沉淀的决策/教训/偏好 |
+| `user:<id>` | 跨宿主的"用户级"记忆，与具体宿主无关，共享视图自动包含 | 用户画像相关的事实/习惯 |
+| `task:<id>` | 单个任务的工作态记录，供后续会话恢复进度 | task_append 的条目 |
+| `session` / `document` / `project` / `repo` | 面向 SDK 编程接入的预留维度，双宿主日常使用无需关心 | 编程集成时按会话/文档/仓库归属 |
+
+> 控制台「范围」选择器是动态的：默认「全部记忆」（不做任何过滤，单机下即全库），并自动列出**实际有内容的**每个 scope 供按需浏览。
 
 ### 1.4 召回引擎
 

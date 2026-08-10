@@ -46,6 +46,15 @@ export function resolveContextScopes(context: MemoryContext): ResolvedScopes {
     throw new Error("MemoryContext.projectId is required");
   }
 
+  // Console browsing shortcut: explicit single scope of any type.
+  if (context.anyScope) {
+    const anyType = normalizeAnyScopeType(context.anyScope.type);
+    return {
+      writeScope: { type: "project", id: context.projectId },
+      recallScopes: [{ type: anyType, id: context.anyScope.id, weight: 1.0 }],
+    };
+  }
+
   // --- Write scope ---
   const repoKey = canonicalRepoId(context);
   const writeScope: MemoryScope = repoKey
@@ -98,6 +107,10 @@ export function filterScopesByTargets(
   context: MemoryContext,
   targets?: ScopeTargetKey[],
 ): MemoryScope[] {
+  // "全部记忆" view: empty scope list = no filtering.
+  if (context.allScopes) {
+    return [];
+  }
   const { recallScopes } = resolveContextScopes(context);
 
   if (!targets || targets.length === 0) {
@@ -132,6 +145,9 @@ export function recordBelongsToProject(
   record: { scope: MemoryScope },
   context: MemoryContext,
 ): boolean {
+  if (context.allScopes) {
+    return true;
+  }
   const { recallScopes } = resolveContextScopes(context);
   const key = `${record.scope.type}:${record.scope.id}`.toLowerCase();
   return recallScopes.some(
@@ -139,4 +155,13 @@ export function recordBelongsToProject(
       (scope.type === record.scope.type && scope.id === "*") ||
       `${scope.type}:${scope.id}`.toLowerCase() === key,
   );
+}
+
+function normalizeAnyScopeType(value: string): MemoryScope["type"] {
+  const VALID: readonly MemoryScope["type"][] = ["agent", "session", "user", "task", "document", "project", "repo"];
+  const v = value.trim().toLowerCase();
+  if (!(VALID as readonly string[]).includes(v)) {
+    throw new Error(`Unsupported scope type: ${value}. Use one of: ${VALID.join(", ")}.`);
+  }
+  return v as MemoryScope["type"];
 }

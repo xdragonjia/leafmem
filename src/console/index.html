@@ -277,8 +277,6 @@
     <div class="spacer"></div>
     <span class="meta" id="scope-label" style="display:none">范围</span>
     <select class="input sm" id="scope-select" style="display:none" onchange="setScope(this.value)"></select>
-    <input class="input sm mono" id="api-key-input" placeholder="服务 API Key" style="width:220px" spellcheck="false">
-    <button class="btn primary sm" id="connect-btn" onclick="connect()">连接</button>
   </div>
   <div id="page"></div>
 </div>
@@ -294,11 +292,12 @@
 const API_BASE = window.location.origin;
 const _q = new URLSearchParams(window.location.search);
 const state = {
-  apiKey: _q.get('apiKey') || localStorage.getItem('leafmem_api_key') || '',
+  // 2026-08-10: local console auto-connects via server-injected key, no manual input.
+  apiKey: window.__LEAFMEM_API_KEY__ || _q.get('apiKey') || localStorage.getItem('leafmem_api_key') || '',
   page: ['dashboard','explorer','recall','insights','events','graph','agents','docs','tasks'].includes(_q.get('page')) ? _q.get('page') : 'dashboard',
   connected: false,
-  scope: _q.get('scope') || localStorage.getItem('leafmem_scope') || 'shared',
-  agentIds: [],
+  scope: _q.get('scope') || localStorage.getItem('leafmem_scope') || 'all',
+  agentIds: [], scopeList: [],
   explorerCache: null, explorerCacheScope: null,
   explorerPage: 0, explorerQuery: '', explorerKind: '', explorerSource: '', tasksPage: 0,
   recallQuery: '', eventType: '', expandedPrincipleId: null,
@@ -324,36 +323,47 @@ async function api(path, options = {}) {
 function scopeQuery() {
   const p = new URLSearchParams();
   if (state.scope === 'shared') p.set('view', 'shared');
-  else p.set('scope', state.scope || 'project');
+  else if (state.scope === 'all' || !state.scope) p.set('scope', 'all');
+  else p.set('scope', state.scope);
   return p.toString();
 }
 function scopeContext() {
-  if (state.scope === 'shared') return { agentIds: state.agentIds.length ? state.agentIds : undefined };
-  if (state.scope?.startsWith('agent:')) return { agentId: state.scope.slice('agent:'.length) };
+  if (state.scope === 'all' || !state.scope) return { allScopes: true };
+  if (state.scope === 'shared') return { agentIds: state.agentIds.length ? state.agentIds : undefined, userId: '*' };
+  if (state.scope && state.scope.includes(':')) {
+    const [t, ...rest] = state.scope.split(':');
+    return { anyScope: { type: t, id: rest.join(':') } };
+  }
   return {};
 }
-const SCOPE_LABEL = { shared: '共享记忆库（全部宿主+用户级）', project: '仅本项目记忆' };
-function scopeName(s) { return SCOPE_LABEL[s] || (s?.startsWith('agent:') ? `宿主 · ${s.slice(6)}` : s); }
+const SCOPE_LABEL = { all: '全部记忆', shared: '共享记忆库（全部宿主+用户级）' };
+const SCOPE_TYPE_NAME = { agent:'宿主', user:'用户', task:'任务', session:'会话', document:'文档', project:'项目', repo:'仓库' };
+function scopeName(s) {
+  if (SCOPE_LABEL[s]) return SCOPE_LABEL[s];
+  if (s && s.includes(':')) {
+    const [t, ...rest] = s.split(':');
+    return `${SCOPE_TYPE_NAME[t] || t} · ${rest.join(':')}`;
+  }
+  return s;
+}
 
 // ================================================================ 连接
 async function connect() {
-  const key = document.getElementById('api-key-input').value.trim();
-  if (key) state.apiKey = key;
   try {
     await api(`/v1/stats?${scopeQuery()}`);
     state.connected = true;
-    localStorage.setItem('leafmem_api_key', state.apiKey);
     localStorage.setItem('leafmem_scope', state.scope);
-    await loadAgentIds();
+    await loadScopes();
     chrome(); renderPage();
   } catch (err) {
     state.connected = false; chrome(); renderConnect();
     toast(`连接失败：${err.message}`, true);
   }
 }
-async function loadAgentIds() {
-  try { state.agentIds = ((await api('/v1/agents/status')).agents || []).map(a => a.agent); }
-  catch { state.agentIds = []; }
+// 2026-08-10: scope selector is dynamic — only scopes with content are listed.
+async function loadScopes() {
+  try { state.scopeList = ((await api('/v1/scopes')).scopes || []); }
+  catch { state.scopeList = []; }
 }
 
 // ================================================================ 框架
@@ -363,13 +373,11 @@ function chrome() {
   document.getElementById('conn-scope').textContent = state.connected ? `范围：${scopeName(state.scope)}` : '—';
   document.getElementById('scope-label').style.display = state.connected ? '' : 'none';
   document.getElementById('scope-select').style.display = state.connected ? '' : 'none';
-  document.getElementById('connect-btn').textContent = state.connected ? '重新连接' : '连接';
-  document.getElementById('api-key-input').style.display = state.connected ? 'none' : '';
   const sel = document.getElementById('scope-select');
-  const TIPS = { shared: '所有宿主（WorkBuddy+昆仑小智）的记忆合集 + 跨宿主用户级记忆；分拆拓扑下也同时看到' };
-  const opts = [['shared', SCOPE_LABEL.shared],
-    ...state.agentIds.map(id => [`agent:${id}`, `宿主 · ${id}`])];
-  sel.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}"${v === state.scope ? ' selected' : ''} title="${esc(TIPS[v] || ('仅该宿主自己的记忆'))}">${esc(l)}</option>`).join('');
+  // 动态范围：全部记忆 + 实际有内容的 scope（来自 /v1/scopes）
+  const opts = [['all', SCOPE_LABEL.all],
+    ...(state.scopeList || []).map(sc => [sc.scope, `${scopeName(sc.scope)}（${sc.count}）`])];
+  sel.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}"${v === state.scope ? ' selected' : ''}>${esc(l)}</option>`).join('');
   if (![...sel.options].some(o => o.value === state.scope)) {
     sel.insertAdjacentHTML('beforeend', `<option value="${esc(state.scope)}" selected>${esc(scopeName(state.scope))}</option>`);
   }
@@ -381,7 +389,7 @@ function chrome() {
   document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('on', b.dataset.page === state.page));
 }
 function setScope(v) {
-  state.scope = (v && v !== 'project') ? v : 'shared';
+  state.scope = (v && v !== 'project') ? v : 'all';
   localStorage.setItem('leafmem_scope', state.scope);
   state.explorerCache = null;
   chrome(); if (state.connected) renderPage();
@@ -422,13 +430,9 @@ function renderConnect() {
   <div class="hero">
     <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg></div>
     <h2>LeafMem 记忆控制台</h2>
-    <p>面向 AI 智能体的长期记忆控制面。<br>输入服务 API Key，即可浏览、检索与治理记忆。</p>
+    <p>面向 AI 智能体的长期记忆控制面。<br>本地服务连接失败，请确认 LeafMem 控制台服务已启动。</p>
     <div class="card">
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <input class="input mono" id="hero-key" placeholder="mm_… 服务 API Key" value="${esc(state.apiKey)}" spellcheck="false"
-          onkeydown="if(event.key==='Enter'){document.getElementById('api-key-input').value=this.value;connect();}">
-        <button class="btn primary" style="justify-content:center" onclick="document.getElementById('api-key-input').value=document.getElementById('hero-key').value;connect()">连接服务</button>
-      </div>
+      <button class="btn primary" style="justify-content:center" onclick="connect()">重试连接</button>
     </div>
   </div>`;
 }
@@ -1355,7 +1359,7 @@ function toast(msg, isErr) {
 }
 
 // ================================================================ 启动
-document.getElementById('api-key-input').value = state.apiKey;
+// 本地服务：key 由服务端注入，进入即自动连接；无 key（如直接开文件）则显示重试页。
 if (state.apiKey) connect(); else { chrome(); renderConnect(); }
 </script>
 </body>

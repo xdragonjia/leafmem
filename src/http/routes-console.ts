@@ -35,6 +35,25 @@ export async function handleConsoleRoutes(
     return;
   }
 
+  // GET /v1/scopes (2026-08-10): enumerate distinct scopes that actually have
+  // content, so the console scope selector can be dynamic instead of hardcoded.
+  if (path === "/v1/scopes" && req.method === "GET") {
+    const records = await ctx.platform.listAllMemories(10_000);
+    const counts = new Map<string, number>();
+    for (const record of records) {
+      const key = `${record.scope.type}:${record.scope.id}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const scopes = [...counts.entries()]
+      .map(([scope, count]) => {
+        const [type, ...idParts] = scope.split(":");
+        return { type, id: idParts.join(":"), scope, count };
+      })
+      .sort((a, b) => b.count - a.count);
+    json(res, 200, { scopes, total: records.length });
+    return;
+  }
+
   // GET /v1/stats
   if (path === "/v1/stats" && req.method === "GET") {
     const memories = await ctx.platform.listMemories({

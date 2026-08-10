@@ -241,6 +241,11 @@ export class LeafMemPlatformService implements PlatformMemoryService {
     return record;
   }
 
+  /** Enumerate all durable records regardless of scope (console /v1/scopes). */
+  async listAllMemories(limit = 10_000): Promise<MemoryRecord[]> {
+    return this.memory.list({ limit });
+  }
+
   async listMemories(input: ListMemoriesInput): Promise<MemoryRecord[]> {
     const scopes = filterScopesByTargets(input.context, input.scopeTargets);
 

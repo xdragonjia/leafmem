@@ -119,6 +119,36 @@ describe("Console API routes", () => {
     assert.ok(memories.some((record) => (record.scope as Record<string, unknown>).id === "dragon"));
   });
 
+  it("GET /v1/scopes enumerates scopes with content (2026-08-10)", async () => {
+    const res = await apiFetch("/v1/scopes");
+    assert.equal(res.status, 200);
+    const data = (await res.json()) as Record<string, unknown>;
+    const scopes = data.scopes as Array<Record<string, unknown>>;
+    assert.ok(Array.isArray(scopes));
+    assert.ok(scopes.some((sc) => sc.scope === "agent:kunlunxiaozhi"));
+    assert.ok(scopes.some((sc) => sc.scope === "user:dragon"));
+  });
+
+  it("GET /v1/memories?scope=all returns all scopes unfiltered", async () => {
+    const res = await apiFetch("/v1/memories?scope=all&limit=50");
+    assert.equal(res.status, 200);
+    const data = (await res.json()) as Record<string, unknown>;
+    const memories = data.memories as Array<Record<string, unknown>>;
+    assert.equal(memories.length, 4); // 2 project + 1 agent + 1 user
+    const scopeTypes = new Set(memories.map((m) => (m.scope as Record<string, unknown>).type));
+    assert.ok(scopeTypes.has("user"));
+    assert.ok(scopeTypes.has("agent"));
+  });
+
+  it("GET /v1/memories?scope=user:dragon filters to that scope only", async () => {
+    const res = await apiFetch("/v1/memories?scope=user:dragon&limit=50");
+    assert.equal(res.status, 200);
+    const data = (await res.json()) as Record<string, unknown>;
+    const memories = data.memories as Array<Record<string, unknown>>;
+    assert.equal(memories.length, 1);
+    assert.equal((memories[0]!.scope as Record<string, unknown>).id, "dragon");
+  });
+
   it("GET /v1/events returns paginated events", async () => {
     const res = await apiFetch("/v1/events?limit=10");
     assert.equal(res.status, 200);

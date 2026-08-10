@@ -28,6 +28,12 @@ export type LeafMemServerOptions = {
   host?: string;
   /** Path to the console static assets directory. Defaults to src/console/ */
   consolePath?: string;
+  /**
+   * 2026-08-10: when provided, the console HTML is served with this API key
+   * injected so the local console auto-connects with zero manual input.
+   * The console binds to 127.0.0.1 only, so this does not widen exposure.
+   */
+  consoleApiKey?: string;
   agents?: Pick<AgentInstallOptions, "home" | "storagePath" | "mcpPath">;
 };
 
@@ -71,7 +77,7 @@ export function createLeafMemServer(options: LeafMemServerOptions) {
 
     // Console static files (no auth required)
     if (pathname === "/console" || pathname.startsWith("/console/")) {
-      serveConsole(req, res, pathname, options.consolePath);
+      serveConsole(req, res, pathname, options.consolePath, options.consoleApiKey);
       return;
     }
 
@@ -109,7 +115,7 @@ export function createLeafMemServer(options: LeafMemServerOptions) {
         await handleBridgeRoutes(req, res, ctx, pathname);
       } else if (pathname.startsWith("/v1/agents/")) {
         await handleAgentRoutes(req, res, ctx, pathname);
-      } else if (pathname === "/v1/stats" || pathname === "/v1/governance" || (pathname === "/v1/graph" || pathname === "/v1/graph/entity" || pathname === "/v1/docs" || pathname === "/v1/tasks" || pathname === "/v1/tasks/detail") || pathname === "/v1/events" || pathname.startsWith("/v1/inspect/")) {
+      } else if (pathname === "/v1/stats" || pathname === "/v1/governance" || pathname === "/v1/scopes" || (pathname === "/v1/graph" || pathname === "/v1/graph/entity" || pathname === "/v1/docs" || pathname === "/v1/tasks" || pathname === "/v1/tasks/detail") || pathname === "/v1/events" || pathname.startsWith("/v1/inspect/")) {
         await handleConsoleRoutes(req, res, ctx, pathname, url);
       } else {
         json(res, 404, { error: "Not found" });
@@ -196,6 +202,15 @@ const MIME_TYPES: Record<string, string> = {
   ".ico": "image/x-icon",
 };
 
+
+/** Inject the auto-connect API key into the console HTML so users land on data. */
+function injectConsoleKey(html: string, apiKey?: string): string {
+  if (!apiKey) return html;
+  const snippet = `<script>window.__LEAFMEM_API_KEY__=${JSON.stringify(apiKey)};</script>`;
+  if (html.includes("</head>")) return html.replace("</head>", `${snippet}</head>`);
+  return snippet + html;
+}
+
 function resolveConsolePath(customPath?: string): string {
   if (customPath) return customPath;
   // Default: resolve relative to this file's directory → ../console/
@@ -212,6 +227,7 @@ function serveConsole(
   res: ServerResponse,
   pathname: string,
   customPath?: string,
+  consoleApiKey?: string,
 ): void {
   const baseDir = resolveConsolePath(customPath);
 
@@ -233,7 +249,7 @@ function serveConsole(
       // SPA fallback: serve index.html for unknown routes
       const indexPath = path.join(baseDir, "index.html");
       if (fs.existsSync(indexPath)) {
-        const content = fs.readFileSync(indexPath);
+        const content = injectConsoleKey(fs.readFileSync(indexPath, "utf8"), consoleApiKey);
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
         res.end(content);
         return;
@@ -245,7 +261,8 @@ function serveConsole(
 
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
-    const content = fs.readFileSync(filePath);
+    let content: string | Buffer = fs.readFileSync(filePath);
+    if (ext === ".html") content = injectConsoleKey(content.toString("utf8"), consoleApiKey);
     // console 是开发期高频迭代的单页应用，html/js 一律禁缓存，避免用户浏览器跑旧 JS
     const headers: Record<string, string> = { "Content-Type": contentType };
     if (ext === ".html" || ext === ".js" || ext === ".css") headers["Cache-Control"] = "no-store";

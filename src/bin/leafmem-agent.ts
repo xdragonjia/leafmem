@@ -431,6 +431,7 @@ async function runUi(input: {
     port: input.port,
     host: input.host,
     consolePath: defaultConsolePath(),
+    consoleApiKey: apiKey,
     agents: {
       home: input.options.home,
       storagePath: input.options.storagePath,
@@ -502,6 +503,7 @@ async function runServe(input: AgentServiceOptions): Promise<void> {
     port: config.port,
     host: config.host,
     consolePath: defaultConsolePath(),
+    consoleApiKey: config.apiKey,
     agents: {
       home: input.home,
       storagePath: config.storagePath,

@@ -22,6 +22,10 @@ export type MemoryContext = {
   agentIds?: string[];
   sessionId?: string;
   taskId?: string;
+  /** 2026-08-10: true = no scope filtering at all (console "全部记忆" view). */
+  allScopes?: boolean;
+  /** 2026-08-10: browse one explicit scope of any type (console scope picker). */
+  anyScope?: { type: string; id: string };
 };
 
 /**
@@ -191,6 +195,9 @@ export interface PlatformMemoryService {
   writeMemory(input: WriteMemoryInput): Promise<MemoryRecord>;
 
   listMemories(input: ListMemoriesInput): Promise<MemoryRecord[]>;
+
+  /** Enumerate all durable records regardless of scope (console scope picker). */
+  listAllMemories(limit?: number): Promise<MemoryRecord[]>;
 
   getMemory(input: MemoryRecordRef): Promise<MemoryRecord | null>;
 
