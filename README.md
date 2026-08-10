@@ -3,7 +3,7 @@
 > 面向 AI Agent 的分层长期记忆引擎 —— 让 Agent 写得下、理得清、召得回，最终用记忆高效完成任务。
 
 <p align="center">
-  <img alt="tests" src="https://img.shields.io/badge/tests-225%20passing-16a34a">
+  <img alt="tests" src="https://img.shields.io/badge/tests-233%20passing-16a34a">
   <img alt="node" src="https://img.shields.io/badge/node-%3E%3D22.13-5b6675">
   <img alt="license" src="https://img.shields.io/badge/license-Proprietary-d97706">
 </p>
@@ -306,7 +306,7 @@ LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使�
 | 改一条记忆 | “把那条偏好改成简洁英文回复” | `memory_govern(action=update)` |
 | 删一条记忆 | “删掉那条过时的记录” | `memory_govern(action=delete)` |
 | 保护重要记忆 | “把这条原则固定住，别被衰减” | `memory_govern(action=pin)` |
-| 主动整理 | “整理一下最近的记忆” | `memory_organize(action=reflect/profile/decay)` |
+| 主动整理 | “整理一下最近的记忆” | 加载 `leafmem-maintenance` 技能执行整理 SOP（宿主模型驱动，免费）；`memory_organize(action=decay)` 可直接用 |
 | 看任务工作态 | “这个任务之前做到哪了？” | `memory_recall(action=task_window)` 或控制台任务页 |
 
 #### 记忆控制台

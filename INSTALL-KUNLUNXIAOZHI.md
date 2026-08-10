@@ -102,8 +102,22 @@ LeafMem 记忆工作流（昆仑小智）：
 1. `memory_recall(action="recall", message="连通性测试")` 能正常返回（不报错即通）。
 2. `memory_write(action="remember", content="LeafMem 安装自检通过", kind="note")` 写入成功，再 recall 能命中。
 3. 控制台/状态里 embedding 与 rerank 已生效（若配置了硅基流动 Key）。
-4. 每周维护自动化任务已创建（步骤 6，必选）。
-5. `leafmem-agent service status` 显示 installed 且 running（步骤 7 自启动生效）。
+4. leafmem-maintenance 技能已装入技能目录且可见（步骤 6a，必选）。
+5. 每周维护自动化任务已创建（步骤 6，必选）。
+6. `leafmem-agent service status` 显示 installed 且 running（步骤 7 自启动生效）。
+
+### 步骤 6a ·（必选）安装每周维护技能
+
+每周整理依赖 `leafmem-maintenance` 技能（随本包分发）。把它装入昆仑小智的技能目录：
+
+```text
+源：  <npm root -g 结果>\@xdragonjia\leafmem\ops\skills\leafmem-maintenance\
+目标：%USERPROFILE%\.kunlunxiaozhi\skills\leafmem-maintenance\
+```
+
+把整个 `leafmem-maintenance` 文件夹复制到目标位置（保留目录结构，确保
+`skills/leafmem-maintenance/SKILL.md` 存在）。装完后让昆仑小智确认可见
+（技能列表里能找到 leafmem-maintenance）。
 
 ### 步骤 6 ·（必选）每周维护自动化
 

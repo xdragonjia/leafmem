@@ -5,6 +5,7 @@
 
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,8 +16,8 @@ const { createOpenClawInferencer } = await import(join(REPO_ROOT, "dist", "adapt
 
 const scope = { type: "agent", id: "workbuddy" };
 const FULL_SCAN_MAX = 25000;
-const DB_PATH = "/Users/dragon/.leafmem/memory.sqlite";
-const BACKUP_DIR = "/Users/dragon/.leafmem/backups";
+const DB_PATH = process.env.LEAFMEM_DB || join(homedir(), ".leafmem", "memory.sqlite");
+const BACKUP_DIR = process.env.LEAFMEM_BACKUP_DIR || join(homedir(), ".leafmem", "backups");
 
 // ===== 自动获取 API key =====
 function getApiKey() {

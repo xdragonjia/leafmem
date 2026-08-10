@@ -7,19 +7,19 @@
 		<key>PATH</key>
 		<string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
 		<key>HOME</key>
-		<string>/Users/dragon</string>
+		<string>__LEAFMEM_HOME__</string>
 	</dict>
 	<key>Label</key>
-	<string>com.dragon.leafmem-sqlite-backup</string>
+	<string>com.leafmem.sqlite-backup</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/bin/zsh</string>
-		<string>/Users/dragon/projects/leafmem/ops/sqlite-backup.sh</string>
+		<string>__LEAFMEM_REPO__/ops/sqlite-backup.sh</string>
 	</array>
 	<key>StandardErrorPath</key>
-	<string>/Users/dragon/.leafmem/backups/backup-stderr.log</string>
+	<string>__LEAFMEM_HOME__/.leafmem/backups/backup-stderr.log</string>
 	<key>StandardOutPath</key>
-	<string>/Users/dragon/.leafmem/backups/backup-stdout.log</string>
+	<string>__LEAFMEM_HOME__/.leafmem/backups/backup-stdout.log</string>
 	<key>StartCalendarInterval</key>
 	<dict>
 		<key>Hour</key>

@@ -4,8 +4,8 @@
 
 set -euo pipefail
 
-SOURCE="/Users/dragon/.leafmem/memory.sqlite"
-BACKUP_DIR="/Users/dragon/.leafmem/backups"
+SOURCE="${LEAFMEM_DB:-$HOME/.leafmem/memory.sqlite}"
+BACKUP_DIR="${LEAFMEM_BACKUP_DIR:-$HOME/.leafmem/backups}"
 DATE_STR=$(/bin/date +%Y%m%d-%H%M%S)
 BACKUP_FILE="${BACKUP_DIR}/memory-${DATE_STR}.sqlite"
 

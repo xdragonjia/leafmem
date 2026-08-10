@@ -30,7 +30,10 @@ PRIV=$(grep -rn "贾小龙\|xdragonjia@hotmail\|巡察\|昆仑数智\|党委\|�
 if [[ -n "$PRIV" ]]; then bad "发现个人/工作敏感信息:\n$PRIV"; else ok "无个人敏感信息"; fi
 
 # ---- 3. 数据文件（记忆库/镜像不该被打包发布）----
-DATA=$(find . -name "*.sqlite" -o -name "*.sqlite-*" -o -name "full-dump*" \
+# 精确枚举 SQLite 附属文件后缀（-wal/-shm/-journal），避免 *.sqlite-* 通配
+# 误伤含 "sqlite-backup" 字样的模板/脚本（2026-08-10 举一反三审计修复）。
+DATA=$(find . -name "*.sqlite" -o -name "*.sqlite-wal" -o -name "*.sqlite-shm" \
+       -o -name "*.sqlite-journal" -o -name "full-dump*" \
   | grep -v node_modules | grep -v "\.git/")
 if [[ -n "$DATA" ]]; then bad "发现数据文件:\n$DATA"; else ok "无记忆数据文件"; fi
 
