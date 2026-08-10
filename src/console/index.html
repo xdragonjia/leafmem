@@ -374,7 +374,7 @@ function chrome() {
   }
   const T = { dashboard:['仪表盘','存储健康与活动概览'], explorer:['记忆浏览','检索、筛选与管理记忆'],
     recall:['召回检查','模拟智能体实际检索到的内容'], insights:['洞察','蒸馏原则与用户画像'],
-    events:['事件日志','记忆操作审计流水'], graph:['知识图谱','实体关联力导向图'], agents:['宿主接入','各智能体宿主的安装与导入状态'], docs:['帮助文档','LeafMem 完整使用手册'], tasks:['任务上下文','task_context 列表'] };
+    events:['事件日志','记忆操作审计流水'], graph:['知识图谱','实体关联力导向图'], agents:['宿主接入','WorkBuddy 与昆仑小智的接入配置与修复'], docs:['帮助文档','LeafMem 完整使用手册'], tasks:['任务上下文','task_context 列表'] };
   document.getElementById('page-title').textContent = T[state.page][0];
   document.getElementById('page-sub').textContent = T[state.page][1];
   document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('on', b.dataset.page === state.page));
@@ -1045,12 +1045,11 @@ async function renderAgents(el) {
         <div class="item"><div class="lbl">MCP 脚本</div><div class="val">${esc(d.mcpPath)}</div></div>
         <div style="flex:1"></div>
         <div style="display:flex;align-items:center;gap:10px">
-          <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink2);cursor:pointer">
+          <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink2);cursor:pointer" title="共用时两个宿主统一落到 agent:workbuddy 单一记忆池：长期记忆、实体图谱、用户画像、工作状态四层全部共享">
             <input type="checkbox" style="width:15px;height:15px;accent-color:var(--brand)" \${state.sharedMemory ? 'checked' : ''} onchange="state.sharedMemory=this.checked">
-            WorkBuddy/昆仑小智 共用一套记忆
+            WorkBuddy/昆仑小智 共用一套记忆（记忆+图谱+画像+工作状态）
           </label>
-          <button class="btn" onclick="agentBulkAction('/v1/agents/import-all')">立即同步</button>
-          <button class="btn primary" onclick="agentBulkAction('/v1/agents/install-all')">全部安装</button>
+          <button class="btn primary" onclick="agentBulkAction('/v1/agents/install-all')">全部配置</button>
         </div>
       </div>
       <div class="agent-grid">${agents.map(agentCard).join('')}</div>
@@ -1077,8 +1076,9 @@ function agentCard(a) {
     </div>
     <div class="agent-path">${esc(a.paths.sessionsRoot)}</div>
     <div class="agent-actions">
-      <button class="btn sm" onclick="agentAction('/v1/agents/import', '${esc(a.agent)}')">同步</button>
-      <button class="btn sm primary" onclick="agentAction('/v1/agents/install', '${esc(a.agent)}')">安装</button>
+      ${a.mcp.configured
+        ? `<button class="btn sm" onclick="agentAction('/v1/agents/repair', '${esc(a.agent)}')" title="重新检测并修复 MCP 配置与 MEMORY.md 指令注入">修复</button>`
+        : `<button class="btn sm primary" onclick="agentAction('/v1/agents/install', '${esc(a.agent)}')" title="写入 MCP 配置并注入记忆使用规则">配置</button>`}
     </div>
   </div>`;
 }

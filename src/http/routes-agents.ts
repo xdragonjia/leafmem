@@ -51,6 +51,14 @@ export async function handleAgentRoutes(
     return;
   }
 
+  // Phase 9: repair = re-run idempotent install to fix MCP/instructions drift
+  if (path === "/v1/agents/repair" && req.method === "POST") {
+    const { agent, sharedMemory } = await readAgentWithMemory(req);
+    const result = await installAgent(agent, { ...options, sharedMemory });
+    json(res, 200, { result, status: await getAgentStatuses(options) });
+    return;
+  }
+
   if (path === "/v1/agents/import" && req.method === "POST") {
     const agent = await readAgent(req);
     const result = await importSessions(agent, options);

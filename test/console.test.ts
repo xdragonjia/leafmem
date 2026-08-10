@@ -185,7 +185,7 @@ describe("Console API routes", () => {
     assert.equal(res.status, 200);
     const html = await res.text();
     assert.ok(html.includes("LeafMem Console"));
-    assert.ok(html.includes("立即同步"));
+    assert.ok(html.includes("全部配置"));
   });
 
   it("GET /console/ also serves index.html", async () => {
