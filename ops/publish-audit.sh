@@ -40,8 +40,10 @@ if [[ -n "$BAD_GIT" ]]; then bad "git 索引中存在软链条目:\n$BAD_GIT"; e
 if git ls-files | grep -q "^node_modules"; then bad "node_modules 被 git 追踪"; else ok "node_modules 未入库"; fi
 
 # ---- 5. marvmem 品牌残留（产品化完整性）----
-MARV=$(grep -rn "marvmem" dist/ src/ docs/ README.md package.json 2>/dev/null \
-  | grep -v "mermaid" | grep -v node_modules)
+# ops/ 也在检测范围内（0.2.0 审查 M2），但排除审计脚本自身，
+# 否则会命中本规则自己的检测正则。
+MARV=$(grep -rn "marvmem" dist/ src/ ops/ docs/ README.md package.json 2>/dev/null \
+  | grep -v "mermaid" | grep -v node_modules | grep -v "publish-audit.sh")
 if [[ -n "$MARV" ]]; then bad "发现 marvmem 品牌残留:\n$MARV"; else ok "无 marvmem 残留"; fi
 
 # ---- 6. dist 是否存在且为最新构建 ----
@@ -53,11 +55,14 @@ if command -v npm >/dev/null 2>&1; then
   TGZ=$(npm pack --pack-destination "$PACK_TMP" --silent 2>/dev/null | tail -1)
   if [[ -n "$TGZ" && -f "$PACK_TMP/$TGZ" ]]; then
     PACK_LIST=$(tar -tzf "$PACK_TMP/$TGZ" 2>/dev/null)
+    # BAD_PACK 累加而非覆盖（0.2.0 审查 m3b）：否则多条命中只报最后一条原因。
     BAD_PACK=""
-    echo "$PACK_LIST" | grep -qiE "\.sqlite|full-dump|agent-service\.json|(^|/)\.env$" && BAD_PACK="数据/密钥文件"
-    echo "$PACK_LIST" | grep -qE "package/node_modules" && BAD_PACK="node_modules"
-    echo "$PACK_LIST" | grep -qiE "com\.leafmem\.agent\.plist$" && BAD_PACK="部署 plist（含密钥）"
-    echo "$PACK_LIST" | grep -qiE "marvmem" && BAD_PACK="marvmem 残留"
+    echo "$PACK_LIST" | grep -qiE "\.sqlite|full-dump|agent-service\.json|(^|/)\.env$" && BAD_PACK="${BAD_PACK}${BAD_PACK:+；}数据/密钥文件"
+    echo "$PACK_LIST" | grep -qE "package/node_modules" && BAD_PACK="${BAD_PACK}${BAD_PACK:+；}node_modules"
+    # 放宽 plist 检测（0.2.0 审查 m3a）：原 `com\.leafmem\.agent\.plist$` 的 $ 锚点
+    # 匹配不到实际文件名。凡是包内出现非 template 的 .plist 即视为风险。
+    echo "$PACK_LIST" | grep -iE "\.plist" | grep -qivE "\.plist\.template" && BAD_PACK="${BAD_PACK}${BAD_PACK:+；}部署 plist（可能含密钥）"
+    echo "$PACK_LIST" | grep -qiE "marvmem" && BAD_PACK="${BAD_PACK}${BAD_PACK:+；}marvmem 残留"
     if [[ -n "$BAD_PACK" ]]; then
       bad "npm 打包产物不干净：$BAD_PACK"
     else

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { LeafMem } from "../core/memory.js";
 import type { InspectEventStore } from "../inspect/types.js";
 import {
@@ -10,6 +13,19 @@ import { createMemoryRuntime, type MemoryRuntime } from "../runtime/index.js";
 
 type JsonRpcId = string | number | null;
 const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2024-11-05"] as const;
+
+// 运行时从 package.json 读取版本号（相对 dist/mcp/ 与 src/mcp/ 都是 ../../package.json），
+// 避免 serverInfo.version 硬编码再次漂移（0.2.0 审查 m1）。
+function readPackageVersion(): string {
+  try {
+    const pkgPath = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json");
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version?: string };
+    return pkg.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+const PACKAGE_VERSION = readPackageVersion();
 const MAINTENANCE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_CONTEXT_MAX_CHARS = 400;
 const ACTIVE_EXPERIENCE_MAX_CHARS = 800;
@@ -621,7 +637,9 @@ export function createMemoryToolSet(params: {
             if (args.importance !== undefined) patch.importance = args.importance;
             if (args.source !== undefined) patch.source = args.source;
             if (args.tags !== undefined) patch.tags = args.tags;
-            if (args.metadata !== undefined) patch.metadata = asRecord(args.metadata);
+            // asRecord() 可能返回 null；memory.update 对 metadata 是整包替换
+            // （memory.ts:364），传 null 会清空 metadata。null 时改为不传（0.2.0 审查 m2）。
+            if (args.metadata !== undefined) patch.metadata = asRecord(args.metadata) ?? undefined;
           }
           const record = await params.memory.update(id, patch);
           if (record) {
@@ -720,7 +738,7 @@ export function createMemoryMcpHandler(params: {
           : SUPPORTED_PROTOCOL_VERSIONS[0];
         return rpcResult(id, {
           protocolVersion,
-          serverInfo: { name: "leafmem", version: "0.1.0" },
+          serverInfo: { name: "leafmem", version: PACKAGE_VERSION },
           capabilities: { tools: {} },
           instructions: SERVER_INSTRUCTIONS,
         });

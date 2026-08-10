@@ -2,18 +2,22 @@
 // mirror directory so agents have a read-only fallback when the MCP server
 // is unreachable (see SOUL.md "降级路径").
 //
-// 🔴 Historical bug fixed here: the legacy marvmem-mirror/sync.js still
-// imported /Users/dragon/projects/marvmem and read ~/.marvmem/memory.sqlite
-// (frozen at 730 records) — the mirror silently diverged from the live
-// ~/.leafmem store. This script is the single source of truth and always
-// reads the live LeafMem database.
+// 🔴 Historical bug fixed here: the legacy pre-rebrand mirror sync script
+// still imported the old repo and read the old brand's frozen database
+// (730 records) — the mirror silently diverged from the live ~/.leafmem
+// store. This script is the single source of truth and always reads the
+// live LeafMem database.
 //
 // Usage: node ops/mirror-sync.js [--mirror-dir <path>]
 // Called by ops/consolidation.js after every run.
 
-import { createLeafMem } from "/Users/dragon/projects/leafmem/dist/core/index.js";
-import { writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// 基于脚本自身位置解析仓库根，避免硬编码绝对路径（0.2.0 审查 M4）
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const { createLeafMem } = await import(join(REPO_ROOT, "dist", "core", "index.js"));
 
 const scope = { type: "agent", id: "workbuddy" };
 const DB_PATH = "/Users/dragon/.leafmem/memory.sqlite";
@@ -26,6 +30,10 @@ const memory = createLeafMem({ storage: { backend: "sqlite", path: DB_PATH } });
 
 async function main() {
   const allRecords = await memory.list({ scopes: [scope] });
+  // 🔴 先清空 records/ 再重写（0.2.0 审查 M3）：此前只覆盖写 index.json，
+  // 已删除记忆的 records/*.json 残留为孤儿文件，agent 仍能从镜像读到被删内容。
+  // 删除后重建，保证镜像与活库完全一致。
+  rmSync(join(MIRROR_DIR, "records"), { recursive: true, force: true });
   mkdirSync(join(MIRROR_DIR, "records"), { recursive: true });
 
   // Lightweight index for quick lookups (id + summary + kind)

@@ -25,8 +25,8 @@
 
 ## 历史教训（2026-08-10 审计发现）
 
-1. **镜像断链**：旧 `backups/marvmem-mirror/sync.js` 仍 import
-   `projects/marvmem` 并读 `~/.marvmem/memory.sqlite`（冻结在 730 条），
+1. **镜像断链**：旧品牌时代的镜像同步脚本仍 import
+   旧仓库并读旧品牌的数据库（冻结在 730 条），
    导出的镜像与活库（753+）悄悄分叉，而 SOUL.md 承诺的降级路径
    `backups/leafmem-mirror/` 根本不存在。→ 由 `mirror-sync.js` 修复。
 2. **脚本无版本控制**：v8.1 级联清理等改动没有 git 历史可查。→ 收编入仓库。

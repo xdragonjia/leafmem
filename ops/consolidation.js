@@ -3,11 +3,15 @@
 // v8.1: 删除记忆后级联清理 principle.supports 悬挂引用（2026-08-10 观测告警修复）
 // 模式自动判断 + 内置 API key 读取 + 自动备份 + 容错降级
 
-import { createLeafMem } from "/Users/dragon/projects/leafmem/dist/core/index.js";
-import { createOpenClawInferencer } from "/Users/dragon/projects/leafmem/dist/adapters/openclaw.js";
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// 基于脚本自身位置解析仓库根，避免硬编码绝对路径（0.2.0 审查 M4）
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const { createLeafMem } = await import(join(REPO_ROOT, "dist", "core", "index.js"));
+const { createOpenClawInferencer } = await import(join(REPO_ROOT, "dist", "adapters", "openclaw.js"));
 
 const scope = { type: "agent", id: "workbuddy" };
 const FULL_SCAN_MAX = 25000;
@@ -31,8 +35,10 @@ function autoDetectMode() {
   const now = new Date();
   const day = now.getDate();
   const weekday = now.getDay();
-  if (weekday === 1 && day <= 7) return "monthly";
+  // 🔴 archive 必须先于 monthly 判断：January 首个周一同时满足两者，
+  // 若先判 monthly 会提前 return，archive 分支永不可达（0.2.0 审查 M1）。
   if (now.getMonth() === 0 && weekday === 1 && day <= 7) return "archive";
+  if (weekday === 1 && day <= 7) return "monthly";
   return "weekly";
 }
 
@@ -304,7 +310,7 @@ async function main() {
     await memory.active.write({
       scope, kind: "experience", content: exp,
       metadata: {
-        source: "marvmem-auto", mode: MODE,
+        source: "leafmem-auto", mode: MODE,
         before: allRecords.length, after: finalRecords.length,
         del, upd, ts: now(),
         nextMonthlyDue: nextMonthlyDue(),
@@ -312,12 +318,13 @@ async function main() {
     });
   }
 
-  // 同步 mirror 备份
+  // 同步 mirror 备份（用当前运行的 node，不再硬编码版本路径；0.2.0 审查 M4）
   try {
-    const { execSync } = await import("node:child_process");
-    execSync(`NODE_PATH=/Users/dragon/.workbuddy/binaries/node/workspace/node_modules /Users/dragon/.workbuddy/binaries/node/versions/22.22.2/bin/node /Users/dragon/projects/leafmem/ops/mirror-sync.js`, { encoding: "utf-8", timeout: 30000 });
+    execSync(`NODE_PATH=/Users/dragon/.workbuddy/binaries/node/workspace/node_modules ${JSON.stringify(process.execPath)} ${JSON.stringify(join(REPO_ROOT, "ops", "mirror-sync.js"))}`, { encoding: "utf-8", timeout: 30000 });
     console.error("Mirror synced: backups/leafmem-mirror/");
-  } catch (_) {}
+  } catch (e) {
+    console.error("Mirror sync failed (non-fatal):", e.message);
+  }
 
   // ===== Report =====
   console.log(`\n===== REPORT [${MODE}] =====`);
@@ -340,6 +347,12 @@ function nextMonthlyDue() {
 // 🔴 v8.1 级联清理：consolidation 删除记忆后，principle.metadata.supports 会留下
 // 悬挂引用（2026-08-10 观测告警根因）。此函数遍历所有 principle，剔除指向已删
 // 记录的 supports 条目，并记录 supportsPrunedAt/Reason。走 memory API，不直写 SQLite。
+//
+// ⚠️ 保留理由（0.2.0 独立审查 m4，勿删）：核心 forget() 的 supports 级联清理只在
+// 单进程 mutationQueue 内生效；而 MCP server 与本 consolidation.js 是两个进程、
+// 各自持有独立 mutationQueue——跨进程并发删除存在 lost-update 窗口（一侧清理时
+// 读到的还是另一侧删除前的快照）。本函数作为 consolidation 每次运行的全量兜底
+// 清扫，恰好弥补该窗口，不可移除。
 async function pruneDanglingSupports(removedIds) {
   if (!removedIds || removedIds.size === 0) return 0;
   const all = await memory.list({ scopes: [scope] });
