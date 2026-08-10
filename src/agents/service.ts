@@ -10,6 +10,10 @@ import { agentBinPath, defaultAgentMcpPath, resolveAgentOptions, type AgentInsta
 export const AGENT_SERVICE_LABEL = "com.leafmem.agent";
 const DEFAULT_AGENT_SERVICE_HOST = "127.0.0.1";
 const DEFAULT_AGENT_SERVICE_PORT = 3377;
+/** Phase 9 (Win11 support): launchd-based resident service is macOS-only.
+ *  Core memory/MCP/console paths are fully cross-platform (node:sqlite has
+ *  no native deps); only the LaunchAgent persistence layer is darwin-only. */
+export const IS_MACOS = process.platform === "darwin";
 
 export type AgentServiceConfig = {
   host: string;
@@ -46,6 +50,8 @@ export type AgentServiceInstallResult = {
   url: string;
   apiKeyPrefix: string;
   started: boolean;
+  /** Present when the resident service cannot be installed on this platform. */
+  serviceUnsupported?: string;
 };
 
 export type AgentServiceStatus = {
@@ -92,6 +98,18 @@ export function defaultAgentServicePlistPath(home = homedir()): string {
 export async function installAgentService(input: AgentServiceOptions = {}): Promise<AgentServiceInstallResult> {
   const options = resolveAgentServiceOptions(input);
   const config = await ensureAgentServiceConfig(input);
+  // Windows/Linux: no launchd — write config only; user runs the console
+  // manually or via their own task scheduler. Core MCP works regardless.
+  if (!IS_MACOS) {
+    return {
+      configPath: options.configPath,
+      plistPath: options.plistPath,
+      url: serviceUrl(config),
+      apiKeyPrefix: apiKeyPrefix(config.apiKey),
+      started: false,
+      serviceUnsupported: `launchd service is macOS-only (current platform: ${process.platform}); run \`node ${options.cliPath} serve --config ${options.configPath}\` manually or register it with your OS task scheduler`,
+    };
+  }
   await writeAgentServicePlist(options);
   if (options.start) {
     await startAgentService(options);
@@ -171,6 +189,9 @@ export async function getAgentServiceStatus(input: AgentServiceOptions = {}): Pr
 }
 
 export async function startAgentService(input: AgentServiceOptions | ResolvedAgentServiceOptions = {}): Promise<void> {
+  if (!IS_MACOS) {
+    throw new Error(`launchd service is macOS-only (current platform: ${process.platform})`);
+  }
   const options = "configPath" in input && "plistPath" in input ? input : resolveAgentServiceOptions(input);
   await execLaunchctl(["bootstrap", launchctlDomain(), options.plistPath], true);
   await execLaunchctl(["enable", `${launchctlDomain()}/${AGENT_SERVICE_LABEL}`], true);
@@ -178,6 +199,7 @@ export async function startAgentService(input: AgentServiceOptions | ResolvedAge
 }
 
 export async function stopAgentService(input: AgentServiceOptions = {}): Promise<void> {
+  if (!IS_MACOS) return; // nothing to stop outside launchd
   const options = resolveAgentServiceOptions({ ...input, start: false });
   await execLaunchctl(["bootout", launchctlDomain(), options.plistPath], true);
 }
