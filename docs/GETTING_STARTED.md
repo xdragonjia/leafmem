@@ -56,18 +56,13 @@ LeafMem 是一个本地长期记忆引擎（MCP server + 控制台）。它默�
 
 ---
 
-## 2. DeepSeek 或其他对话模型（可选：反思蒸馏）
+## 2. 反思蒸馏与画像维护（默认免费，无需额外 Key）
 
-向量化只解决「检索」。要让 LeafMem 具备**反思蒸馏**（把碎片记忆提炼为 principle）和**用户画像维护**能力，需要一个能做结构化输出的对话模型。DeepSeek 性价比高，也兼容任何 OpenAI 格式的服务（硅基流动同样可代理 DeepSeek）。
+向量化只解决「检索」。反思蒸馏（把碎片记忆提炼为 principle）与用户画像维护需要对话模型，LeafMem 提供两条路径：
 
-### 2.1 申请 DeepSeek API Key
+**路径一（推荐，免费）**：`leafmem-maintenance` 运维技能——由宿主模型（WorkBuddy/昆仑小智自带）通过 MCP 完成蒸馏，**不需要任何额外 API Key**。配合每周自动化任务运行。
 
-1. 打开 <https://platform.deepseek.com> 注册。
-2. 进入「API Keys」创建并复制 Key。
-
-### 2.2 配置 inferencer
-
-在 `leafmem` 的 `env` 中加入（以 DeepSeek 为例）：
+**路径二（可选，付费）**：配置独立 inferencer（DeepSeek 等 OpenAI 兼容模型），供 `memory_organize(action=reflect/profile)` 的 MCP 内置路径使用：
 
 ```jsonc
 {
@@ -76,7 +71,7 @@ LeafMem 是一个本地长期记忆引擎（MCP server + 控制台）。它默�
 }
 ```
 
-> `LEAFMEM_INFERENCER` 是一段 JSON 字符串，描述 inferencer 用哪个 provider/model。不配置时，反思蒸馏与画像维护会自动降级关闭（不影响基础记忆与检索）。
+> 不配置 inferencer 时，MCP 内置蒸馏自动降级关闭，但路径一（运维技能）仍完整可用。两条路径都不影响基础记忆与检索。
 
 ---
 

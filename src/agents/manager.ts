@@ -486,6 +486,53 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
 }
 
+/** Phase 9: memory topology = whether the two hosts share one scope pool.
+ * shared  → both mcp.json LEAFMEM_SCOPE_ID === "workbuddy"
+ * isolated → each host keeps its own scopeId */
+export type MemoryTopology = {
+  shared: boolean;
+  /** per-host observed scope id from mcp.json env (undefined if host not configured) */
+  scopes: Partial<Record<AgentId, string>>;
+};
+
+export async function getMemoryTopology(
+  input: AgentInstallOptions = {},
+): Promise<MemoryTopology> {
+  const options = resolveAgentOptions(input);
+  const scopes: Partial<Record<AgentId, string>> = {};
+  for (const agent of AGENT_IDS) {
+    const cfg = await readJsonObject(AGENTS[agent].configPath(options.home));
+    const env = asObject(asObject(asObject(cfg.mcpServers).leafmem).env);
+    const id = stringValue(env.LEAFMEM_SCOPE_ID);
+    if (typeof id === "string" && id.trim() !== "") scopes[agent] = id;
+  }
+  const values = Object.values(scopes);
+  const shared = values.length >= 2 && values.every((v) => v === "workbuddy");
+  return { shared, scopes };
+}
+
+export async function setMemoryTopology(
+  shared: boolean,
+  input: AgentInstallOptions = {},
+): Promise<MemoryTopology> {
+  const options = resolveAgentOptions(input);
+  for (const agent of AGENT_IDS) {
+    const path = AGENTS[agent].configPath(options.home);
+    const cfg = await readJsonObject(path);
+    const servers = asObject(cfg.mcpServers);
+    const server = asObject(servers.leafmem);
+    if (Object.keys(server).length === 0) continue; // host not configured
+    const env = asObject(server.env);
+    env.LEAFMEM_SCOPE_TYPE = "agent";
+    env.LEAFMEM_SCOPE_ID = shared ? "workbuddy" : AGENTS[agent].scopeId;
+    server.env = env;
+    servers.leafmem = server;
+    cfg.mcpServers = servers;
+    await writeJson(path, cfg);
+  }
+  return await getMemoryTopology(options);
+}
+
 function execFileAsync(
   file: string,
   args: string[],

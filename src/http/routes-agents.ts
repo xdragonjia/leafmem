@@ -7,14 +7,19 @@ import {
   isAgentId,
   resolveAgentOptions,
   type AgentId,
+  getMemoryTopology,
+  setMemoryTopology,
 } from "../agents/manager.js";
 import type { RequestContext } from "./server.js";
 import { json, readBody } from "./server.js";
 
-async function readBodyRecord(req: IncomingMessage): Promise<{ sharedMemory?: boolean }> {
+async function readBodyRecord(req: IncomingMessage): Promise<{ sharedMemory?: boolean; shared?: boolean }> {
   try {
     const body = (await readBody(req)) as Record<string, unknown>;
-    return { sharedMemory: typeof body.sharedMemory === "boolean" ? body.sharedMemory : undefined };
+    return {
+      sharedMemory: typeof body.sharedMemory === "boolean" ? body.sharedMemory : undefined,
+      shared: typeof body.shared === "boolean" ? body.shared : undefined,
+    };
   } catch {
     return {};
   }
@@ -40,7 +45,17 @@ export async function handleAgentRoutes(
       storagePath: options.storagePath,
       mcpPath: options.mcpPath,
       agents: await getAgentStatuses(options),
+      topology: await getMemoryTopology(options),
     });
+    return;
+  }
+
+  // Phase 9: shared/isolated memory topology toggle (shared = both hosts -> agent:workbuddy)
+  if (path === "/v1/agents/topology" && req.method === "POST") {
+    const body = await readBodyRecord(req);
+    const shared = body.shared === true;
+    const topology = await setMemoryTopology(shared, options);
+    json(res, 200, { topology, status: await getAgentStatuses(options) });
     return;
   }
 

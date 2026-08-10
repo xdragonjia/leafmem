@@ -143,10 +143,16 @@ test("agent service install writes stable config and LaunchAgent plist without s
     assert.equal(config.port, 3391);
     assert.match(config.apiKey, /^mm_/);
 
-    const plist = await readFile(join(root, "Library", "LaunchAgents", "com.leafmem.agent.plist"), "utf8");
-    assert.match(plist, /<string>serve<\/string>/);
-    assert.match(plist, /<key>RunAtLoad<\/key>/);
-    assert.match(plist, new RegExp(escapeRegExp(join(root, ".leafmem", "agent-service.json"))));
+    // Phase 9: plist (launchd) is macOS-only. On Linux/Windows the platform
+    // guard writes config but skips the plist and reports serviceUnsupported.
+    if (process.platform === "darwin") {
+      const plist = await readFile(join(root, "Library", "LaunchAgents", "com.leafmem.agent.plist"), "utf8");
+      assert.match(plist, /<string>serve<\/string>/);
+      assert.match(plist, /<key>RunAtLoad<\/key>/);
+      assert.match(plist, new RegExp(escapeRegExp(join(root, ".leafmem", "agent-service.json"))));
+    } else {
+      assert.ok(typeof parsed.serviceUnsupported === "string");
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -45,7 +45,7 @@ flowchart TB
     end
 
     subgraph Layers["🗂️ 分层记忆（SQLite · WAL · FTS5）"]
-        PALACE["长期记忆<br/>note/lesson/decision/principle…"]
+        PALACE["Long-term 长期记忆<br/>note/lesson/decision/principle…"]
         ACTIVE["Active 工作状态<br/>context / experience / profile"]
         TASK["Task 任务上下文<br/>transcript / rolling summary"]
         GRAPH["实体知识图谱<br/>entities / relations / links"]
@@ -115,10 +115,10 @@ LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个�
 
 | 层 | 内容 | 特征 |
 |----|------|------|
-| **长期记忆** | 持久记录，带 `scope`/`kind`/`source`/`tags`/`confidence`/`importance`/`metadata` | 可跨 Agent 共享，保留来源与标记 |
+| **Long-term** 长期记忆 | 持久记录，带 `scope`/`kind`/`source`/`tags`/`confidence`/`importance`/`metadata` | 可跨 Agent 共享，保留来源与标记 |
 | **Active** 工作状态 | `context`（当前上下文）/ `experience`（可复用经验）/ `profile`（用户画像） | 压缩、随治理更新 |
 | **Task** 任务上下文 | transcript 条目、rolling summary、决策 | 按 taskId 聚合 |
-| **实体图谱** | `entities` / `entity_relations` / `entity_links` | 支撑召回加权与控制台可视化 |
+| **Entity** 实体图谱 | `entities` / `entity_relations` / `entity_links` | 支撑召回加权与控制台可视化 |
 
 **Scope 体系**：`user` / `task` / `agent` / `session` / `document` / `project` / `repo` —— 决定一条记忆对谁可见。
 
@@ -133,7 +133,7 @@ LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个�
 
 加权信号：**词法重叠 + hash 向量 + 实体图谱加权 + FTS5 BM25 + recency + importance + principle 加成**，过期记录自动降权。**BGE-M3 向量重排为推荐默认配置**（安装引导默认开启，免费硅基流动额度即可），开启后 LongMemEval R@10 从 94.6% 提升到 97.6%。
 
-**Inferencer（可选但推荐）**：DeepSeek 等 OpenAI 兼容模型，驱动三类高阶能力——reflect 蒸馏原则、profile 画像刷新、session commit 的深度治理。未配置时这些动作降级为本地确定性逻辑（不蒸馏），核心召回不受影响。
+**蒸馏与画像默认免费**：reflect 蒸馏原则、profile 画像刷新由 `leafmem-maintenance` 运维技能驱动**宿主模型**完成，不需要任何额外 API Key（见 1.5）。另保留可选的独立 inferencer 配置（DeepSeek 等 OpenAI 兼容模型，走 MCP 内置路径）；两者都不配置时蒸馏降级关闭，核心召回不受影响。
 
 ### 1.5 周期性维护（leafmem-maintenance 运维技能）
 
@@ -181,13 +181,25 @@ Agent 会依次引导你：
 3. **选择双宿主记忆拓扑** ——
    - `shared`（推荐）：WorkBuddy 与昆仑小智共用同一记忆池 `agent:workbuddy`（长期记忆 + 实体图谱 + 用户画像 + 工作状态四层全部共享）
    - `isolated`：各宿主独立 scope
-4. **配置 API Key** —— 免费的硅基流动 BGE-M3 向量化（可选）+ DeepSeek inferencer（可选）
+4. **配置 API Key** —— 免费的硅基流动 BGE-M3 向量化（推荐）；蒸馏默认免费无需配置，如需 MCP 内置蒸馏路径再另配 DeepSeek（可选）
 5. **写入宿主 MCP 配置 + 注入使用纪律**
 6. **信任 MCP** —— 安装后需要在宿主 MCP 管理页点击「信任」激活
 
 > 🪟 **Windows 11 用户**：核心功能完全跨平台（Node 22 内置 SQLite，零原生依赖）。
 > 详细分步引导见包内 [`INSTALL-KUNLUNXIAOZHI.md`](INSTALL-KUNLUNXIAOZHI.md)——
 > 昆仑小智按文件执行，你只需装 Node.js、提供硅基流动 Key、点 MCP 信任。
+
+#### 2.1.1 给同事的引导语（昆仑小智 · 含 Win11）
+
+把下面这句话连同 releases 包发给同事，让他在昆仑小智里直接说即可：
+
+> 请帮我安装并配置 LeafMem 记忆引擎。安装引导文件就在本 releases 包内的
+> `INSTALL-KUNLUNXIAOZHI.md`。请完整读取该文件，严格按其中「昆仑小智执行步骤」
+> 逐条执行；需要我手动操作的（安装 Node.js、提供硅基流动 API Key、点击 MCP 信任）
+> 请明确提示我。安装完成后按文件末尾的验收清单自检，并把结果告诉我。
+
+昆仑小智会读取引导文件自动完成 MCP 配置、MEMORY.md 注入与自检；同事全程只需
+装 Node.js、给一枚硅基流动 Key、点一次 MCP 信任。
 
 ### 2.2 命令行安装
 
@@ -203,7 +215,7 @@ node dist/bin/leafmem-agent.js install kunlunxiaozhi
 node dist/bin/leafmem-agent.js install kunlunxiaozhi --memory shared
 ```
 
-支持的宿主（Phase 9 双宿主定位）：
+支持的宿主：
 
 ```text
 workbuddy | kunlunxiaozhi | all
@@ -245,7 +257,7 @@ node dist/bin/leafmem-agent.js tui
 LeafMem 开箱即用（本地内置检索即可工作）。**推荐默认配置**（安装引导会默认帮你配好）：
 
 - **向量化 + 重排**：硅基流动 BGE-M3（免费额度，显著提升召回精度，默认开启）
-- **inferencer**：DeepSeek 或任意 OpenAI 兼容模型（驱动 reflect/profile 等蒸馏能力）
+- **蒸馏/画像**：默认由运维技能用宿主模型完成（免费，无需配置）；如需 MCP 内置蒸馏路径可另配 DeepSeek（可选）
 
 配置细节见 [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md)。
 

@@ -1039,16 +1039,22 @@ async function renderAgents(el) {
   try {
     const d = await api('/v1/agents/status');
     const agents = d.agents || [];
+    const topo = d.topology || { shared: false, scopes: {} };
+    state.topology = topo;
+    const topoUi = topo.shared
+      ? `<span class="pill g">已共用</span>`
+      : (Object.keys(topo.scopes).length >= 2 ? `<span class="pill y">独立记忆</span>` : `<span class="pill gray">未完全配置</span>`);
+    const topoBtn = topo.shared
+      ? `<button class="btn sm" onclick="toggleTopology(false)" title="把两个宿主拆回各自独立 scope（agent:workbuddy / agent:kunlunxiaozhi）">分拆</button>`
+      : `<button class="btn sm primary" onclick="toggleTopology(true)" title="两个宿主统一落到 agent:workbuddy 单一记忆池：长期记忆、实体图谱、用户画像、工作状态四层全部共享">共用</button>`;
     el.innerHTML = `<div class="inner">
       <div class="card infra">
         <div class="item"><div class="lbl">共享 SQLite</div><div class="val">${esc(d.storagePath)}</div></div>
         <div class="item"><div class="lbl">MCP 脚本</div><div class="val">${esc(d.mcpPath)}</div></div>
         <div style="flex:1"></div>
         <div style="display:flex;align-items:center;gap:10px">
-          <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink2);cursor:pointer" title="共用时两个宿主统一落到 agent:workbuddy 单一记忆池：长期记忆、实体图谱、用户画像、工作状态四层全部共享">
-            <input type="checkbox" style="width:15px;height:15px;accent-color:var(--brand)" \${state.sharedMemory ? 'checked' : ''} onchange="state.sharedMemory=this.checked">
-            WorkBuddy/昆仑小智 共用一套记忆（记忆+图谱+画像+工作状态）
-          </label>
+          <span style="font-size:12.5px;color:var(--ink2)" title="WorkBuddy/昆仑小智 是否共用一套记忆（长期记忆+实体图谱+用户画像+工作状态四层）">记忆拓扑 ${topoUi}</span>
+          ${topoBtn}
           <button class="btn primary" onclick="agentBulkAction('/v1/agents/install-all')">全部配置</button>
         </div>
       </div>
@@ -1065,7 +1071,7 @@ function agentCard(a) {
   return `
   <div class="agent-card">
     <div class="agent-head">
-      <div><div class="agent-name">${esc(a.label)}</div><div class="agent-scope">agent:${esc(a.scopeId)}</div></div>
+      <div><div class="agent-name">${esc(a.label)}</div><div class="agent-scope">实际 scope: agent:${esc((state.topology && state.topology.scopes[a.agent]) || a.scopeId)}</div></div>
       ${ready ? '<span class="pill g">就绪</span>' : '<span class="pill y">待配置</span>'}
     </div>
     <div class="agent-rows">
@@ -1083,10 +1089,19 @@ function agentCard(a) {
   </div>`;
 }
 async function agentAction(path, agent) {
-  await runMutation(() => api(path, { method: 'POST', body: JSON.stringify({ agent, sharedMemory: state.sharedMemory }) }), agent);
+  await runMutation(() => api(path, { method: 'POST', body: JSON.stringify({ agent, sharedMemory: !!(state.topology && state.topology.shared) }) }), agent);
+}
+async function toggleTopology(shared) {
+  const t = state.topology || { shared: false };
+  const msg = shared
+    ? '确认共用一套记忆？\nWorkBuddy 与昆仑小智将统一落到 agent:workbuddy 单一记忆池：\n长期记忆 + 实体图谱 + 用户画像 + 工作状态 四层全部共享。\n（修改的是两个宿主的 mcp.json，改完需在各宿主重连 MCP 生效）'
+    : '确认分拆为独立记忆？\nWorkBuddy 落 agent:workbuddy、昆仑小智落 agent:kunlunxiaozhi，互不可见。\n⚠️ 已写入共享池的历史记忆仍留在 agent:workbuddy，分拆后昆仑小智只能看到自己新写的。\n（改完需在各宿主重连 MCP 生效）';
+  if (!confirm(msg)) return;
+  await runMutation(() => api('/v1/agents/topology', { method: 'POST', body: JSON.stringify({ shared }) }));
+  toast(shared ? '已切换为共用一套记忆' : '已分拆为独立记忆');
 }
 async function agentBulkAction(path) {
-  await runMutation(() => api(path, { method: 'POST', body: JSON.stringify({ sharedMemory: state.sharedMemory }) }));
+  await runMutation(() => api(path, { method: 'POST', body: JSON.stringify({ sharedMemory: !!(state.topology && state.topology.shared) }) }));
 }
 async function runMutation(fn, agent) {
   const btns = [...document.querySelectorAll('.agent-actions button, .infra button')];

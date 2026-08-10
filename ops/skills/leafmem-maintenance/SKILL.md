@@ -1,181 +1,215 @@
 ---
 name: leafmem-maintenance
-version: "1.0.0"
+version: "1.1.0"
 agent_created: true
+author: xiaoxia
 description: >
-  LeafMem 记忆运维技能——宿主内执行的每周记忆维护 SOP。健康检查（MCP/存储/召回）、
-  宿主模型驱动的质量整理（真重复合并、碎片整合、原则蒸馏）、画像刷新、镜像同步。
-  触发词：leafmem 维护、记忆整理、每周健康检查、leafmem maintenance、记忆治理、
-  consolidation、深度整理。由自动化任务「LeafMem 每周健康检查+深度整理」调用，
-  也可手动触发。不依赖外部付费 inferencer——LLM 整理工作由宿主模型通过 MCP 完成。
+  LeafMem 记忆引擎的周期性维护与深度整理 SOP（宿主模型驱动，免付费 inferencer）。
+  覆盖健康检查、强制存档、真重复合并、碎片整合、原则蒸馏、画像刷新、衰减降权、镜像同步。
+  触发词：leafmem 维护、记忆整理、每周健康检查、深度整理、记忆治理、consolidation。
+  排除场景：不做 WeKnora 知识库维护、不替代每日只读观测告警任务、不处理宿主安装配置。
 ---
 
-# LeafMem 运维技能 v1.0.0
+<?xml version="1.0" encoding="UTF-8"?>
+<skill>
+  <metadata>
+    <name>leafmem-maintenance</name>
+    <version>1.1.0</version>
+    <agent_created>true</agent_created>
+    <author>xiaoxia</author>
+    <date>2026-08-10</date>
+    <description>LeafMem 记忆引擎的周期性维护与深度整理 SOP（宿主模型驱动，免付费 inferencer）。触发词：leafmem 维护、记忆整理、每周健康检查、深度整理、记忆治理。排除：WeKnora 维护、每日告警、宿主安装。</description>
+    <type>operations</type>
+  </metadata>
 
-> 定位：LeafMem 的周期性维护 SOP，由宿主 Agent（WorkBuddy/昆仑小智）在自己的会话内执行。
-> **关键设计**：LLM 相关的整理工作（去重判断、碎片整合、原则蒸馏）由宿主模型通过
-> `memory_recall` / `memory_write` / `memory_govern` / `memory_organize` 完成，
-> 不需要额外配置付费 inferencer API Key——这是与 ops/consolidation.js（内嵌 inferencer
-> 走独立 API）的本质区别。两者互补：consolidation.js 做机械去重合并，本技能做语义级精修。
+  <identity>
+    <role>LeafMem 记忆治理工程师</role>
+    <goal>让记忆库保持高信噪比：重复的合并、碎片的整合、过时的降权、画像与原则常新，且全程不丢数据、不误删</goal>
+    <vibe>保守删除、忠实转录、先存档后动手</vibe>
+  </identity>
 
-## 执行节奏
+  <triggers>
+    <keywords>
+      <keyword>leafmem 维护</keyword>
+      <keyword>记忆整理</keyword>
+      <keyword>每周健康检查</keyword>
+      <keyword>深度整理</keyword>
+      <keyword>记忆治理</keyword>
+      <keyword>consolidation</keyword>
+    </keywords>
+    <intent>对 LeafMem 记忆库执行周期性质量维护（由每周自动化任务调用，或手动触发）</intent>
+    <exclusions>
+      <exclusion>WeKnora 知识库的维护（用 weknora-rag）</exclusion>
+      <exclusion>每日只读观测告警（由「每日观测采集」自动化负责）</exclusion>
+      <exclusion>宿主安装/配置（用安装器或 INSTALL-KUNLUNXIAOZHI.md）</exclusion>
+    </exclusions>
+  </triggers>
 
-**每周一次**（推荐周一 04:00 自动化触发）。理由：
-- 记忆增量每周约 20-50 条，每日整理无料可整
-- 语义整理是 LLM 重活，每周一次成本可控
-- 每日异常告警由「每日观测采集」自动化负责（只读哨兵），不需要每日整理
+  <identity_note>
+    与 ops/consolidation.js 的分工：consolidation.js 做大批量机械去重（需独立 inferencer key，可选）；
+    本技能做语义级精修（整合/蒸馏/画像），LLM 工作由宿主模型通过 MCP 完成，免费。
+  </identity_note>
 
-## 前置纪律（🔴 必守）
+  <workflow>
+    <step order="1" name="召回历史教训">
+      <description>执行任何维护动作前，先召回历史维护教训，避免重蹈覆辙</description>
+      <action>mcp__leafmem__memory_recall(action="recall", message="leafmem 维护 整理 误删 教训")</action>
+      <branch>
+        <if>MCP 不可用</if>
+        <then>降级 conversation_search 召回；召回失败仍不阻塞，但删除动作必须更保守</then>
+      </branch>
+    </step>
 
-1. **先 recall**：`memory_recall(action=recall, message="leafmem 维护 整理 教训")` 召回历史维护教训
-2. **删除前必须存档**：全量导出 memory_items 到 JSON 存档（步骤 2.0）
-3. **三不碰**：preference 条目、含路径的条目、触发词类条目——不删不改核心内容
-4. **有疑虑一律保留**：宁可保守不可误删
-5. **走 MCP 接口**：禁止直写 SQLite（id/created_at 会写坏）
-6. **scope 铁律**：默认 agent:workbuddy，write 不传 scopeType/scopeId
+    <step order="2" name="健康检查（只读）">
+      <description>确认服务与数据完好，收集规模基线</description>
+      <checks>
+        <check>pgrep -f leafmem-mcp 确认 MCP 在线</check>
+        <check>ls -lh ~/.leafmem/memory.sqlite 记录容量</check>
+        <check>sqlite3 统计 scope=agent:workbuddy 的 memory_items 总数与 FTS 行数，二者应一致</check>
+        <check>memory_recall(action="recall", message="leafmem scope 纪律") canary 验证应命中已知条目</check>
+      </checks>
+    </step>
 
-## 步骤
+    <step order="3" name="全量存档（强制，不可跳过）">
+      <description>删除任何记忆前必须先导出全量 JSON 存档，作为误删回滚锚点</description>
+      <action>Python 读 ~/.leafmem/memory.sqlite 全量 memory_items，导出到 ~/WorkBuddy/backups/leafmem-archive-YYYYMMDD.json</action>
+      <checkpoint>🔴 STOP：存档文件写入并验证行数后，才允许进入删除类步骤</checkpoint>
+    </step>
 
-### 1. 健康检查（只读，2 分钟）
+    <step order="4" name="真重复检测与删除">
+      <description>合并完全重复的记忆</description>
+      <rule>用全文规范化后的 SHA256 哈希判定重复（re.sub 空白后取 16 位）</rule>
+      <rule>🔴 NEVER 用前缀聚类判定重复 — 因为同一 YAML 头部的不同内容会被误判为重复导致误删；替代做法是全文规范化哈希</rule>
+      <action>每组保留 importance 最高 + updated_at 最新一条；其余 memory_govern(action=delete, scopeType=agent, scopeId=workbuddy)</action>
+    </step>
 
-```bash
-# MCP 服务状态
-pgrep -f leafmem-mcp > /dev/null && echo "✅ MCP running" || echo "❌ MCP NOT RUNNING"
-# 存储容量
-ls -lh ~/.leafmem/memory.sqlite | awk '{print $5}'
-```
+    <step order="5" name="碎片簇整合">
+      <description>把同日期+同 context 的 ≥3 条碎片整合为 1-2 条高质量记忆</description>
+      <detect>按 (date, context) 聚类，≥3 条成簇</detect>
+      <merge>宿主模型按「整合九规则」整合（见 constraints）</merge>
+      <write>memory_write(action="remember", kind="lesson", importance=0.7, tags=[主题], content=模板文本)</write>
+      <delete>写入成功后才逐条删除原碎片</delete>
+      <verify>用 2-3 个主题查询 recall，新记忆 score ≥ 0.6；抽查无 LLM 自造数字、无近重复、无悬空代词，不达标该簇重做</verify>
+    </step>
 
-```python
-# 记忆规模 + FTS 一致性
-import sqlite3
-conn = sqlite3.connect(os.path.expanduser('~/.leafmem/memory.sqlite'))
-total = conn.execute("SELECT COUNT(*) FROM memory_items WHERE scope_type='agent' AND scope_id='workbuddy'").fetchone()[0]
-fts = conn.execute("SELECT COUNT(*) FROM memory_items_fts").fetchone()[0]
-print(f"memories={total} fts={fts}")
-```
+    <step order="6" name="宿主模型蒸馏（reflect 宿主版）">
+      <description>把同主题 lesson 聚类蒸馏为 principle，替代付费 inferencer 的 reflect</description>
+      <action>memory_recall(action="search", kind="lesson") 拉近 30 天 lesson；按 tags 聚类 ≥3 条同主题</action>
+      <action>宿主模型归纳共性规律为 1 条 principle，证据 id 存入 metadata.supports</action>
+      <action>memory_write(action="remember", kind="principle", importance=0.85, tags=[主题,principle,reflected])</action>
+      <throttle>同主题 6 天内已蒸馏（查已有 principle 的 reflectedAt）则跳过</throttle>
+    </step>
 
-canary 验证：`memory_recall(action=recall, message="leafmem scope 纪律")` 应命中已知纪律条目。
+    <step order="7" name="画像刷新（profile 宿主版）">
+      <description>基于 preference delta 更新用户画像，替代付费 inferencer 的 profile</description>
+      <action>memory_recall(action="search", kind="preference") 拉全部 preference；memory_recall(action="active_get", kind="profile") 读当前画像</action>
+      <action>宿主模型比对差异，更新对应 section；memory_write(action="active_distill", kind="profile", content=更新全文)</action>
+    </step>
 
-### 2. 质量深度整理（宿主模型驱动）
+    <step order="8" name="衰减降权">
+      <description>陈旧且未被召回的低重要性记忆降权（不删除，pinned 豁免）</description>
+      <action>mcp__leafmem__memory_organize(action="decay", scopeType="agent", scopeId="workbuddy", dryRun=false) —— 纯规则，不需要 LLM</action>
+    </step>
 
-**2.0 全量存档（强制）**
+    <step order="9" name="镜像同步">
+      <description>导出全量记忆到本地镜像，供 MCP 降级兜底</description>
+      <action>node ~/projects/leafmem/ops/mirror-sync.js（NODE_PATH 指 node workspace）</action>
+    </step>
 
-```python
-import sqlite3, json, os
-from datetime import date
-conn = sqlite3.connect(os.path.expanduser('~/.leafmem/memory.sqlite'))
-conn.row_factory = sqlite3.Row
-rows = conn.execute("SELECT id,scope_type,scope_id,kind,content,summary,confidence,importance,source,tags_json,metadata_json,created_at,updated_at FROM memory_items ORDER BY updated_at DESC").fetchall()
-recs = []
-for r in rows:
-    d = dict(r); d['tags'] = json.loads(r['tags_json'] or '[]')
-    try: d['metadata'] = json.loads(r['metadata_json'] or '{}')
-    except: d['metadata'] = {}
-    del d['tags_json'], d['metadata_json']; recs.append(d)
-out = os.path.expanduser(f'~/WorkBuddy/backups/leafmem-archive-{date.today():%Y%m%d}.json')
-json.dump(recs, open(out,'w'), ensure_ascii=False, indent=1)
-print(f"存档 {len(recs)} 条 → {out}")
-```
+    <step order="10" name="报告与留痕">
+      <description>有动作才推送，无动作静默</description>
+      <branch>
+        <if>有删除/整合/蒸馏动作</if>
+        <then>env -u NODE_OPTIONS /Users/dragon/bin/lark-cli im +messages-send --chat-id oc_f2bf98565ce2f849b64335d58f0d09e8 发送规模变化/真重复删除数/碎片整合数/新 principle 数/画像 section 数/decay 降权数</then>
+        <else>仅写 ~/.workbuddy/memory/YYYY-MM-DD.md 当日日志，不推送</else>
+      </branch>
+    </step>
+  </workflow>
 
-**2.1 真重复检测（内容哈希，🔴 禁止前缀聚类）**
+  <constraints>
+    <never>
+      <item>NEVER 直写 ~/.leafmem/memory.sqlite — 因为 sqlite 直写会写坏 id/created_at 导致前端不可见；替代做法是全部走 MCP memory_write/memory_govern</item>
+      <item>NEVER 删除前不存档 — 因为误删无回滚锚点；替代做法是步骤 3 强制全量导出</item>
+      <item>NEVER 用前缀聚类判重复 — 因为同头部不同内容会误删；替代做法是全文规范化 SHA256</item>
+      <item>NEVER 删 preference/含路径/触发词类记忆的核心内容 — 因为这三类是用户画像与检索入口的基石（三不碰）</item>
+      <item>NEVER 让 LLM 做算术或推导 — 因为蒸馏只忠实转录，数字合并会产生幻觉（NO COMPUTATION 铁律）</item>
+      <item>NEVER 在有疑虑时删除 — 因为宁可保守不可误删；替代做法是保留并在报告中标注待人工复核</item>
+    </never>
+    <must>
+      <item>MUST 先 recall 历史维护教训再动手</item>
+      <item>MUST 删除走 MCP 且写入成功后才删原条</item>
+      <item>MUST 整合产物用标准模板：# 一句话结论 + 场景/内容/动作/来源</item>
+      <item>MUST scope 铁律：默认 agent:workbuddy，write 不传 scopeType/scopeId</item>
+    </must>
+    <should>
+      <item>SHOULD 整合遵守九规则：UPDATE 优先于 CREATE、一条一侧面、按实体匹配、状态变更带日期、CASCADE 级联、解析模糊指代、PRESERVE HISTORY、NO COMPUTATION、异题分离</item>
+    </should>
+  </constraints>
 
-前缀 60 字聚类会误判（同一 YAML 头部的不同内容被当成重复）。必须用全文规范化 SHA256：
+  <examples>
+    <good>
+      <example name="碎片簇整合（正确）">
+        <scenario>同一天 3 条「LeafMem 召回慢」碎片，内容互补</scenario>
+        <execution>先存档 → 读 3 条全文 → 整合为 1 条 lesson（结论：召回慢因 FTS 未命中触发全量扫描；动作：开 rerank 并限 limit）→ write 成功 → 逐条 delete → recall 验证命中</execution>
+        <why>符合先存档、写后删、可验证的闭环，且一条只跟踪一个侧面</why>
+      </example>
+    </good>
+    <bad>
+      <example name="前缀聚类误删（错误）">
+        <scenario>两条记忆都以「# 教训：WeKnora 操作」开头，但内容一个是上传、一个是删除</scenario>
+        <execution>按前缀 60 字聚类判为重复，删了删除那条</execution>
+        <result>❌ 丢了不可恢复的操作教训</result>
+        <why>前缀聚类把同头部不同内容当重复；必须用全文规范化哈希</why>
+      </example>
+    </bad>
+  </examples>
 
-```python
-import hashlib, re
-from collections import defaultdict
-by_hash = defaultdict(list)
-for r in agent_recs:  # scope=agent:workbuddy
-    h = hashlib.sha256(re.sub(r'\s+', '', r['content']).encode()).hexdigest()[:16]
-    by_hash[h].append(r)
-exact_dupes = {h: v for h, v in by_hash.items() if len(v) >= 2}
-```
+  <error_handling>
+    <failure_criteria>
+      <criterion>MCP 连续不可用（recall/write 均失败）</criterion>
+      <criterion>存档文件行数与库内条数不一致</criterion>
+      <criterion>整合验证 recall score &lt; 0.6</criterion>
+    </failure_criteria>
+    <fallback_strategy>
+      <strategy name="MCP 不可用">
+        <step>1</step>
+        <action>等待 60 秒重试一次</action>
+        <step>2</step>
+        <action>仍失败则只执行只读步骤（健康检查/检测报告），删除/整合全部跳过并在报告标注</action>
+      </strategy>
+      <strategy name="存档不一致">
+        <step>1</step>
+        <action>重新导出一次</action>
+        <step>2</step>
+        <action>仍不一致则中止全部删除类步骤，只留健康检查报告</action>
+      </strategy>
+      <strategy name="超时（&gt;10 分钟）">
+        <step>1</step>
+        <action>把剩余碎片簇截断到前 10 簇，其余留到下周</action>
+      </strategy>
+    </fallback_strategy>
+  </error_handling>
 
-每组保留 importance 最高 + updated_at 最新的一条，其余用 `memory_govern(action=delete, id=..., scopeType=agent, scopeId=workbuddy)` 删除。
+  <output_format>
+    <primary>
+      <type>message</type>
+      <path>飞书小虾群（有动作时）+ ~/.workbuddy/memory/ 当日日志（总是）</path>
+      <format>规模变化/真重复删除数/碎片整合数/新 principle 数/画像 section 数/decay 降权数</format>
+    </primary>
+  </output_format>
 
-**2.2 碎片簇检测与整合**
+  <checkpoints>
+    <enabled>true</enabled>
+    <note>步骤 3 存档为强制检查点（🔴 STOP）；中断恢复时从最近完成的步骤续跑，删除类步骤前重新确认存档新鲜</note>
+  </checkpoints>
 
-检测同日期+同 context 的 ≥3 条碎片簇，对每簇：
-1. 读取全部条目内容
-2. 按**整合九规则**整合为 1-2 条高质量记忆（见下方）
-3. `memory_write(action=remember, kind=lesson, importance=0.7, tags=[主题标签], content=整合结果)` 写入
-4. 写入成功后逐条 `memory_govern(action=delete)` 删除原碎片
-5. 验证：用主题查询 recall，新记忆 score ≥ 0.6
+  <references>
+    <file path="~/projects/leafmem/ops/mirror-sync.js">镜像同步脚本</file>
+    <file path="~/projects/leafmem/ops/consolidation.js">机械去重脚本（互补，需独立 key，可选）</file>
+  </references>
 
-**整合九规则**（全程遵守）：
-1. UPDATE 优先于 CREATE——同主题合并进已有条目，不新建近重复
-2. 一条只跟踪一个侧面——不混装无关主题
-3. 按实体/侧面匹配，不按话题匹配
-4. 状态变更简洁更新并带日期
-5. CASCADE 级联——状态变更同步所有受影响记忆
-6. 解析模糊指代为实体全称
-7. PRESERVE HISTORY——重要历史事件永不删除
-8. **NO COMPUTATION（铁律）**——禁止 LLM 做算术/推导，只忠实转录
-9. 不同主题保持分离
-
-**写入模板**：
-```
-# {一句话结论，主谓宾完整，含实体全称}
-- 场景：{什么任务/什么情况下}
-- 内容：{结论/规律/决策}
-- 动作：{下次怎么做}
-- 来源：{日期 + 确认程度}
-```
-
-### 3. 宿主模型蒸馏（替代 inferencer 的 reflect/profile）
-
-MCP 的 `memory_organize(action=reflect/profile)` 需要 inferencer（付费 key）。
-宿主内执行时**由宿主模型自己完成蒸馏**：
-
-**3.1 原则蒸馏（reflect 的宿主版）**
-1. `memory_recall(action=search, query="", kind=lesson)` 拉取近 30 天 lesson（limit 50）
-2. 按 tags 聚类，找 ≥3 条同主题的簇
-3. 对每簇：宿主模型阅读全部条目，蒸馏为一条 principle（归纳共性规律，保留各条证据 id 到 metadata.supports）
-4. `memory_write(action=remember, kind=principle, importance=0.85, tags=[主题,principle,reflected], metadata={supports:[证据id...]})`
-5. 节流：同主题 6 天内已蒸馏过则跳过（查已有 principle 的 reflectedAt）
-
-**3.2 画像刷新（profile 的宿主版）**
-1. `memory_recall(action=search, kind=preference)` 拉取全部 preference
-2. `memory_recall(action=active_get, kind=profile)` 读当前画像
-3. 宿主模型比对：新增/变更的偏好 → 更新对应 section
-4. `memory_write(action=active_distill, kind=profile, content=更新后全文)`
-
-**3.3 衰减（纯规则，无需 LLM）**
-`memory_organize(action=decay, dryRun=false)` —— 直接调 MCP 即可（不需要 inferencer）。
-
-### 4. 镜像同步
-
-```bash
-NODE_PATH=/Users/dragon/.workbuddy/binaries/node/workspace/node_modules \
-  /Users/dragon/.workbuddy/binaries/node/versions/22.22.2/bin/node \
-  ~/projects/leafmem/ops/mirror-sync.js
-```
-
-### 5. 报告
-
-飞书小虾群（chat_id: oc_f2bf98565ce2f849b64335d58f0d09e8）：
-
-```bash
-env -u NODE_OPTIONS /Users/dragon/bin/lark-cli im +messages-send \
-  --chat-id "oc_f2bf98565ce2f849b64335d58f0d09e8" \
-  --text "🦐 leafmem 每周维护\n- 记忆规模: N 条（+/-X）\n- 真重复删除: X 条\n- 碎片整合: X 簇→Y 条\n- 原则蒸馏: X 条新 principle\n- 画像更新: X 个 section\n- decay 降权: X 条"
-```
-
-**全部正常且无整理动作 → 静默通过，仅日志留痕，不推送。**
-
-## 与其他组件的分工
-
-| 组件 | 节奏 | 职责 | LLM 依赖 |
-|------|------|------|---------|
-| 每日观测采集（自动化） | 每日 10:00 | 只读指标 + 异常告警 | 无 |
-| 周度观察+飞书提醒（自动化） | 周日 09:00 | 趋势判断 + 行动号召 | 无 |
-| **本技能** | 每周（自动化调用） | 语义级质量整理 + 蒸馏 + 画像 | **宿主模型** |
-| ops/consolidation.js | 可选手动 | 机械去重合并（大批量时） | 独立 inferencer key |
-| memory_organize MCP | 随时 | decay/attribute 等规则操作 | 无（decay 不需要） |
-
-## 更新记录
-
-### v1.0.0（2026-08-10）
-- 首版：Phase 9 产品化收尾，把每周健康检查自动化的整理职责收编为技能
-- 核心设计：宿主模型驱动蒸馏，替代付费 inferencer 依赖
-- 与 ops/consolidation.js 明确分工（机械 vs 语义）
+  <notes>
+    <note id="2026-08-10">v1.0.0 首版：Phase 9 收编每周健康检查的整理职责；宿主模型蒸馏免付费 key；每周节奏。</note>
+    <note id="2026-08-10b">v1.1.0：按 skill-creator 标准重构为 XML v2.0（author/三段式 description/10 标准模块/checkpoints/never-因为-替代格式）。</note>
+  </notes>
+</skill>
