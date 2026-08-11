@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { PassThrough, Writable } from "node:stream";
 import { createLeafMem, InMemoryStore } from "../src/core/index.js";
+import { InMemoryInspectEventStore } from "../src/inspect/store.js";
 import { runMemoryMcpStdioServer } from "../src/mcp/index.js";
 
 test("stdio MCP server negotiates protocol version and handles tool calls", async () => {
@@ -22,7 +23,7 @@ test("stdio MCP server negotiates protocol version and handles tool calls", asyn
   });
 
   const memory = createLeafMem({ store: new InMemoryStore() });
-  const server = runMemoryMcpStdioServer({ memory, stdin, stdout, stderr });
+  const server = runMemoryMcpStdioServer({ memory, stdin, stdout, stderr, events: new InMemoryInspectEventStore() });
 
   stdin.write(
     JSON.stringify({

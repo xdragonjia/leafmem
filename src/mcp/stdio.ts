@@ -5,6 +5,7 @@ import { createLeafMem, type LeafMem, type LeafMemOptions } from "../core/index.
 import type { MemoryScope } from "../core/types.js";
 import { createMemoryMcpHandler } from "./handler.js";
 import { SqliteInspectEventStore } from "../inspect/sqlite-store.js";
+import type { InspectEventStore } from "../inspect/types.js";
 
 export type MemoryMcpStdioServerOptions = {
   memory?: LeafMem;
@@ -15,6 +16,9 @@ export type MemoryMcpStdioServerOptions = {
   stdin?: NodeJS.ReadableStream;
   stdout?: NodeJS.WritableStream;
   stderr?: NodeJS.WritableStream;
+  // 2026-08-11: tests must inject an in-memory event store; without it the
+  // audit trail defaults to the real ~/.leafmem database and pollutes it.
+  events?: InspectEventStore;
 };
 
 export function defaultMemoryMcpStoragePath(): string {
@@ -39,7 +43,16 @@ export async function runMemoryMcpStdioServer(
   // Durable audit trail (2026-08-08): MCP writes/updates/deletes/recalls are
   // recorded into the shared SQLite database so the console /v1/events page
   // shows real activity across processes and restarts.
-  const events = new SqliteInspectEventStore(options.storagePath ?? defaultMemoryMcpStoragePath());
+  //
+  // 2026-08-11 (isolation fix): unit tests pass an in-memory `memory` and no
+  // `storagePath`, and the unconditional fallback pointed the audit store at
+  // the REAL ~/.leafmem/memory.sqlite — phantom "memory_written" events
+  // landed in the live audit log while the records died with the test process
+  // (console showed events with no matching memory; incident 61d8652c).
+  // Callers may now inject their own store; tests inject InMemory.
+  const events =
+    options.events ??
+    new SqliteInspectEventStore(options.storagePath ?? defaultMemoryMcpStoragePath());
   const handler = createMemoryMcpHandler({
     memory,
     defaultScopes: options.defaultScopes,

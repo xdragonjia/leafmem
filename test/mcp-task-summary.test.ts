@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { PassThrough, Writable } from "node:stream";
 import { createLeafMem, InMemoryStore } from "../src/core/index.js";
+import { InMemoryInspectEventStore } from "../src/inspect/store.js";
 import { runMemoryMcpStdioServer } from "../src/mcp/index.js";
 
 // 2026-08-11 regression: tasks created purely via task_append showed
@@ -17,7 +18,7 @@ async function callTool(memory: ReturnType<typeof createLeafMem>, args: Record<s
     },
   });
   const stderr = new Writable({ write(_c, _e, cb) { cb(); } });
-  const server = runMemoryMcpStdioServer({ memory, stdin, stdout, stderr });
+  const server = runMemoryMcpStdioServer({ memory, stdin, stdout, stderr, events: new InMemoryInspectEventStore() });
 
   stdin.write(
     JSON.stringify({
