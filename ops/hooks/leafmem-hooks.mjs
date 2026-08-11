@@ -21,7 +21,7 @@
  *   node leafmem-hooks.mjs <HookEventName> [--agent <scopeId>]
  */
 
-import { readFile, appendFile } from "node:fs/promises";
+import { readFile, appendFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -33,6 +33,26 @@ import { join } from "node:path";
 const RECALL_TIMEOUT_MS = intEnv("LEAFMEM_HOOK_RECALL_TIMEOUT_MS", 8000);
 const CAPTURE_TIMEOUT_MS = intEnv("LEAFMEM_HOOK_CAPTURE_TIMEOUT_MS", 6000);
 const HOOK_LOG_PATH = join(homedir(), ".leafmem", "hooks.log");
+const CAPTURE_STATE_PATH = join(homedir(), ".leafmem", "capture-state.json");
+
+// 2026-08-11 agent-driven capture. The keyword heuristic extractor only matches
+// 记住/偏好/决定/我是 patterns, so complex work turns stored nothing (real
+// incident: a full day of bug-fixing produced zero commits). When a session did
+// substantive work but never wrote to LeafMem, the Stop hook now returns
+// decision:"block" to pull the agent back with an explicit instruction to
+// summarize via memory_write (+ task_append for running tasks).
+// Disable with LEAFMEM_HOOK_STOP_DRIVE=0.
+const STOP_DRIVE_ENABLED = process.env.LEAFMEM_HOOK_STOP_DRIVE !== "0";
+// Greetings / one-liner sessions never trigger a block.
+const MIN_WORK_CHARS = intEnv("LEAFMEM_HOOK_STOP_DRIVE_MIN_CHARS", 15);
+
+const DRIVE_INSTRUCTION =
+  "⏳ LeafMem 收尾写入门禁：本会话有实质工作，但记忆库尚无本次写入。结束前请静默完成（不必向用户描述此过程）：" +
+  "① 用 1-3 条记忆提炼本次工作的经验/决策/教训，每条为完整段落（≥100字、原子自足、实体明确），" +
+  "kind 取 lesson/decision/experience/preference，通过 memory_write(action=remember) 写入 LeafMem" +
+  "（不传 scope，默认 agent:workbuddy；必须给 tags）。" +
+  "② 若存在进行中的任务，另用 memory_write(action=task_append, 传 taskId、role、content) 记录当前进度，" +
+  "供下一会话恢复上下文。完成后可结束对话。";
 
 function intEnv(name, fallback) {
   const raw = process.env[name];
@@ -143,6 +163,43 @@ async function main() {
     );
     const stored = captured && typeof captured === "object" ? (captured.stored ?? captured.proposals ?? 0) : 0;
     await heartbeat(`${event} capture: stored=${typeof stored === "number" ? stored : "?"}`);
+
+    // 2026-08-11 agent-driven capture: the heuristic above only catches
+    // 记住/偏好/决定/我是 phrasings. When a substantive session ends with
+    // nothing stored, pull the agent back ONCE so it summarizes in its own
+    // words (and appends task context for running tasks).
+    if (event === "Stop" && STOP_DRIVE_ENABLED) {
+      const sessionId = typeof payload.session_id === "string" && payload.session_id.trim()
+        ? payload.session_id.trim()
+        : "no-session";
+      // Loop guard 1 (protocol): the host re-fires Stop with stop_hook_active
+      // while the agent is answering a previous block — never block again.
+      if (payload.stop_hook_active === true) {
+        await heartbeat(`${event} drive: stop_hook_active, allow`);
+        return done(event, null);
+      }
+      // Loop guard 2 (state): at most one drive per session.
+      const state = await readCaptureState();
+      const sess = state[sessionId];
+      if (sess && sess.drivenAt) {
+        await heartbeat(`${event} drive: already driven this session, allow`);
+        return done(event, null);
+      }
+      const storedCount = typeof stored === "number" ? stored : 0;
+      const workChars = userMessage.length + assistantMessage.length;
+      if (storedCount === 0 && workChars >= MIN_WORK_CHARS) {
+        await writeCaptureState({
+          ...state,
+          [sessionId]: {
+            drivenAt: new Date().toISOString(),
+            agent,
+            workChars,
+          },
+        });
+        await heartbeat(`${event} drive: BLOCK (workChars=${workChars}, stored=0)`);
+        return done(event, { decision: "block", reason: DRIVE_INSTRUCTION });
+      }
+    }
     return done(event, { continue: true });
   }
 
@@ -188,6 +245,27 @@ async function readServiceConfig() {
     return cfg;
   } catch {
     return null;
+  }
+}
+
+// Per-session "already driven once" ledger for the Stop drive loop-guard.
+// Read/write failures degrade to an empty object / silent no-op — a broken
+// state file must never break the host.
+async function readCaptureState() {
+  try {
+    const text = await readFile(CAPTURE_STATE_PATH, "utf8");
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function writeCaptureState(state) {
+  try {
+    await writeFile(CAPTURE_STATE_PATH, JSON.stringify(state, null, 2), "utf8");
+  } catch {
+    // best-effort; loop guard 1 (stop_hook_active) still protects the host
   }
 }
 
