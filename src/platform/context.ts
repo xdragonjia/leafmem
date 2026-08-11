@@ -56,10 +56,18 @@ export function resolveContextScopes(context: MemoryContext): ResolvedScopes {
   }
 
   // --- Write scope ---
+  // Doctrine (2026-08-11 hook architecture): host-driven writes must land in an
+  // agent scope, not a project scope. When a host (agentId present) drives a
+  // capture/commit, the natural home for durable records is that agent's scope.
+  // repo > agent > project. Keeping project scope only when there is neither a
+  // repo nor an agent preserves SDK programmatic writes.
   const repoKey = canonicalRepoId(context);
+  const agentKey = uniqueAgentIds(context)[0];
   const writeScope: MemoryScope = repoKey
     ? { type: "repo", id: repoKey }
-    : { type: "project", id: context.projectId };
+    : agentKey
+      ? { type: "agent", id: agentKey }
+      : { type: "project", id: context.projectId };
 
   // --- Recall scopes (ordered by weight descending) ---
   const recallScopes: MemoryScope[] = [];

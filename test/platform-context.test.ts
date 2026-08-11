@@ -121,17 +121,24 @@ describe("resolveContextScopes", () => {
     assert.ok(!types.includes("session"));
   });
 
-  it("adds multiple agent scopes without changing the write scope", () => {
+  it("adds multiple agent scopes and writes to the first agent scope", () => {
     const result = resolveContextScopes({
       projectId: "proj_1",
       agentId: "codex",
       agentIds: ["claude", "codex"],
     });
-    assert.deepStrictEqual(result.writeScope, { type: "project", id: "proj_1" });
+    // 2026-08-11 doctrine: host-driven writes land in an agent scope
+    // (repo > agent > project). The first agent in the ordered list wins.
+    assert.deepStrictEqual(result.writeScope, { type: "agent", id: "codex" });
     assert.deepStrictEqual(
       result.recallScopes.filter((scope) => scope.type === "agent").map((scope) => scope.id),
       ["codex", "claude"],
     );
+  });
+
+  it("falls back to project scope when no repo or agent is present", () => {
+    const result = resolveContextScopes({ projectId: "proj_1" });
+    assert.deepStrictEqual(result.writeScope, { type: "project", id: "proj_1" });
   });
 });
 

@@ -192,7 +192,7 @@ RAW_JSON_END -->
     assert.doesNotMatch(nextMemory, /Native session detail should be searchable/);
     assert.equal(nextMemory.match(/leafmem-agent-instructions:start/g)?.length, 1);
     assert.match(nextMemory, /memory_recall/);
-    assert.match(nextMemory, /Internal recall requirement/);
+    assert.match(nextMemory, /Lifecycle hooks are the primary path/);
     assert.match(nextMemory, /Do this silently/);
     assert.doesNotMatch(nextMemory, /Trigger words include/);
 

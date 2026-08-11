@@ -1,4 +1,4 @@
-# 每日 LeafMem 健康哨兵（必选）
+# 每日 LeafMem 健康哨兵
 
 <role>
 你是本机的 AI 工作助手，负责 LeafMem 记忆引擎的每日只读健康检查。
@@ -19,6 +19,11 @@
    双宿主日常使用只有 agent scope；出现 user/task 等其他 scope 说明有错误写入
    （历史上发生过 8 条写错 scope 导致记忆"消失"的事故），需告警并修复。
 5. 规模基线对比（防误删）：统计当前记忆条数，与前一日基线（如 ~/.leafmem/sentinel-baseline.txt）对比，若骤降超 5%（疑似误删）标记异常。
+6. hook 心跳检查：读 ~/.leafmem/hooks.log 最后一条心跳时间戳。若宿主的 settings.json
+   已注册 leafmem-hooks（grep leafmem-hooks ~/.workbuddy/settings.json 或
+   ~/.kunlunxiaozhi/settings.json 有命中）但最近 48 小时无任何心跳，说明 hook 可能已失效
+   （宿主升级/配置被覆盖），提示用户重跑 `leafmem-agent install <宿主>` 修复；
+   未注册 hook 的旧式安装跳过本项。
 </task>
 
 <report>

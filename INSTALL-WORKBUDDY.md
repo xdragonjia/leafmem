@@ -1,24 +1,25 @@
 # LeafMem × WorkBuddy 安装引导
 
 > 面向 **WorkBuddy**（macOS / Windows 均适用）。
-> 本文件由 WorkBuddy（AI 助手）按步骤执行；**用户只需做两件手动的事**：
-> ① 安装 Node.js ② 提供硅基流动 API Key 并点击 MCP 信任。其余全部由 WorkBuddy 完成。
+> 本文件由 WorkBuddy（AI 助手）按步骤执行；**用户只需做三件手动的事**：
+> ① 安装 Node.js ② 提供硅基流动 API Key 并点击 MCP 信任 ③ 安装完成后重启一次 WorkBuddy（让生命周期 hook 生效）。其余全部由 WorkBuddy 完成。
+>
+> **安装方式**：本 releases 包解压即用（dist 零运行时依赖），**全程不需要 npm**。
 
 ---
 
-## 〇、给用户的「引导语」（复制给 WorkBuddy）
+## 〇、给用户的「引导语」（连同解压后的包发给 WorkBuddy）
 
-> 请帮我安装并配置 LeafMem 记忆引擎。安装引导文件就在本 releases 包内的
-> `INSTALL-WORKBUDDY.md`（或 npm 包根目录同名文件）。请完整读取该文件，
-> 严格按其中「WorkBuddy 执行步骤」逐条执行；需要我手动操作的（安装 Node.js、
-> 提供硅基流动 API Key、点击 MCP 信任）请明确提示我。安装完成后按文件末尾的
-> 验收清单自检，并把结果告诉我。
+> 请帮我安装并配置 LeafMem 记忆引擎。安装引导文件就在本 releases 包解压目录内的
+> `INSTALL-WORKBUDDY.md`。请完整读取该文件，严格按其中「WorkBuddy 执行步骤」
+> 逐条执行；需要我手动操作的（安装 Node.js、提供硅基流动 API Key、点击 MCP 信任）
+> 请明确提示我。安装完成后按文件末尾的自检清单逐项验证，并把结果告诉我。
 
 ---
 
 ## 一、用户手动准备（仅 2 步）
 
-1. **安装 Node.js ≥ 22.13**：到 https://nodejs.org 下载对应系统安装包，安装后终端运行 `node -v` 确认版本 ≥ 22.13。
+1. **安装 Node.js ≥ 22.13**：到 https://nodejs.org 下载对应系统安装包（LTS 即可），安装后在终端运行 `node -v` 确认版本 ≥ 22.13。
 2. **申请硅基流动（SiliconFlow）API Key**（免费）：访问 https://cloud.siliconflow.cn 注册，在「API 密钥」页创建一枚 Key（形如 `sk-...`），用于免费的向量化与重排序模型。**Key 只写在你本机配置里，不会上传**。
 
 ---
@@ -26,135 +27,164 @@
 ## 二、WorkBuddy 执行步骤
 
 > 以下每步由 WorkBuddy 执行。`~` 指当前用户主目录（Windows 为 `%USERPROFILE%`，如 `C:\Users\张三`）。
+> `<包根目录>` 指本 releases 包解压后的目录（包含 dist/、ops/、README.md 的那一层）。
 
-### 步骤 1 · 安装 LeafMem
+### 步骤 1 · 运行安装器
 
-```bash
-npm install -g @xdragonjia/leafmem
-```
-
-定位 MCP 入口脚本绝对路径：
+在终端执行（一条命令完成：MCP 配置、本地记忆初始导入、SOUL.md 纪律置顶、生命周期 hook 注册）：
 
 ```bash
-npm root -g
-# MCP 入口 = <npm root -g 结果>/@xdragonjia/leafmem/dist/bin/leafmem-mcp.js
+node "<包根目录>/dist/bin/leafmem-agent.js" install workbuddy --memory isolated
 ```
 
-记为 `<LEAFMEM_MCP_JS>`。**写配置必须用绝对路径。**
+> - 若本机还装了昆仑小智、且两宿主要**共用一套记忆**：先确认昆仑小智侧 mcp.json 里
+>   `LEAFMEM_SCOPE_ID` 的值（主 scope），把上面命令改为 `--memory shared` 之外，还要在
+>   步骤 2 写配置后手动核对该值为同一主 scope。单宿主安装用 `isolated` 即可。
+> - 安装器输出 JSON，其中 `importSummary` 报告初始导入条数（SOUL/USER/MEMORY/IDENTITY/AGENTS/SYSTEM.md
+>   与 memory/ 原生档案）。**这就是初始导入——把用户本地既有的记忆文件读入 LeafMem 记忆库**，
+>   是步骤 7 生成初版用户画像的原料。
+> - 安装器同时会：把记忆工作流纪律块**置顶写入 `~/.workbuddy/SOUL.md`**（H1 标题之后，
+>   优先级高于其他行为规则；旧版写在 MEMORY.md 的块会自动迁移清除）；把生命周期 hook
+>   合并进 `~/.workbuddy/settings.json`（UserPromptSubmit → 自动召回注入上下文；Stop → 自动
+>   capture/commit），并把桥脚本复制到 `~/.leafmem/hooks/leafmem-hooks.mjs`。
 
-### 步骤 2 · 写入 MCP 配置（合并，勿覆盖）
+### 步骤 2 · 写入硅基流动向量化/重排配置（合并，勿覆盖）
 
-目标文件：`~/.workbuddy/mcp.json`（不存在则创建）。读取现有 JSON，把下面对象**合并**进 `mcpServers`（保留用户已有的其他 server 与 env，只新增/更新 `leafmem`）：
+目标文件：`~/.workbuddy/mcp.json`。读取现有 JSON，把下列 env 键**合并**进
+`mcpServers.leafmem.env`（保留安装器写入的其余键，只新增/更新以下 7 项）：
 
 ```json
 {
-  "mcpServers": {
-    "leafmem": {
-      "command": "node",
-      "args": ["<LEAFMEM_MCP_JS>"],
-      "env": {
-        "LEAFMEM_STORAGE_PATH": "~/.leafmem/memory.sqlite",
-        "LEAFMEM_SCOPE_TYPE": "agent",
-        "LEAFMEM_SCOPE_ID": "workbuddy",
-        "LEAFMEM_WORKBUDDY_HOME": "~/.workbuddy",
-        "LEAFMEM_EMBEDDINGS_PROVIDER": "openai",
-        "LEAFMEM_EMBEDDINGS_MODEL": "BAAI/bge-m3",
-        "LEAFMEM_EMBEDDINGS_BASE_URL": "https://api.siliconflow.cn/v1",
-        "OPENAI_API_KEY": "<用户提供的硅基流动 Key>",
-        "LEAFMEM_RERANK_URL": "https://api.siliconflow.cn/v1/rerank",
-        "LEAFMEM_RERANK_MODEL": "BAAI/bge-reranker-v2-m3",
-        "LEAFMEM_RERANK_API_KEY": "<用户提供的硅基流动 Key>",
-        "LEAFMEM_RERANK_TIMEOUT_MS": "3000",
-        "LEAFMEM_RERANK_TOP_K": "40"
-      }
-    }
-  }
+  "LEAFMEM_EMBEDDINGS_PROVIDER": "openai",
+  "LEAFMEM_EMBEDDINGS_MODEL": "BAAI/bge-m3",
+  "LEAFMEM_EMBEDDINGS_BASE_URL": "https://api.siliconflow.cn",
+  "OPENAI_API_KEY": "<用户提供的硅基流动 Key>",
+  "LEAFMEM_RERANK_URL": "https://api.siliconflow.cn/v1/rerank",
+  "LEAFMEM_RERANK_API_KEY": "<用户提供的硅基流动 Key>",
+  "LEAFMEM_RERANK_MODEL": "BAAI/bge-reranker-v2-m3"
 }
 ```
 
-> 若 JSON 里 `~` 宿主不展开，替换为主目录实际绝对路径。**两处 Key 必须先向用户索取再写入。**
-> **共用一套记忆（主 scope 模型）**：双宿主共用时统一落"主 scope"——即**第一个安装的宿主自身 scope**。若 WorkBuddy 先装（本文件场景，主 scope=workbuddy），后装的昆仑小智 `LEAFMEM_SCOPE_ID` 也设为 `workbuddy`；若昆仑小智已先装（主 scope=kunlunxiaozhi），则 WorkBuddy 改用它。共用时长期记忆+实体图谱+用户画像+工作状态四层共享同一记忆池；想隔离则各用各的自身 scope。
+> ⚠️ 注意两个 URL 的差别（常见错误）：`LEAFMEM_EMBEDDINGS_BASE_URL` 是
+> **不带 `/v1`** 的根地址（LeafMem 内部会自动拼 `/v1/embeddings`）；
+> `LEAFMEM_RERANK_URL` 是**完整端点**（含 `/v1/rerank`）。两处 Key 必须先向用户索取再写入。
 
-### 步骤 3 · 写入记忆使用规则
+### 步骤 3 · 请用户点击 MCP 信任
 
-目标文件：`~/.workbuddy/MEMORY.md`（不存在则创建，存在则追加）。写入以下标记块（已有同名块则整块替换）：
+提示用户：**在 WorkBuddy 的 MCP / 连接器管理页，找到 `leafmem`，点击「信任 / 启用」**，然后重连 MCP。
 
-```markdown
-<!-- leafmem-agent-instructions:start -->
-LeafMem 记忆工作流（WorkBuddy）：
-- 任务前：可能依赖既有决策/偏好/项目历史时，先调 memory_recall(action="recall")，不传 scope 以便跨宿主检索共享记忆；静默执行，不在回答里提及。
-- 长任务/多步任务：关键子步骤完成或重要决策时，调 memory_write(action="task_append")（传 taskId+role+content），供后续会话用 memory_recall(action="task_window") 恢复进度。
-- 用户要求记住某事/表达持久偏好：调 memory_write(action="remember")，可省略 scope（默认 agent:workbuddy）。
-- 完成实质工作或收尾会话：蒸馏本次成果，调 memory_write(action="commit")，带 rollingSummary 与 durable 记忆。
-- 用户要更正/删除/保护记忆：用 memory_govern(update/delete/pin)；周期性整理用 memory_organize(reflect/profile/decay)。
-<!-- leafmem-agent-instructions:end -->
+### 步骤 4 · 安装控制台服务与开机自启
+
+```bash
+node "<包根目录>/dist/bin/leafmem-agent.js" service install
 ```
 
-> 也可直接执行 `node <安装目录>/dist/bin/leafmem-agent.js install workbuddy`，安装器会自动完成步骤 2-3 并接管 SOUL.md/USER.md/MEMORY.md 的首次导入。
+安装程序按平台自动选择自启机制：macOS → launchd（`com.leafmem.agent.plist`）；
+Windows → 任务计划程序 `LeafMemAgent`（登录时启动）。装完执行
+`node "<包根目录>/dist/bin/leafmem-agent.js" service status` 确认 installed/running。
+控制台地址 = `service url` 输出（本地 127.0.0.1，免 API Key 自动连接）。
 
-### 步骤 4 · 请用户点击 MCP 信任
+### 步骤 5 · 安装每周维护技能
 
-提示用户：**在 WorkBuddy 的 MCP / 连接器管理页，找到 `leafmem`，点击「信任 / 启用」**，然后重连或重启 WorkBuddy 使新 MCP 生效。
+把随包分发的 `leafmem-maintenance` 技能装入 WorkBuddy 技能目录：
 
-### 步骤 5 · 自检（验收清单）
+- macOS：源 `<包根目录>/ops/skills/leafmem-maintenance/` → 目标 `~/.workbuddy/skills/leafmem-maintenance/`
+- Windows：源 `<包根目录>\ops\skills\leafmem-maintenance\` → 目标 `%USERPROFILE%\.workbuddy\skills\leafmem-maintenance\`
 
-WorkBuddy 依次验证并向用户报告：
+整个文件夹复制过去（保留目录结构，确保 `skills/leafmem-maintenance/SKILL.md` 存在），
+然后让 WorkBuddy 确认技能列表里能找到 `leafmem-maintenance`。
 
-1. `memory_recall(action="recall", message="连通性测试")` 能正常返回。
-2. `memory_write(action="remember", content="LeafMem 安装自检通过", kind="note")` 写入成功，再 recall 能命中。
-3. 控制台/状态里 embedding 与 rerank 已生效（若配置了硅基流动 Key）。
-4. leafmem-maintenance 技能已装入技能目录且可见（步骤 6a，必选）。
-5. 每周维护自动化任务已创建（步骤 6，必选）。
-6. `leafmem-agent service status` 显示 installed 且 running（步骤 7 自启动生效）。
+### 步骤 6 · 创建两个维护自动化
 
-### 步骤 6a ·（必选）安装每周维护技能
+读取本包内两个现成的提示词模板，用 WorkBuddy 的自动化能力各创建一个定时任务：
 
-每周整理依赖 `leafmem-maintenance` 技能（随本包分发）。把它装入 WorkBuddy 的技能目录：
+| 模板 | 节奏 | 作用 |
+|------|------|------|
+| `<包根目录>/ops/automations/weekly-maintenance.md` | 每周一 04:00 | 深度整理（首次运行自动加载 leafmem-maintenance 技能执行 SOP） |
+| `<包根目录>/ops/automations/daily-sentinel.md` | 每日 10:00 | 只读健康哨兵（无异常静默，异常才提醒） |
 
-- macOS：源 `<npm root -g>/@xdragonjia/leafmem/ops/skills/leafmem-maintenance/`
-  → 目标 `~/.workbuddy/skills/leafmem-maintenance/`
-- Windows：源 `<npm root -g 结果>\@xdragonjia\leafmem\ops\skills\leafmem-maintenance\`
-  → 目标 `%USERPROFILE%\.workbuddy\skills\leafmem-maintenance\`
+> 无需任何付费 Key——蒸馏与整理由宿主模型通过 LeafMem MCP 完成。
 
-把整个 `leafmem-maintenance` 文件夹复制到目标位置（保留目录结构，确保
-`skills/leafmem-maintenance/SKILL.md` 存在）。装完后让 WorkBuddy 确认可见
-（技能列表里能找到 leafmem-maintenance）。
+### 步骤 7 · 生成初版用户画像
 
-### 步骤 6 ·（必选）每周维护自动化
+利用步骤 1 初始导入的记忆，为 LeafMem 建立第一版用户画像：
 
-🔴 **必须配置**。没有定期维护，记忆会碎片化、重复、过时，召回效果明显变差。
-本 releases 包已内置现成的自动化提示词模板，直接读取并按其创建定时任务即可：
+1. WorkBuddy 读取 `~/.workbuddy/` 下的 `USER.md`、`SOUL.md`、`IDENTITY.md`、`MEMORY.md`
+   等文件（它们是画像信息最集中的来源），归纳出分节 markdown，每节形如：
 
-- `ops/automations/weekly-maintenance.md` —— **必选**，每周深度整理（建议周一 04:00）
-- `ops/automations/daily-sentinel.md` —— **必选**，每日只读健康哨兵（每日 10:00，无异常静默；缺了它周中系统异常要等一周才发现）
+   ```markdown
+   ## 基本信息
+   （称呼、语言、时区、常用环境）
 
-用 WorkBuddy 读取 `ops/automations/weekly-maintenance.md` 的提示词创建每周一次的定时任务
-（首次运行自动加载 `leafmem-maintenance` 技能并按 SOP 执行
-健康检查→存档→去重→整合→蒸馏→镜像→报告）。无需额外付费 Key——蒸馏由宿主模型完成。
+   ## 偏好与习惯
+   （沟通风格、输出格式偏好、工具习惯）
 
-### 步骤 7 ·（必选）控制台自启动（开机自动恢复）
+   ## 工作与项目
+   （职业、当前项目、常用路径约定）
+   ```
 
-让用户重启电脑后控制台依然可用，双平台由安装程序自动完成：
+2. 调用 MCP 写入画像（分节合并语义，之后局部更新不会误删其他节）：
 
-- **macOS** → `~/Library/LaunchAgents/com.leafmem.agent.plist`（launchd，开机自启+保活）
-- **Windows** → 任务计划程序 `LeafMemAgent` 任务（登录时启动）
+   ```text
+   memory_write(action="active_distill", kind="profile", content="<上面归纳的分节 markdown>")
+   ```
 
-WorkBuddy 执行 `node <安装目录>/dist/bin/leafmem-agent.js service install` 即可，
-安装程序按当前平台选对机制。装完用 `service status` 确认 installed/running。
-若环境缺少对应服务管理器，安装程序不报错，控制台可手动 `leafmem-agent serve --config ~/.leafmem/agent-service.json`。
+3. 用 `memory_recall(action="active_get")` 或控制台「洞察」页确认画像已生成。
+
+> 画像内容必须忠实转录用户文件，不要编造；文件里没有的信息留空不猜。
+
+### 步骤 8 · 请用户重启 WorkBuddy（激活生命周期 hook）
+
+提示用户：**完全退出并重新打开 WorkBuddy**，让步骤 1 注册的生命周期 hook 生效。
+重启后每次对话：提交消息时 hook 自动召回相关记忆注入上下文；回合结束时 hook 自动
+capture 本轮要点——记忆的写入与召回由机制保障，不再依赖模型自觉。
+（若宿主版本不触发 hook，桥脚本静默空转，SOUL.md 纪律规则继续兜底，系统不受影响。）
+
+### 步骤 9 · 自检（验收清单，最后执行）
+
+WorkBuddy 依次验证并向用户报告每一项的结果：
+
+1. **MCP 连通**：`memory_recall(action="recall", message="连通性测试")` 正常返回。
+2. **写入闭环**：`memory_write(action="remember", content="LeafMem 安装自检通过", kind="note")`
+   写入成功，再 recall 能命中；确认后删除该测试记忆。
+3. **向量化生效**：配置了硅基流动 Key 时，召回结果带向量加权（控制台/状态可见 embedding 与 rerank 生效）。
+4. **纪律置顶**：`~/.workbuddy/SOUL.md` 顶部（H1 之后）含 `leafmem-agent-instructions` 块；
+   `MEMORY.md` 中无该块残留。
+5. **初始导入**：`memory_recall(action="list")` 或控制台能看到 `source=workbuddy_import` 的记录，
+   条数与步骤 1 `importSummary` 一致（用户本地无记忆文件时为 0，属正常）。
+6. **用户画像**：`memory_recall(action="active_get")` 返回的 profile 非空。
+7. **hook 已注册**：`~/.workbuddy/settings.json` 的 `hooks` 含 UserPromptSubmit 与 Stop
+   两项，命令均指向 `~/.leafmem/hooks/leafmem-hooks.mjs`。
+8. **hook 桥连通**：终端执行（跨平台，无需管道）
+   `node ~/.leafmem/hooks/leafmem-hooks.mjs self-test --agent workbuddy`，
+   输出 `self-test OK` 即通过；`~/.leafmem/hooks.log` 有新增心跳行。
+   用户重启 WorkBuddy 后的真实对话也会持续产生心跳。
+9. **技能可见**：技能列表能找到 `leafmem-maintenance`。
+10. **自动化就绪**：每周维护与每日哨兵两个定时任务均已创建。
+11. **服务自启**：`service status` 显示 installed 且 running。
 
 ---
 
-## 三、平台说明（macOS / Windows 体验一致）
+## 三、升级（拿到新版 release 包时）
+
+解压新包后执行（release 安装无需 git/npm，安装器会幂等重跑配置；记忆库不受影响）：
+
+```bash
+node "<新包根目录>/dist/bin/leafmem-agent.js" update workbuddy
+```
+
+## 四、平台说明（macOS / Windows 体验一致）
 
 - **核心记忆 / MCP / 控制台双平台可用**：SQLite 用 Node 22 内置 `node:sqlite`，零原生依赖，无需编译。
 - **开机自启双平台对齐**（安装程序自动选机制）：launchd（macOS）/ 任务计划程序（Windows），均实现开机自启 + 崩溃自恢复。
 
-## 四、故障排查
+## 五、故障排查
 
 | 现象 | 处理 |
 |------|------|
-| recall 报「连接失败」 | 确认已点 MCP 信任并重连；确认 `args` 里是 `leafmem-mcp.js` 绝对路径 |
-| 召回无向量加权 | 检查硅基流动 Key 是否已填、`LEAFMEM_EMBEDDINGS_BASE_URL` 是否为 `https://api.siliconflow.cn/v1` |
+| recall 报「连接失败」 | 确认已点 MCP 信任并重连；确认 `args` 里是 `<包根目录>/dist/bin/leafmem-mcp.js` 绝对路径 |
+| 召回无向量加权 | 检查硅基流动 Key 是否已填；`LEAFMEM_EMBEDDINGS_BASE_URL` 必须是 `https://api.siliconflow.cn`（**不带 /v1**） |
 | `node:sqlite` 报错 | Node 版本 < 22.13，升级 Node |
 | 写入报 scope 错误 | 保持不传 scopeType/scopeId，走默认 `agent:workbuddy` |
+| hook 无心跳（重启后） | 宿主版本可能不触发 hook：查 `~/.leafmem/hooks.log` 是否为空；为空则依赖 SOUL.md 纪律兜底（正常降级），不影响功能 |
+| hook 拖慢消息提交 | 语义召回含远程 embedding+rerank，默认 8 秒超时；可在 hook 命令的 env 中设 `LEAFMEM_HOOK_RECALL_TIMEOUT_MS`（调小）或 `=0`（关闭 hook 召回，仅保留 Stop 自动 capture） |

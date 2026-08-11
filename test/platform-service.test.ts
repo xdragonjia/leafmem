@@ -44,9 +44,19 @@ describe("LeafMemPlatformService", () => {
       assert.equal(record.scope.id, "proj_test::repo_test");
     });
 
-    it("uses project scope when repoId is absent", async () => {
+    it("uses agent scope when repoId is absent but agentId is present", async () => {
       const record = await service.writeMemory({
         context: makeContext({ repoId: undefined }),
+        kind: "fact",
+        content: "A fact.",
+      });
+      assert.equal(record.scope.type, "agent");
+      assert.equal(record.scope.id, "test_agent");
+    });
+
+    it("falls back to project scope when neither repoId nor agentId is present", async () => {
+      const record = await service.writeMemory({
+        context: makeContext({ repoId: undefined, agentId: undefined }),
         kind: "fact",
         content: "A fact.",
       });

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
@@ -61,6 +61,7 @@ Options:
   --skip-mcp             Do not install MCP configuration
   --skip-import          Do not import existing sessions
   --skip-instructions    Do not update agent instruction files
+  --skip-hooks           Do not register host lifecycle hooks (settings.json)
   --skip-service         Do not install the local LaunchAgent service (install all only)
   --no-service-start     Write the LaunchAgent but do not start it
   --once                 Print TUI status once and exit (tui only)
@@ -192,12 +193,42 @@ function parseInstallArgs(argv: string[]) {
 
 async function runUpdate(argv: string[]): Promise<void> {
   parseInstallArgs(argv);
-  await runCommand("git", ["pull", "--ff-only"]);
-  await runCommand("npm", ["install"]);
-  await runCommand("npm", ["run", "build"]);
+  // Source-tree upgrades (git checkout) refresh code first; release-package
+  // installs have no .git — in that case the user has already extracted the
+  // new version's files, so we just re-run the idempotent install below.
+  if (await isGitRepo(repoRoot())) {
+    await runCommand("git", ["pull", "--ff-only"]);
+    await runCommand("npm", ["install"]);
+    await runCommand("npm", ["run", "build"]);
+  } else {
+    process.stdout.write(
+      "Release install detected (no git repo): skipping code refresh, re-running idempotent install.\n",
+    );
+  }
   await runCommand(process.execPath, [fileURLToPath(import.meta.url), "install", ...argv]);
-  process.stdout.write("LeafMem code, dependencies, MCP config, instructions, and service entries are updated.\n");
+  process.stdout.write("LeafMem code, dependencies, MCP config, instructions, hooks, and service entries are updated.\n");
   process.stdout.write(`${defaultMemoryMcpStoragePath()} was not deleted.\n`);
+}
+
+async function isGitRepo(dir: string): Promise<boolean> {
+  try {
+    await execFileAsync("git", ["-C", dir, "rev-parse", "--is-inside-work-tree"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function execFileAsync(file: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, { encoding: "utf8" }, (error: Error | null, stdout: string) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(stdout);
+    });
+  });
 }
 
 function parseUiArgs(argv: string[]) {
@@ -315,6 +346,15 @@ function parseSharedAgentOptions(
     }
     if (arg === "--skip-instructions") {
       agentOptions.skipInstructions = true;
+      continue;
+    }
+    if (arg === "--skip-hooks") {
+      agentOptions.skipHooks = true;
+      continue;
+    }
+    if (arg === "--memory") {
+      // Consumed by parseInstallArgs via argv.find(); skip the flag + value here.
+      index += 1;
       continue;
     }
     if (arg === "--skip-service") {

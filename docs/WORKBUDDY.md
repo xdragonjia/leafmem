@@ -1,5 +1,10 @@
 # WorkBuddy 普通用户安装教程
 
+> ⚠️ **本文档已过时（保留作历史参考）**。当前安装请直接用仓库根目录的
+> [`INSTALL-WORKBUDDY.md`](../INSTALL-WORKBUDDY.md)（release 包直装，无需 npm/git，
+> 含初始导入、初版画像、生命周期 hook）。下文"15 个工具"等描述为早期版本遗留
+> （现为 4 个闭环工具），请勿照做。
+
 这份教程适合只想把 LeafMem 接到 WorkBuddy 里使用的用户。完成后，WorkBuddy 会多出一个 `leafmem` MCP 服务，可以搜索和召回同一台电脑上的 LeafMem 记忆库。
 
 ## 你会得到什么

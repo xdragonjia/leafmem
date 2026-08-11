@@ -3,7 +3,7 @@
 > 面向 AI Agent 的分层长期记忆引擎 —— 让 Agent 写得下、理得清、召得回，最终用记忆高效完成任务。
 
 <p align="center">
-  <img alt="tests" src="https://img.shields.io/badge/tests-233%20passing-16a34a">
+  <img alt="tests" src="https://img.shields.io/badge/tests-236%20passing-16a34a">
   <img alt="node" src="https://img.shields.io/badge/node-%3E%3D22.13-5b6675">
   <img alt="license" src="https://img.shields.io/badge/license-Proprietary-d97706">
 </p>
@@ -167,18 +167,21 @@ LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个�
 
 **现成的自动化提示词模板**（随仓库/包分发，宿主读取即可创建定时任务）：
 
-| 模板 | 节奏 | 作用 | 必选 |
-|------|------|------|------|
-| `ops/automations/weekly-maintenance.md` | 每周一 04:00 | 深度整理（自动加载本技能） | ✅ |
-| `ops/automations/daily-sentinel.md` | 每日 10:00 | 只读健康哨兵（含误删检测），异常才提醒 | ✅ |
+| 模板 | 节奏 | 作用 |
+|------|------|------|
+| `ops/automations/weekly-maintenance.md` | 每周一 04:00 | 深度整理（自动加载本技能） |
+| `ops/automations/daily-sentinel.md` | 每日 10:00 | 只读健康哨兵（含误删检测 + hook 心跳检查），异常才提醒 |
 
-### 1.6 嵌入纪律文件
+### 1.6 纪律文件与生命周期 Hook（0.3.0 双保险）
 
-安装器会向宿主写入记忆使用纪律（recall-first、写入规范、scope 铁律等）。对 WorkBuddy 系宿主，纪律会投影到：
+安装器会向宿主写入记忆使用纪律（recall-first、写入规范、scope 铁律等）。对 WorkBuddy 系宿主，纪律块**置顶写入 `SOUL.md`**（H1 标题之后，优先级高于其他行为规则；MEMORY.md 保持纯记忆存储）。同时读取导入用户本地的 SOUL / USER / MEMORY / IDENTITY / AGENTS / SYSTEM.md 全部既有记忆文件，作为初始导入与初版用户画像的原料。
 
-- `SOUL.md` —— 记忆工作流纪律（recall 前置、write 时机、commit 收尾）
-- `MEMORY.md` —— 长期记忆摘要
-- `USER.md` / `IDENTITY.md` / `AGENTS.md` —— 用户画像与身份
+**Hook 架构（本版本核心特点）**：除了纪律规则，安装器还会把生命周期 hook 注册进宿主 `settings.json`：
+
+- **UserPromptSubmit** → 自动调用 LeafMem 召回相关记忆，注入当前上下文（模型无需记得"先 recall"）；
+- **Stop** → 回合结束时自动 capture 本轮要点（显式"记住"请求、偏好等），不再依赖模型收尾时自觉 commit。
+
+这解决了纯规则模式下 `task_append` 不触发、commit 时机不可控的老问题——**记忆的写入与召回由机制保障，而非依赖模型自觉**。桥脚本零依赖、失败静默、心跳写 `~/.leafmem/hooks.log`；宿主不触发 hook 时自动降级回 SOUL.md 规则路径，两条路互为保险。
 
 > 🔒 **纪律铁律**：写入时 `importance`/`confidence` 必须是数字而非字符串；`tags` 是扁平数组。违反会被拒收。
 
@@ -186,62 +189,46 @@ LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个�
 
 ## 🚀 二、安装与升级
 
-LeafMem 的安装/升级**优先由你的 Agent 引导完成**——你只需要对 Agent 说一句话，它会引导你配置 API Key、选择双宿主拓扑、并完成 MCP 接入。
+LeafMem 的安装/升级**优先由你的 Agent 引导完成**——你只需要对 Agent 说一句话，它会引导你配置 API Key、完成 MCP 接入。
+
+**分发方式：GitHub Releases 附件包（解压即用）**。dist 零运行时依赖（仅 Node 内置模块），下载解压后由 Agent 按引导文件执行安装，**全程不需要 npm**（国内访问 npm 慢，故不走 npm 安装路径；npm 上的同名包仅作归档）。
 
 ### 2.1 通过 Agent 安装（推荐）
 
-直接对你的 Agent（WorkBuddy / 昆仑小智）说：
-
-> **“帮我安装 LeafMem 记忆引擎，并接入当前宿主。”**
-
-Agent 会依次引导你：
-
-1. **确认 Node.js 版本**（`>= 22.13.0`）
-2. **安装依赖** —— `npm install -g @xdragonjia/leafmem` 或从源码构建
-3. **选择双宿主记忆拓扑** ——
-   - `shared`（推荐）：WorkBuddy 与昆仑小智共用同一记忆池 `agent:workbuddy`（长期记忆 + 实体图谱 + 用户画像 + 工作状态四层全部共享）
-   - `isolated`：各宿主独立 scope
-4. **配置 API Key** —— 免费的硅基流动 BGE-M3 向量化（推荐）；蒸馏默认免费无需配置，如需 MCP 内置蒸馏路径再另配 DeepSeek（可选）
-5. **写入宿主 MCP 配置 + 注入使用纪律**
-6. **信任 MCP** —— 安装后需要在宿主 MCP 管理页点击「信任」激活
+1. 从 [GitHub Releases](https://github.com/xdragonjia/leafmem/releases) 下载最新 `leafmem-<version>.zip`，解压到任意目录。
+2. 把解压目录连同下面对应的引导语发给你的 Agent：
 
 #### 2.1.1 给昆仑小智用户的引导语（macOS / Windows）
 
-请将下面这句话连同 releases 包发给昆仑小智：
-
-> 请帮我安装并配置 LeafMem 记忆引擎。安装引导文件就在本 releases 包内的
+> 请帮我安装并配置 LeafMem 记忆引擎。安装引导文件就在本 releases 包解压目录内的
 > `INSTALL-KUNLUNXIAOZHI.md`。请完整读取该文件，严格按其中「昆仑小智执行步骤」
 > 逐条执行；需要我手动操作的（安装 Node.js、提供硅基流动 API Key、点击 MCP 信任）
-> 请明确提示我。安装完成后按文件末尾的验收清单自检，并把结果告诉我。
+> 请明确提示我。安装完成后按文件末尾的自检清单逐项验证，并把结果告诉我。
 
-昆仑小智会读取引导文件自动完成 MCP 配置、MEMORY.md 注入与自检；用户全程只需
-装 Node.js、给一枚硅基流动 Key、点一次 MCP 信任。
+昆仑小智会读取引导文件自动完成安装器运行、向量化配置、MCP 信任引导、服务自启、维护技能与自动化、初始导入、初版用户画像与生命周期 hook 注册；用户全程只需装 Node.js、给一枚硅基流动 Key、点一次 MCP 信任、最后重启一次宿主。
 
 #### 2.1.2 给 WorkBuddy 用户的引导语（macOS / Windows）
 
-请将下面这句话连同 releases 包发给 WorkBuddy：
-
-> 请帮我安装并配置 LeafMem 记忆引擎。安装引导文件就在本 releases 包内的
+> 请帮我安装并配置 LeafMem 记忆引擎。安装引导文件就在本 releases 包解压目录内的
 > `INSTALL-WORKBUDDY.md`。请完整读取该文件，严格按其中「WorkBuddy 执行步骤」
 > 逐条执行；需要我手动操作的（安装 Node.js、提供硅基流动 API Key、点击 MCP 信任）
-> 请明确提示我。安装完成后按文件末尾的验收清单自检，并把结果告诉我。
+> 请明确提示我。安装完成后按文件末尾的自检清单逐项验证，并把结果告诉我。
 
-WorkBuddy 会读取引导文件自动完成 MCP 配置、MEMORY.md 注入与自检；用户全程只需
-装 Node.js、给一枚硅基流动 Key、点一次 MCP 信任。
+WorkBuddy 同上：引导文件驱动全流程，含初始导入（读本地 SOUL/USER/MEMORY/IDENTITY/AGENTS/SYSTEM.md 入记忆库）与初版用户画像生成。
 
-### 2.2 命令行安装
+### 2.2 命令行安装（手动）
 
 ```bash
-# 全局安装到所有支持的宿主
-node dist/bin/leafmem-agent.js install all
-
-# 单宿主
+# 单宿主（在解压目录内执行）
 node dist/bin/leafmem-agent.js install workbuddy
 node dist/bin/leafmem-agent.js install kunlunxiaozhi
 
-# 指定记忆拓扑
-node dist/bin/leafmem-agent.js install kunlunxiaozhi --memory shared
+# 全部宿主 + 指定记忆拓扑
+node dist/bin/leafmem-agent.js install all --memory shared   # 双宿主共用一池
+node dist/bin/leafmem-agent.js install all --memory isolated # 各自独立 scope
 ```
+
+一条 `install` 命令完成五件事：写 MCP 配置（合并保留已有 env）、**初始导入本地记忆文件**、纪律块置顶写入 SOUL.md、注册生命周期 hook、（all 时）安装控制台服务。
 
 支持的宿主：
 
@@ -253,16 +240,18 @@ workbuddy | kunlunxiaozhi | all
 
 ### 2.3 通过 Agent 升级（推荐）
 
-对 Agent 说：
+下载新版 release 包解压后，对 Agent 说：
 
-> **“帮我升级 LeafMem 到最新版本。”**
+> **“帮我用这个新包升级 LeafMem 到最新版本。”**
 
-Agent 会拉取最新代码、重建、刷新各宿主的 MCP 配置与纪律注入。若工具接口变更，Agent 会提醒你**重新到 MCP 管理页点信任**。
+Agent 会在新解压目录内运行 `update`，幂等地刷新各宿主的 MCP 配置、纪律注入、生命周期 hook 与服务自启，无需 git/npm。若工具接口变更，Agent 会提醒你**重新到 MCP 管理页点信任**。记忆库（SQLite）不受影响、不会被删除。
 
 ### 2.4 命令行升级
 
 ```bash
+# 在新解压目录内执行（release 安装无 git，自动跳过代码刷新，直接幂等重装）
 node dist/bin/leafmem-agent.js update all
+node dist/bin/leafmem-agent.js update workbuddy
 ```
 
 ### 2.5 控制台与本地服务
@@ -392,8 +381,10 @@ LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使�
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 分层设计、召回流、SQLite schema |
 | [`docs/API.md`](docs/API.md) | 核心 API、4 工具、HTTP 路由 |
 | [`benchmarks/BENCHMARKS.md`](benchmarks/BENCHMARKS.md) | 基准方法与完整结果 |
-| [`INSTALL-KUNLUNXIAOZHI.md`](INSTALL-KUNLUNXIAOZHI.md) | 昆仑小智分步安装引导（macOS/Windows，agent 驱动） |
-| [`INSTALL-WORKBUDDY.md`](INSTALL-WORKBUDDY.md) | WorkBuddy 分步安装引导（macOS/Windows，agent 驱动） |
+| [`INSTALL-KUNLUNXIAOZHI.md`](INSTALL-KUNLUNXIAOZHI.md) | 昆仑小智分步安装引导（macOS/Windows，agent 驱动，含初始导入+画像+hook） |
+| [`INSTALL-WORKBUDDY.md`](INSTALL-WORKBUDDY.md) | WorkBuddy 分步安装引导（macOS/Windows，agent 驱动，含初始导入+画像+hook） |
+| [`ops/hooks/leafmem-hooks.mjs`](ops/hooks/leafmem-hooks.mjs) | 生命周期 hook 桥脚本（UserPromptSubmit 召回注入 / Stop 自动 capture） |
+| [`ops/build-release.sh`](ops/build-release.sh) | release 包打包脚本（解压即用 zip，绕开 npm） |
 
 ---
 

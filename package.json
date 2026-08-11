@@ -1,6 +1,6 @@
 {
   "name": "@xdragonjia/leafmem",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "LeafMem — long-term memory engine for AI agents (recall, reflect, profile, governance).",
   "type": "module",
   "keywords": [
@@ -120,6 +120,7 @@
     "INSTALL-WORKBUDDY.md",
     "ops/automations",
     "ops/skills",
+    "ops/hooks",
     "ops/mirror-sync.js",
     "ops/consolidation.js"
   ],

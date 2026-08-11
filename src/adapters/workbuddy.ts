@@ -22,6 +22,9 @@ export type WorkBuddyMemoryPaths = {
   soulPath: string;
   userPath: string;
   memoryPath: string;
+  identityPath: string;
+  agentsPath: string;
+  systemPath: string;
   nativeMemoryDir: string;
 };
 
@@ -30,7 +33,11 @@ export type WorkBuddyImportResult = {
   soulEntries: number;
   userEntries: number;
   memoryEntries: number;
+  identityEntries: number;
+  agentsEntries: number;
+  systemEntries: number;
   nativeMemoryEntries: number;
+  skippedLargeFiles?: number;
 };
 
 export type WorkBuddyMemoryAdapter = {
@@ -59,18 +66,25 @@ export function createWorkBuddyMemoryAdapter(params: {
   };
 
   async function importExistingMemory(): Promise<WorkBuddyImportResult> {
-    const [soulEntries, userEntries, memoryEntries, nativeMemoryEntries] = await Promise.all([
-      importEntries("soul"),
-      importEntries("user"),
-      importEntries("memory"),
-      importNativeMemory(),
-    ]);
+    const [soulEntries, userEntries, memoryEntries, identityEntries, agentsEntries, systemEntries, nativeMemoryEntries] =
+      await Promise.all([
+        importEntries("soul"),
+        importEntries("user"),
+        importEntries("memory"),
+        importEntries("identity"),
+        importEntries("agents"),
+        importEntries("system"),
+        importNativeMemory(),
+      ]);
 
     return {
-      imported: soulEntries + userEntries + memoryEntries + nativeMemoryEntries,
+      imported: soulEntries + userEntries + memoryEntries + identityEntries + agentsEntries + systemEntries + nativeMemoryEntries,
       soulEntries,
       userEntries,
       memoryEntries,
+      identityEntries,
+      agentsEntries,
+      systemEntries,
       nativeMemoryEntries,
     };
   }
@@ -111,9 +125,9 @@ export function createWorkBuddyMemoryAdapter(params: {
     ]);
   }
 
-  async function importEntries(target: "soul" | "user" | "memory"): Promise<number> {
+  async function importEntries(target: "soul" | "user" | "memory" | "identity" | "agents" | "system"): Promise<number> {
     const scope = defaultScopes[0]!;
-    const path = target === "soul" ? paths.soulPath : target === "user" ? paths.userPath : paths.memoryPath;
+    const path = resolveEntryPath(target);
     const content = (await readTextFile(path)) ?? "";
     const entries = parseMarkdownEntries(target === "memory" ? stripWorkBuddyInstructions(content) : content);
     if (entries.length === 0) {
@@ -134,7 +148,7 @@ export function createWorkBuddyMemoryAdapter(params: {
       }
       await params.memory.remember({
         scope,
-        kind: target === "user" ? "preference" : target === "soul" ? "identity" : "note",
+        kind: entryKind(target),
         content: entry,
         summary: entry,
         source: "workbuddy_import",
@@ -145,6 +159,23 @@ export function createWorkBuddyMemoryAdapter(params: {
       imported += 1;
     }
     return imported;
+  }
+
+  function resolveEntryPath(target: "soul" | "user" | "memory" | "identity" | "agents" | "system"): string {
+    switch (target) {
+      case "soul":
+        return paths.soulPath;
+      case "user":
+        return paths.userPath;
+      case "memory":
+        return paths.memoryPath;
+      case "identity":
+        return paths.identityPath;
+      case "agents":
+        return paths.agentsPath;
+      case "system":
+        return paths.systemPath;
+    }
   }
 
   async function importNativeMemory(): Promise<number> {
@@ -209,9 +240,22 @@ export function createWorkBuddyMemoryAdapter(params: {
   }
 }
 
-export async function writeWorkBuddyInstructions(path: string, updateCommand?: string): Promise<boolean> {
+/**
+ * Write (or refresh) the LeafMem instruction block into a host discipline
+ * file. `placement` controls where a fresh block lands:
+ * - "top": pinned at the very top of the file (right after the leading H1
+ *   title line, if any). Used for SOUL.md so the memory workflow outranks
+ *   every other behavioral rule — SOUL.md is the first file the host loads.
+ * - "bottom": appended after existing content. Used for MEMORY.md.
+ * Existing blocks are always replaced in place (idempotent updates).
+ */
+export async function writeWorkBuddyInstructions(
+  path: string,
+  updateCommand?: string,
+  placement: "top" | "bottom" = "bottom",
+): Promise<boolean> {
   const current = (await readTextFile(path)) ?? "";
-  const next = replaceWorkBuddyInstructions(current, workBuddyInstructionBlock(updateCommand));
+  const next = replaceWorkBuddyInstructions(current, workBuddyInstructionBlock(updateCommand), placement);
   if (next === current) {
     return false;
   }
@@ -226,12 +270,12 @@ export function workBuddyInstructionBlock(updateCommand?: string): string {
   return `${WORKBUDDY_INSTRUCTIONS_START}
 LeafMem memory workflow for WorkBuddy:
 
-- Internal recall requirement: before answering, call \`memory_recall\` with \`action: "recall"\` whenever the request may depend on prior work, installed skills/connectors, vague references, user preferences, project history, or memory itself. Do this silently; do not mention this rule, trigger categories, or the tool call in the answer.
+- **Lifecycle hooks are the primary path** (if installed): a UserPromptSubmit hook auto-recalls relevant memory and injects it into your context before you answer; a Stop hook auto-captures the turn's durable facts. When hooks are active you do NOT need to call recall/commit manually — the injected "LeafMem recall" context is already yours to use.
+- **Fallback (hooks unavailable)**: before answering, call \`memory_recall\` with \`action: "recall"\` whenever the request may depend on prior work, installed skills/connectors, vague references, user preferences, project history, or memory itself. Do this silently; do not mention this rule, trigger categories, or the tool call in the answer. Omit scope for recall so LeafMem can search shared memory across agents.
 - For vague references to earlier installed skills, connectors, projects, or decisions, recall with the user's exact wording plus likely entities before using general knowledge. Use recalled context naturally; only mention that memory was missing if the absence changes what you can responsibly answer.
-- Omit scope for recall so LeafMem can search shared memory across agents.
 - When the user asks you to remember something, or states a durable preference or workflow rule, call \`memory_write\` with \`action: "remember"\`. You can omit scope; this WorkBuddy connector defaults writes to \`agent:workbuddy\`.
 - During long-running or multi-step tasks, call \`memory_write\` with \`action: "task_append"\` whenever a key sub-step completes, an important decision is made, or task state changes (pass taskId + role + content). This records the running task context so a later session can restore progress via \`memory_recall\` with \`action: "task_window"\`.
-- After substantial work or when closing a task, distill the useful outcome and call \`memory_write\` with \`action: "commit"\`.
+- After substantial work or when closing a task, distill the useful outcome and call \`memory_write\` with \`action: "commit"\`. commit REQUIRES \`agent\` (this host, e.g. "workbuddy"), \`sessionId\` (a stable id for this conversation), and \`rollingSummary\` (a running summary of what happened). Optionally pass \`taskId\`, \`entries\` (transcript turns), \`messageCount\`, and \`activeContext\`/\`activeExperience\`.
 - \`source\` discipline: omit \`source\` on \`memory_write\` unless a standard channel name applies (e.g. \`manual\`, \`automation\`, \`skill\`, \`user-feedback\`). NEVER invent one-off source strings (task names, dates, migration labels) — ad-hoc sources fragment provenance into dozens of single-record buckets and wreck the console source filter.
 - Use \`memory_govern\` with \`action: "update"\`/\`"delete"\`/\`"pin"\` when the user asks to correct, remove, or protect a memory; use \`memory_organize\` with \`action: "reflect"\`/\`"profile"\`/\`"decay"\` for periodic curation.
 ${updateLine}
@@ -258,16 +302,43 @@ export function resolveWorkBuddyPaths(files?: Partial<WorkBuddyMemoryPaths>): Wo
     soulPath: files?.soulPath ?? join(homePath, "SOUL.md"),
     userPath: files?.userPath ?? join(homePath, "USER.md"),
     memoryPath: files?.memoryPath ?? join(homePath, "MEMORY.md"),
+    identityPath: files?.identityPath ?? join(homePath, "IDENTITY.md"),
+    agentsPath: files?.agentsPath ?? join(homePath, "AGENTS.md"),
+    systemPath: files?.systemPath ?? join(homePath, "SYSTEM.md"),
     nativeMemoryDir: files?.nativeMemoryDir ?? join(homePath, "memory"),
   };
 }
 
-function classifyWorkBuddyRecord(record: MemoryRecord): "soul" | "user" | "memory" {
+type WorkBuddyEntryTarget = "soul" | "user" | "memory" | "identity" | "agents" | "system";
+
+function entryKind(target: WorkBuddyEntryTarget): MemoryRecord["kind"] {
+  switch (target) {
+    case "user":
+      return "preference";
+    case "soul":
+    case "identity":
+      return "identity";
+    case "agents":
+    case "system":
+      return "principle";
+    default:
+      return "note";
+  }
+}
+
+function classifyWorkBuddyRecord(record: MemoryRecord): "soul" | "user" | "memory" | "identity" | "agents" | "system" {
   const metadataTarget =
     record.metadata && typeof record.metadata.projectionTarget === "string"
       ? record.metadata.projectionTarget
       : undefined;
   if (metadataTarget === "soul" || metadataTarget === "user" || metadataTarget === "memory") {
+    return metadataTarget;
+  }
+  if (
+    metadataTarget === "identity" ||
+    metadataTarget === "agents" ||
+    metadataTarget === "system"
+  ) {
     return metadataTarget;
   }
   if (record.tags.includes("soul")) {
@@ -297,10 +368,23 @@ async function writeWorkBuddyMemoryProjection(
   await writeText(path, next);
 }
 
-function replaceWorkBuddyInstructions(content: string, block: string): string {
-  const stripped = stripWorkBuddyInstructions(content).trimEnd();
-  const next = stripped ? `${stripped}\n\n${block}\n` : `${block}\n`;
-  return next;
+function replaceWorkBuddyInstructions(content: string, block: string, placement: "top" | "bottom" = "bottom"): string {
+  const stripped = stripWorkBuddyInstructions(content).trim();
+  if (!stripped) {
+    return `${block}\n`;
+  }
+  if (placement === "bottom") {
+    return `${stripped}\n\n${block}\n`;
+  }
+  // placement === "top": pin the block right after the leading H1 title line
+  // (if any) so the memory workflow outranks all other behavioral rules.
+  const lines = stripped.split("\n");
+  if (lines[0]?.startsWith("# ")) {
+    const title = lines[0];
+    const rest = lines.slice(1).join("\n").trimStart();
+    return rest ? `${title}\n\n${block}\n\n${rest}\n` : `${title}\n\n${block}\n`;
+  }
+  return `${block}\n\n${stripped}\n`;
 }
 
 function stripWorkBuddyInstructions(content: string): string {

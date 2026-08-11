@@ -6,3 +6,4 @@ dist/
 benchmarks/locomo/*.json
 benchmarks/longmemeval/*.json
 benchmarks/results/
+release/

@@ -29,9 +29,15 @@ export type AgentInstallOptions = {
    *            agent:workbuddy scope (one memory pool, shared profile/recall)
    * isolated = each host keeps its own scope (agent:kunlunxiaozhi etc.)
    * Defaults to isolated so existing single-host installs are unaffected.
+   *
+   * 2026-08-11: when left undefined on an EXISTING install (upgrade path),
+   * the already-configured LEAFMEM_SCOPE_ID is preserved instead of being
+   * reset to the host's own scope.
    */
   sharedMemory?: boolean;
   skipInstructions?: boolean;
+  /** 2026-08-11 hook architecture: skip registering host lifecycle hooks. */
+  skipHooks?: boolean;
 };
 
 export type ResolvedAgentInstallOptions = {
@@ -42,6 +48,7 @@ export type ResolvedAgentInstallOptions = {
   skipMcp: boolean;
   skipImport: boolean;
   skipInstructions: boolean;
+  skipHooks: boolean;
   sharedMemory?: boolean;
 };
 
@@ -50,6 +57,7 @@ export type AgentInstallResult = {
   mcp: "installed" | "skipped";
   import: "imported" | "skipped";
   instructions: "updated" | "skipped";
+  hooks: "installed" | "skipped";
   importSummary?: Record<string, unknown>;
 };
 
@@ -90,6 +98,13 @@ type AgentDefinition = {
   importBin?: string;
   defaultSessionsRoot(home: string): string;
   configPath(home: string): string;
+  /**
+   * Discipline file for the memory-workflow instruction block.
+   * Pinned to the TOP of this file (right after its H1 title). We use
+   * SOUL.md rather than MEMORY.md because SOUL.md is the host's primary
+   * behavioral file and is loaded first — the memory workflow must outrank
+   * every other rule. MEMORY.md stays a pure memory-content store.
+   */
   instructionsPath?(home: string): string;
 };
 
@@ -99,14 +114,14 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
     scopeId: "workbuddy",
     defaultSessionsRoot: (home) => join(home, ".workbuddy"),
     configPath: (home) => join(home, ".workbuddy", "mcp.json"),
-    instructionsPath: (home) => join(home, ".workbuddy", "MEMORY.md"),
+    instructionsPath: (home) => join(home, ".workbuddy", "SOUL.md"),
   },
   kunlunxiaozhi: {
     label: "昆仑小智",
     scopeId: "kunlunxiaozhi",
     defaultSessionsRoot: (home) => join(home, ".kunlunxiaozhi"),
     configPath: (home) => join(home, ".kunlunxiaozhi", "mcp.json"),
-    instructionsPath: (home) => join(home, ".kunlunxiaozhi", "MEMORY.md"),
+    instructionsPath: (home) => join(home, ".kunlunxiaozhi", "SOUL.md"),
   },
 };
 
@@ -119,6 +134,7 @@ export function resolveAgentOptions(options: AgentInstallOptions = {}): Resolved
     skipMcp: options.skipMcp ?? false,
     skipImport: options.skipImport ?? false,
     skipInstructions: options.skipInstructions ?? false,
+    skipHooks: options.skipHooks ?? false,
     sharedMemory: options.sharedMemory,
   };
 }
@@ -158,6 +174,7 @@ export async function installAgent(
     mcp: "skipped",
     import: "skipped",
     instructions: "skipped",
+    hooks: "skipped",
   };
 
   if (!options.skipMcp) {
@@ -175,6 +192,24 @@ export async function installAgent(
   if (!options.skipInstructions) {
     const changed = await installInstructions(agent, options);
     result.instructions = changed ? "updated" : "skipped";
+  }
+  // 2026-08-11 hook architecture: register deterministic lifecycle hooks.
+  // The hook bridge must recall/commit against the scope this host ACTUALLY
+  // writes to (shared topology -> primary scope), so read it back from the
+  // just-written mcp.json instead of assuming the host's own scope.
+  if (!options.skipHooks && isWorkBuddyFamily(agent)) {
+    try {
+      const cfg = await readJsonObject(AGENTS[agent].configPath(options.home));
+      const env = asObject(asObject(asObject(cfg.mcpServers).leafmem).env);
+      const hookScopeId = stringValue(env.LEAFMEM_SCOPE_ID) ?? AGENTS[agent].scopeId;
+      const { installHostHooks } = await import("./hooks.js");
+      await installHostHooks(agent, { home: options.home, scopeId: hookScopeId });
+      result.hooks = "installed";
+    } catch {
+      // Hook registration is best-effort; the SOUL.md rules remain the
+      // fallback recall/commit path on hosts that cannot run hooks.
+      result.hooks = "skipped";
+    }
   }
 
   return result;
@@ -207,9 +242,33 @@ export async function installInstructions(
     return false;
   }
   if (isWorkBuddyFamily(agent)) {
-    return await writeWorkBuddyInstructions(path, workBuddyUpdateCommand(agent));
+    // Pin the memory workflow to the TOP of SOUL.md — the host loads SOUL.md
+    // first, so the workflow outranks every other behavioral rule.
+    const changed = await writeWorkBuddyInstructions(path, workBuddyUpdateCommand(agent), "top");
+    // Migration (0.3.0): pre-0.3.0 installs wrote the discipline block into
+    // MEMORY.md. Now that it lives in SOUL.md, strip any stale block from
+    // MEMORY.md so the two files never disagree.
+    await migrateInstructionsOutOfMemoryMd(agent, options.home);
+    return changed;
   }
   return await writeMarkedBlock(path, instructionBlock(agent));
+}
+
+/** Remove a legacy leafmem discipline block from MEMORY.md (pre-0.3.0 location). */
+async function migrateInstructionsOutOfMemoryMd(agent: AgentId, home: string): Promise<void> {
+  const start = "<!-- leafmem-agent-instructions:start -->";
+  const end = "<!-- leafmem-agent-instructions:end -->";
+  const memoryPath = join(AGENTS[agent].defaultSessionsRoot(home), "MEMORY.md");
+  const current = await readText(memoryPath);
+  const startIndex = current.indexOf(start);
+  const endIndex = current.indexOf(end);
+  if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) {
+    return; // no legacy block, nothing to migrate
+  }
+  const before = current.slice(0, startIndex).trimEnd();
+  const after = current.slice(endIndex + end.length).trimStart();
+  const next = [before, after].filter(Boolean).join("\n\n");
+  await writeText(memoryPath, next ? `${next}\n` : "");
 }
 
 export async function getAgentStatuses(
@@ -327,10 +386,21 @@ async function writeJsonMcpConfig(
   // 昆仑小智-only installs → agent:kunlunxiaozhi). Memories + graph + profile
   // + active all share it.
   const { primaryScopeId } = await getMemoryTopology({ home: options.home });
+  // 2026-08-11 upgrade-safety: when sharedMemory is unspecified (upgrade /
+  // repair path), preserve the already-configured LEAFMEM_SCOPE_ID instead of
+  // resetting it to the host's own scope — otherwise a shared kunlunxiaozhi
+  // install (scope=workbuddy) would silently split into two pools on re-install.
+  const existingScopeId = stringValue(existingEnv.LEAFMEM_SCOPE_ID);
+  const scopeId =
+    options.sharedMemory === undefined && existingScopeId
+      ? existingScopeId
+      : options.sharedMemory
+        ? primaryScopeId
+        : AGENTS[format].scopeId;
   const coreEnv = {
     LEAFMEM_STORAGE_PATH: options.storagePath,
     LEAFMEM_SCOPE_TYPE: "agent",
-    LEAFMEM_SCOPE_ID: options.sharedMemory ? primaryScopeId : AGENTS[format].scopeId,
+    LEAFMEM_SCOPE_ID: scopeId,
     LEAFMEM_WORKBUDDY_HOME: AGENTS[format].defaultSessionsRoot(options.home),
   };
   const env = { ...existingEnv, ...coreEnv };

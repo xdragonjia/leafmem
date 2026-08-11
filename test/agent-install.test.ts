@@ -37,8 +37,19 @@ RAW_JSON_END -->
     assert.equal(parsed.results[0].mcp, "installed");
     assert.equal(parsed.results[0].import, "imported");
     assert.equal(parsed.results[0].instructions, "updated");
+    assert.equal(parsed.results[0].hooks, "installed");
     assert.equal(parsed.results[0].importSummary.imported, 4);
     assert.equal(parsed.results[0].importSummary.nativeMemoryEntries, 1);
+
+    // 2026-08-11 hook architecture: lifecycle hooks registered in the host
+    // settings.json, bridge script copied to ~/.leafmem/hooks/.
+    const settings = JSON.parse(await readFile(join(root, ".workbuddy", "settings.json"), "utf8"));
+    assert.ok(settings.hooks, "settings.json should contain a hooks block");
+    assert.ok(settings.hooks.UserPromptSubmit, "UserPromptSubmit hook registered");
+    assert.ok(settings.hooks.Stop, "Stop hook registered");
+    const hookJson = JSON.stringify(settings.hooks);
+    assert.match(hookJson, /leafmem-hooks\.mjs/);
+    assert.match(hookJson, /--agent workbuddy/);
 
     const config = JSON.parse(await readFile(join(root, ".workbuddy", "mcp.json"), "utf8"));
     assert.equal(config.mcpServers.leafmem.command, "node");
@@ -48,20 +59,49 @@ RAW_JSON_END -->
     assert.equal(config.mcpServers.leafmem.env.LEAFMEM_SCOPE_ID, "workbuddy");
     assert.equal(config.mcpServers.leafmem.env.LEAFMEM_WORKBUDDY_HOME, join(root, ".workbuddy"));
 
+    // 2026-08-11: the discipline block is pinned to the TOP of SOUL.md (the
+    // host's primary behavioral file), not MEMORY.md. MEMORY.md stays a pure
+    // memory store.
+    const soulProjection = await readFile(join(root, ".workbuddy", "SOUL.md"), "utf8");
+    assert.match(soulProjection, /leafmem-agent-instructions:start/);
+    assert.equal(soulProjection.match(/leafmem-agent-instructions:start/g)?.length, 1);
+    assert.match(soulProjection, /memory_recall/);
+    assert.match(soulProjection, /Lifecycle hooks are the primary path/);
+    assert.match(soulProjection, /Do this silently/);
+    assert.doesNotMatch(soulProjection, /Trigger words include/);
+    assert.match(soulProjection, /memory_write/);
+    assert.match(soulProjection, /agent:workbuddy/);
+    assert.match(soulProjection, /update workbuddy/);
+
     const memoryProjection = await readFile(join(root, ".workbuddy", "MEMORY.md"), "utf8");
     assert.match(memoryProjection, /Existing WorkBuddy memory/);
-    assert.equal(memoryProjection.match(/leafmem-agent-instructions:start/g)?.length, 1);
-    assert.match(memoryProjection, /memory_recall/);
-    assert.match(memoryProjection, /Internal recall requirement/);
-    assert.match(memoryProjection, /Do this silently/);
-    assert.doesNotMatch(memoryProjection, /Trigger words include/);
-    assert.match(memoryProjection, /memory_write/);
-    assert.match(memoryProjection, /agent:workbuddy/);
-    assert.match(memoryProjection, /update workbuddy/);
+    // The instruction block must NOT be in MEMORY.md anymore.
+    assert.doesNotMatch(memoryProjection, /leafmem-agent-instructions:start/);
     // syncProjection is disabled on the install path: SOUL.md/USER.md/MEMORY.md are
     // user-authoritative files. Import reads them into the DB, but never projects DB
     // contents back onto them. The native memory profile must NOT be written back.
     assert.doesNotMatch(memoryProjection, /WorkBuddy native memory profile/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("agent installer accepts the --memory flag (release install path)", async () => {
+  // Regression (2026-08-11, found via simulated-install walkthrough):
+  // parseSharedAgentOptions rejected `--memory isolated` with
+  // "Unknown argument: --memory" even though parseInstallArgs documents it,
+  // so the documented `install workbuddy --memory isolated` command crashed.
+  const root = await mkdtemp(join(tmpdir(), "leafmem-agent-memory-flag-"));
+  const storagePath = join(root, "memory.sqlite");
+  const mcpPath = join(root, "leafmem-mcp.js");
+
+  try {
+    const output = await runInstaller("workbuddy", root, storagePath, mcpPath, "--memory", "isolated");
+    const parsed = JSON.parse(output);
+    assert.equal(parsed.results[0].agent, "workbuddy");
+    assert.equal(parsed.results[0].mcp, "installed");
+    const config = JSON.parse(await readFile(join(root, ".workbuddy", "mcp.json"), "utf8"));
+    assert.equal(config.mcpServers.leafmem.env.LEAFMEM_SCOPE_ID, "workbuddy");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
