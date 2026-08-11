@@ -208,7 +208,10 @@ export function createMemoryRuntime(params: {
 }
 
 export function inferMemoryProposals(turn: MemoryTurnInput): CapturedMemoryProposal[] {
-  const text = turn.userMessage.trim();
+  // 2026-08-11: strip host attachment markers before matching — a user quote
+  // like "我是通过 proxifier… @image#1:Clipboard_Screenshot.png" was stored
+  // verbatim as an identity memory because the markers survived into content.
+  const text = turn.userMessage.replace(/@image#?\d*:\S+/g, " ").replace(/\s+/g, " ").trim();
   if (!text) {
     return [];
   }
@@ -258,7 +261,16 @@ export function inferMemoryProposals(turn: MemoryTurnInput): CapturedMemoryPropo
     });
   }
 
-  if (/(my name is|i am |我是|我的名字是)/iu.test(text)) {
+  // 2026-08-11 incident: "我是通过 proxifier 访问 github 的，…删掉三行" matched
+  // the bare 我是 cue and the whole instruction was stored as an identity
+  // memory. 我是+方式/动作短语 ("我是通过/用/在/正在…") is an action
+  // description, not an identity declaration — exclude it so the identity
+  // branch only fires on real self-introductions (我是小龙 / 我是做巡察的).
+  const identityCue = /(my name is|i am |我是|我的名字是)/iu.test(text);
+  const actionPhrasing =
+    /我是(?:通过|用|在|正在|从|去|想|要|来|靠|按|按照)\b/u.test(text) ||
+    /\bi am (?:going to|trying to|using|working|living|staying|accessing)\b/iu.test(text);
+  if (identityCue && !actionPhrasing) {
     const candidate = normalizeMemoryCandidate(text);
     proposals.push({
       kind: "identity",
