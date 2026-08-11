@@ -92,7 +92,9 @@ auto-archive. The only transitions are explicit: `memory_write(action=task_appen
 accepts an optional `status` (active/paused/completed/archived) and
 `TaskContextManager.setStatus()` flips it programmatically. The Stop-drive
 instruction tells the agent to pass `status="completed"` when the tracked work
-is finished. This was hardened after a real incident (2026-08-11) where the
+is finished — and to rewrite `rollingSummary` to a closed-out version in the
+same call (a completed badge next to stale "pending" text misleads more than a
+missing summary). This was hardened after a real incident (2026-08-11) where the
 status enum existed in types but no write path exposed it, leaving every
 task_append-created task permanently "active" on the console.
 

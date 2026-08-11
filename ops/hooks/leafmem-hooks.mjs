@@ -53,7 +53,8 @@ const DRIVE_INSTRUCTION =
   "（不传 scope，默认 agent:workbuddy；必须给 tags）。" +
   "② 若存在进行中的任务，用 memory_write(action=task_append, 传 taskId、role、content) 记录当前进度，" +
   "并同传 rollingSummary 参数（一句话任务总览，供任务页展示与下一会话恢复），否则任务会只有 transcript 没有 summary。" +
-  "③ 任务生命周期：该任务若已全部完成，同传 status=\"completed\" 关闭它（任务不会自动关闭，不传 status 将永远停在 active）；仍在进行则不传或传 active。" +
+  "③ 任务生命周期：该任务若已全部完成，同传 status=\"completed\" 关闭它（任务不会自动关闭，不传 status 将永远停在 active）。" +
+  "④ 关闭一致性：传 status=\"completed\" 时必须同传 rollingSummary 且重写为闭环版——旧 summary 里的待办/未完成表述必须清除，改为最终结果（status 与 summary 表述不一致比没有 summary 更误导）。仍在进行则不传或传 active，summary 保留待办。" +
   "完成后可结束对话。";
 
 function intEnv(name, fallback) {
