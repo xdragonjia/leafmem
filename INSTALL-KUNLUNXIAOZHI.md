@@ -37,9 +37,11 @@
 node "<包根目录>/dist/bin/leafmem-agent.js" install kunlunxiaozhi --memory isolated
 ```
 
-> - 若本机还装了 WorkBuddy、且两宿主要**共用一套记忆**：以先安装宿主的自身 scope 为主 scope。
->   若 WorkBuddy 已先装（主 scope=workbuddy），则在本步之后核对 `~/.kunlunxiaozhi/mcp.json`
->   中 `LEAFMEM_SCOPE_ID` 已为 `workbuddy`（安装器会保留已有值）。单宿主安装用 `isolated` 即可。
+> - 若本机还装了 WorkBuddy、且两宿主要**共用一套记忆**：把上面命令改为
+>   `node "<包根目录>/dist/bin/leafmem-agent.js" install kunlunxiaozhi --memory shared`，
+>   安装器会自动把 `LEAFMEM_SCOPE_ID` 解析为主 scope（WorkBuddy 与昆仑小智都配置时，
+>   主 scope 固定是 `agent:workbuddy`）。安装完成后核对两宿主 mcp.json 的
+>   `LEAFMEM_SCOPE_ID` 同为 `workbuddy` 即共用成立。单宿主安装用 `isolated` 即可。
 > - 安装器输出 JSON，其中 `importSummary` 报告初始导入条数（SOUL/USER/MEMORY/IDENTITY/AGENTS/SYSTEM.md
 >   与 memory/ 原生档案）。**这就是初始导入——把用户本地既有的记忆文件读入 LeafMem 记忆库**，
 >   是步骤 7 生成初版用户画像的原料。
@@ -142,12 +144,9 @@ Windows → 任务计划程序 `LeafMemAgent`（登录时启动）。装完执�
 重启后每次对话：提交消息时 hook 自动召回相关记忆注入上下文；回合结束时 hook 自动
 capture 本轮要点——记忆的写入与召回由机制保障，不再依赖模型自觉。
 
-> ⚠️ **昆仑小智版本说明**：较新版本已确认支持 hooks 机制；较老版本（如 5.2.x）内置了
-> hooks 运行时（内置插件已在使用），但用户级 `settings.json` 的 hooks 是否被触发**需要在
-> 本机实测**。自检第 8 项与重启后观察 `~/.leafmem/hooks.log` 即可验证：
-> - 有心跳日志 → hook 生效，记忆自动写入/召回；
-> - 无心跳日志 → 该版本不触发用户级 hooks，桥脚本静默空转，SOUL.md 纪律规则继续兜底
->   （功能不受影响，只是退回"模型按规则调用"模式）。
+> 昆仑小智 5.2.x 及以上版本已实测确认支持用户级 hooks（SessionStart / UserPromptSubmit /
+> Stop / SessionEnd 事件均触发）。若极个别版本不触发，桥脚本会静默空转，
+> SOUL.md 纪律规则继续兜底（功能不受影响，只是退回"模型按规则调用"模式）。
 
 ### 步骤 9 · 自检（验收清单，最后执行）
 
@@ -156,7 +155,7 @@ capture 本轮要点——记忆的写入与召回由机制保障，不再依赖
 1. **MCP 连通**：`memory_recall(action="recall", message="连通性测试")` 正常返回。
 2. **写入闭环**：`memory_write(action="remember", content="LeafMem 安装自检通过", kind="note")`
    写入成功，再 recall 能命中；确认后删除该测试记忆。
-3. **向量化+重排生效**（默认配置）：硅基流动 Key 已写入时，召回结果带向量加权与交叉编码器重排（控制台/状态可见 embedding 与 rerank 生效）。
+3. **向量化+重排生效**：硅基流动 Key 已写入时，召回结果带向量加权与交叉编码器重排（控制台/状态可见 embedding 与 rerank 生效）。
 4. **纪律置顶**：`~/.kunlunxiaozhi/SOUL.md` 顶部（H1 之后）含 `leafmem-agent-instructions` 块；
    `MEMORY.md` 中无该块残留。
 5. **初始导入**：`memory_recall(action="list")` 或控制台能看到 `source=workbuddy_import` 的记录，
@@ -199,6 +198,6 @@ node "<新包根目录>/dist/bin/leafmem-agent.js" update kunlunxiaozhi
 | recall 报「连接失败」 | 确认已点 MCP 信任并重连；确认 `args` 里是 `<包根目录>/dist/bin/leafmem-mcp.js` 的绝对路径 |
 | 召回无向量加权 | 检查硅基流动 Key 是否已填；`LEAFMEM_EMBEDDINGS_BASE_URL` 必须是 `https://api.siliconflow.cn`（**不带 /v1**） |
 | `node:sqlite` 报错 | Node 版本 < 22.13，升级 Node |
-| 写入报 scope 错误 | 保持不传 scopeType/scopeId，走默认 `agent:kunlunxiaozhi` |
-| hook 无心跳（重启后） | 见步骤 8 版本说明：老版本可能不触发用户级 hooks，SOUL.md 纪律兜底，功能不受影响 |
+| 写入报 scope 错误 | 保持不传 scopeType/scopeId，走 mcp.json 里配置的默认 scope（shared 拓扑下为 `agent:workbuddy`，isolated 下为 `agent:kunlunxiaozhi`） |
+| hook 无心跳（重启后） | 查 `~/.leafmem/hooks.log` 是否为空；为空说明该宿主版本未触发 hooks，SOUL.md 纪律兜底，功能不受影响 |
 | hook 拖慢消息提交 | 语义召回含远程 embedding+rerank，默认 8 秒超时；可在 hook 命令的 env 中设 `LEAFMEM_HOOK_RECALL_TIMEOUT_MS`（调小）或 `=0`（关闭 hook 召回，仅保留 Stop 自动 capture） |

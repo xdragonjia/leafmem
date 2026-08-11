@@ -78,7 +78,7 @@ class RemoteEmbedder {
   }
 
   async embed(texts: string[], taskType: "query" | "document" = "document"): Promise<number[][]> {
-    const truncated = texts.map(t => t.length > this.maxChars ? t.slice(0, this.maxChars) : t);
+    const truncated = texts.map(t => t.trim().length > 0 ? t.slice(0, this.maxChars) : " ");
     if (this.provider === "gemini") {
       return this.embedGemini(truncated, taskType);
     }
@@ -210,6 +210,16 @@ function parseArgs() {
   let embedKey = "";
   let embedBatch = 0;  // 0 = use provider default
   let embedWeight = 0.35;  // default: 65% builtin + 35% vector
+  // 2026-08-11: cross-encoder rerank stage mirroring the production pipeline
+  // (src/retrieval/manager.ts): widen pool to rerank-top-k, fuse
+  // rerankScore * rerank-weight + normalizedBase * (1-rerank-weight),
+  // fail-safe to the embedding-fused ordering on any error.
+  let rerankUrl = "";
+  let rerankModel = "";
+  let rerankKey = "";
+  let rerankTopK = 40;
+  let rerankWeight = 0.6;
+  let rerankTimeoutMs = 15_000;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--data" && args[i + 1]) dataPath = resolve(args[++i]);
@@ -223,6 +233,12 @@ function parseArgs() {
     else if (args[i] === "--embed-key" && args[i + 1]) embedKey = args[++i];
     else if (args[i] === "--embed-batch" && args[i + 1]) embedBatch = parseInt(args[++i], 10);
     else if (args[i] === "--embed-weight" && args[i + 1]) embedWeight = parseFloat(args[++i]);
+    else if (args[i] === "--rerank-url" && args[i + 1]) rerankUrl = args[++i];
+    else if (args[i] === "--rerank-model" && args[i + 1]) rerankModel = args[++i];
+    else if (args[i] === "--rerank-key" && args[i + 1]) rerankKey = args[++i];
+    else if (args[i] === "--rerank-top-k" && args[i + 1]) rerankTopK = parseInt(args[++i], 10);
+    else if (args[i] === "--rerank-weight" && args[i + 1]) rerankWeight = parseFloat(args[++i]);
+    else if (args[i] === "--rerank-timeout-ms" && args[i + 1]) rerankTimeoutMs = parseInt(args[++i], 10);
   }
 
   // Default URLs per provider
@@ -235,10 +251,11 @@ function parseArgs() {
 
   if (!outputPath) {
     const ts = new Date().toISOString().replace(/[:-]/g, "").slice(0, 15);
-    const tag = embedModel ? `_${embedModel.replace(/[^a-zA-Z0-9]/g, "_")}` : "";
+    const embedTag = embedModel ? `_${embedModel.replace(/[^a-zA-Z0-9]/g, "_")}` : "";
+    const rerankTag = rerankModel ? `_rerank_${rerankModel.replace(/[^a-zA-Z0-9]/g, "_")}` : "";
     const resultsDir = resolve(import.meta.dirname, "../results");
     if (!existsSync(resultsDir)) mkdirSync(resultsDir, { recursive: true });
-    outputPath = resolve(resultsDir, `lme_leafmem${tag}_${ts}.jsonl`);
+    outputPath = resolve(resultsDir, `lme_leafmem${embedTag}${rerankTag}_${ts}.jsonl`);
   }
 
   const embedder = (embedUrl && embedModel) ? new RemoteEmbedder({
@@ -248,13 +265,72 @@ function parseArgs() {
     apiKey: embedKey,
     batchSize: embedBatch || undefined,
   }) : null;
-  return { dataPath, topK, limit, outputPath, weights, embedder, embedWeight };
+  const reranker = (rerankUrl && rerankModel) ? {
+    url: rerankUrl,
+    model: rerankModel,
+    apiKey: rerankKey || embedKey,
+    topK: rerankTopK,
+    weight: rerankWeight,
+    timeoutMs: rerankTimeoutMs,
+  } : null;
+  return { dataPath, topK, limit, outputPath, weights, embedder, embedWeight, reranker };
+}
+
+// ── Cross-encoder rerank client (mirrors src/retrieval/reranker.ts) ────
+async function crossEncoderRerank(
+  cfg: { url: string; model: string; apiKey: string; topK: number; timeoutMs: number },
+  query: string,
+  documents: string[],
+): Promise<number[] | null> {
+  const docs = documents.map((d) => d.trim()).filter((d) => d.length > 0);
+  if (!query.trim() || docs.length === 0) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
+  try {
+    const response = await fetch(cfg.url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${cfg.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: cfg.model,
+        query: query.trim(),
+        documents: docs.slice(0, cfg.topK),
+        top_n: Math.min(docs.length, cfg.topK),
+        return_documents: false,
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as {
+      results?: Array<{ index: number; relevance_score: number }>;
+    };
+    if (!Array.isArray(payload.results) || payload.results.length === 0) return null;
+    const scores = new Array<number>(docs.length).fill(-1);
+    for (const result of payload.results) {
+      if (
+        Number.isInteger(result.index) &&
+        result.index >= 0 &&
+        result.index < scores.length &&
+        typeof result.relevance_score === "number"
+      ) {
+        scores[result.index] = clamp(result.relevance_score, 0, 1);
+      }
+    }
+    return scores;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ── Main ───────────────────────────────────────────────────────────────
 async function main() {
   const opts = parseArgs();
-  const mode = opts.embedder ? `hybrid (${opts.embedWeight * 100}% vector)` : "builtin (hash only)";
+  const rerankTag = opts.reranker ? " + cross-encoder rerank" : "";
+  const mode = opts.embedder ? `hybrid (${opts.embedWeight * 100}% vector)${rerankTag}` : "builtin (hash only)";
   console.log(`\n🧠 LeafMem × LongMemEval Benchmark`);
   console.log(`   Mode:    ${mode}`);
   console.log(`   Data:    ${opts.dataPath}`);
@@ -300,7 +376,9 @@ async function main() {
     }
 
     // Get base hits (larger pool for reranking, but bounded to reduce embedding cost)
-    const candidatePool = opts.embedder ? 20 : Math.max(opts.topK, 10);
+    const candidatePool = opts.reranker
+      ? Math.max(opts.topK, opts.reranker.topK)
+      : opts.embedder ? 20 : Math.max(opts.topK, 10);
     const baseHits = await memory.search(q.question, {
       maxResults: candidatePool,
       minScore: 0,
@@ -309,28 +387,65 @@ async function main() {
     let finalHits: { id: string; score: number }[];
 
     if (opts.embedder && baseHits.length > 0) {
-      // Embed query + all candidate documents
-      const queryVec = await opts.embedder.embedOne(q.question);
-      const docTexts = baseHits.map((h: any) =>
-        [h.record.kind, h.record.content].filter(Boolean).join("\n"),
-      );
-      const docVecs = await opts.embedder.embed(docTexts);
+      // 2026-08-11 robustness: if embedding fails for a single question
+      // (API 400/timeout/etc.), degrade to builtin ordering for that question
+      // instead of aborting the entire 500-question run.
+      try {
+        // Embed query + all candidate documents
+        const queryVec = await opts.embedder.embedOne(q.question);
+        const docTexts = baseHits.map((h: any) =>
+          [h.record.kind, h.record.content].filter(Boolean).join("\n"),
+        );
+        const docVecs = await opts.embedder.embed(docTexts);
 
-      // Combine scores: builtin * (1-w) + vector * w
-      const builtinWeight = 1 - opts.embedWeight;
-      finalHits = baseHits.map((h: any, idx: number) => {
-        const vecScore = clamp(cosineSimilarity(queryVec, docVecs[idx] ?? []), 0, 1);
-        return {
+        // Combine scores: builtin * (1-w) + vector * w
+        const builtinWeight = 1 - opts.embedWeight;
+        finalHits = baseHits.map((h: any, idx: number) => {
+          const vecScore = clamp(cosineSimilarity(queryVec, docVecs[idx] ?? []), 0, 1);
+          return {
+            id: h.record.scope.id as string,
+            score: h.score * builtinWeight + vecScore * opts.embedWeight,
+          };
+        });
+        finalHits.sort((a, b) => b.score - a.score);
+      } catch (err) {
+        console.warn(`  ⚠ Question ${q.question_id}: embedding failed, using builtin order`);
+        finalHits = baseHits.map((h: any) => ({
           id: h.record.scope.id as string,
-          score: h.score * builtinWeight + vecScore * opts.embedWeight,
-        };
-      });
-      finalHits.sort((a, b) => b.score - a.score);
+          score: h.score as number,
+        }));
+      }
     } else {
       finalHits = baseHits.map((h: any) => ({
         id: h.record.scope.id as string,
         score: h.score as number,
       }));
+    }
+
+    // 2026-08-11: cross-encoder rerank stage, mirroring the production
+    // pipeline (pool limited to reranker.topK; fuse rerank*0.6 + normalized
+    // base*0.4; fail-safe keeps embedding-fused ordering on any failure).
+    if (opts.reranker && finalHits.length >= 3) {
+      const pool = finalHits.slice(0, opts.reranker.topK);
+      const idToRecord = new Map(baseHits.map((h: any) => [h.record.scope.id, h.record]));
+      const documents = pool.map((h) => {
+        const record = idToRecord.get(h.id) as any;
+        return record
+          ? [record.kind, record.summary ?? "", record.content, record.tags.join(" "), record.scope.type, record.scope.id].filter(Boolean).join("\n")
+          : h.id;
+      });
+      const scores = await crossEncoderRerank(opts.reranker, q.question, documents);
+      if (scores) {
+        const maxBase = pool[0]?.score ?? 1;
+        finalHits = pool.map((h, index) => {
+          const rerankScore = scores[index] ?? 0;
+          const normalizedBase = maxBase > 0 ? h.score / maxBase : 0;
+          return {
+            ...h,
+            score: rerankScore * opts.reranker!.weight + normalizedBase * (1 - opts.reranker!.weight),
+          };
+        }).sort((a, b) => b.score - a.score);
+      }
     }
 
     const retrievedIds = finalHits.map(h => h.id);
@@ -352,6 +467,9 @@ async function main() {
     };
 
     results.push(result);
+    // 2026-08-11 robustness: append each result incrementally so a mid-run
+    // crash (API 400 / network) never loses completed questions.
+    writeFileSync(opts.outputPath, results.map(r => JSON.stringify(r)).join("\n") + "\n", "utf-8");
 
     const hitSymbol = result.hitAt5 ? "✅" : result.hitAt10 ? "🟡" : "❌";
     if ((qi + 1) % 25 === 0 || qi === total - 1) {

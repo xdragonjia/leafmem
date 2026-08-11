@@ -37,9 +37,11 @@
 node "<包根目录>/dist/bin/leafmem-agent.js" install workbuddy --memory isolated
 ```
 
-> - 若本机还装了昆仑小智、且两宿主要**共用一套记忆**：先确认昆仑小智侧 mcp.json 里
->   `LEAFMEM_SCOPE_ID` 的值（主 scope），把上面命令改为 `--memory shared` 之外，还要在
->   步骤 2 写配置后手动核对该值为同一主 scope。单宿主安装用 `isolated` 即可。
+> - 若本机还装了昆仑小智、且两宿主要**共用一套记忆**：把上面命令改为
+>   `node "<包根目录>/dist/bin/leafmem-agent.js" install workbuddy --memory shared`，
+>   安装器会自动把 `LEAFMEM_SCOPE_ID` 解析为主 scope（WorkBuddy 与昆仑小智都配置时，
+>   主 scope 固定是 `agent:workbuddy`）。安装完成后核对两宿主 mcp.json 的
+>   `LEAFMEM_SCOPE_ID` 同为 `workbuddy` 即共用成立。单宿主安装用 `isolated` 即可。
 > - 安装器输出 JSON，其中 `importSummary` 报告初始导入条数（SOUL/USER/MEMORY/IDENTITY/AGENTS/SYSTEM.md
 >   与 memory/ 原生档案）。**这就是初始导入——把用户本地既有的记忆文件读入 LeafMem 记忆库**，
 >   是步骤 7 生成初版用户画像的原料。
@@ -147,7 +149,7 @@ WorkBuddy 依次验证并向用户报告每一项的结果：
 1. **MCP 连通**：`memory_recall(action="recall", message="连通性测试")` 正常返回。
 2. **写入闭环**：`memory_write(action="remember", content="LeafMem 安装自检通过", kind="note")`
    写入成功，再 recall 能命中；确认后删除该测试记忆。
-3. **向量化+重排生效**（默认配置）：硅基流动 Key 已写入时，召回结果带向量加权与交叉编码器重排（控制台/状态可见 embedding 与 rerank 生效）。
+3. **向量化+重排生效**：硅基流动 Key 已写入时，召回结果带向量加权与交叉编码器重排（控制台/状态可见 embedding 与 rerank 生效）。
 4. **纪律置顶**：`~/.workbuddy/SOUL.md` 顶部（H1 之后）含 `leafmem-agent-instructions` 块；
    `MEMORY.md` 中无该块残留。
 5. **初始导入**：`memory_recall(action="list")` 或控制台能看到 `source=workbuddy_import` 的记录，

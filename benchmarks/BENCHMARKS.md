@@ -1,53 +1,64 @@
 # LeafMem Benchmarks
 
-**2026-08-08 重测 — 基准测试结果**
+**2026-08-08 基线测量 + 2026-08-11 默认配置重测完成**
 
-> 本文数字于 2026-08-08 在本代码库上重新测量：Builtin 与 + BGE-M3 两种模式已完整复跑（BGE-M3 embedding 走 SiliconFlow OpenAI-compatible API）。+ Gemini 行为 2026-04 的历史测量值，因无 Gemini API key 未在本次重测，仅供对比参考。
+> 本文基线数字于 2026-08-08 在本代码库上测量（BGE-M3 embedding 走 SiliconFlow OpenAI-compatible API）。+ Gemini 行为 2026-04 的历史测量值，因无 Gemini API key 未重测，仅供对比参考。
+>
+> **2026-08-11，「默认配置」（BGE-M3 embedding + bge-reranker-v2-m3 交叉编码器重排，即安装引导配出的形态）完整重测完成**——两个基准均跑满（LME 500q、LoCoMo 1986q），数字见「核心数字」表。
 
 ---
 
 ## 核心数字
 
-LeafMem 在两种模式下进行了测试（模式名消歧 2026-08-11：「+ BGE-M3」指**仅叠加 BGE-M3 embedding 融合层**（0.65/0.35），**不含** bge-reranker-v2-m3 交叉编码器重排；产品默认配置是两者都开，见 README 基准表说明）：
+LeafMem 在三个配置层级下测试（层级名定义 2026-08-11 更新）：
 
-- **Builtin（零 API）**：仅使用内置的 FNV-1a hash embedding（128 维）和五维加权评分，无任何外部依赖
-- **+ BGE-M3（本地）**：在 builtin 评分基础上叠加本地 BGE-M3 embedding rerank（1024 维，权重 65% builtin + 35% vector）
-- **+ Gemini embedding-001（云端）**：同样的 rerank 架构，embedding 换成 Gemini embedding-001（3072 维）
+- **Builtin（零配置）**：仅内置 FNV-1a hash embedding（128 维）+ 五维加权评分，不调用任何外部 API，无需任何 Key
+- **+ BGE-M3 embedding（未含重排）**：在 builtin 评分上叠加 BGE-M3 embedding 相似度（0.65/0.35 融合）；**不含**交叉编码器重排
+- **默认配置（+ bge-reranker-v2-m3 重排）**：安装引导配出的形态——上面一层之外再叠交叉编码器重排（top-40 候选，rerank 分 ×0.6 + 归一化检索分 ×0.4，fail-safe）
 
 | Benchmark | Mode | R@5 | R@10 | NDCG@10 | Speed | LLM | Cost |
 |---|---|---|---|---|---|---|---|
 | **LongMemEval** (500q) | Builtin | 89.6% | 94.6% | 0.834 | 28ms/q | None | $0 |
-| **LongMemEval** (500q) | + BGE-M3 | 95.8% | 97.6% | **0.916** | 1.9s/q | None | ~$0 |
-| **LongMemEval** (500q) | **+ Gemini** | **96.2%** | **97.6%** | 0.902 | 3.6s/q | None | ~$0.24 |
+| **LongMemEval** (500q) | + BGE-M3 embedding | 95.8% | 97.6% | **0.916** | 1.9s/q | None | ~$0 |
+| **LongMemEval** (500q) | 默认配置（+ 重排） | 96.4% | 98.4% | 0.929 | 4.0s/q | None | ~$0 |
+| **LongMemEval** (500q) | **+ Gemini embedding（历史）** | **96.2%** | **97.6%** | 0.902 | 3.6s/q | None | ~$0.24 |
 | **LoCoMo** (1986q) | Builtin | 84.1% | 92.0% | 0.733 | 4.8ms/q | None | $0 |
-| **LoCoMo** (1986q) | **+ BGE-M3** | **88.4%** | **94.9%** | **0.790** | 142ms/q | None | ~$0 |
-| **LoCoMo** (1986q) | + Gemini | 87.6% | 94.2% | 0.775 | 0.7s/q | None | ~$0.10 |
+| **LoCoMo** (1986q) | + BGE-M3 embedding | 88.4% | 94.9% | 0.790 | 142ms/q | None | ~$0 |
+| **LoCoMo** (1986q) | 默认配置（+ 重排） | 90.3% | 95.8% | 0.819 | 544ms/q | None | ~$0 |
+| **LoCoMo** (1986q) | + Gemini embedding（历史） | 87.6% | 94.2% | 0.775 | 0.7s/q | None | ~$0.10 |
 
-Builtin 模式总耗时 24 秒。BGE-M3 模式受限于本地 CPU 推理速度，两次完整测试合计约 113 分钟。Gemini 模式总耗时约 53 分钟，速度约为本地 BGE-M3 的 2.4 倍。
+Builtin 模式总耗时 24 秒。embedding 类模式受 SiliconFlow 免费额度限流影响，速度以实测为准（含 429 退避重试）。
 
 ---
 
 ## 测试条件
 
-### Builtin（零 API 模式）
+### Builtin（零配置模式）
 
 - 不使用任何 embedding 模型（使用内置的 FNV-1a hash embedding，128 维）
 - 不调用任何 LLM
 - 不使用任何外部向量数据库
 - 唯一依赖是 Node.js 内置的 `node:sqlite`
 
-### Hybrid（+ BGE-M3）
+### Hybrid（+ BGE-M3 embedding）
 
-- 在 builtin 五维评分的基础上，叠加 BGE-M3（BAAI/bge-m3，1024 维）的 cosine similarity 作为 rerank 信号
+- 在 builtin 五维评分的基础上，叠加 BGE-M3（BAAI/bge-m3，1024 维）的 cosine similarity 作为融合信号
 - 混合权重：`score = builtin_score × 0.65 + vector_score × 0.35`
-- embedding 通过任意 OpenAI-compatible embedding 服务提供（本地 LM Studio / Ollama，或硅基流动 `https://api.siliconflow.cn` 免费 API）
-- 仍然不使用任何 LLM
+- embedding 通过任意 OpenAI-compatible embedding 服务提供（本地 LM Studio / Ollama，或硅基流动 `https://api.siliconflow.cn` 免费 API；本文数字用硅基流动）
+- 不使用任何 LLM
 
-### Hybrid（+ Gemini embedding-001，云端）
+### 默认配置（+ bge-reranker-v2-m3 交叉编码器重排）
 
-- 同样的 rerank 架构，embedding 换成 Google Gemini embedding-001（3072 维）
+- 在「+ BGE-M3 embedding」融合结果之上，对 top-40 候选调用交叉编码器重排（BAAI/bge-reranker-v2-m3，硅基流动 `/v1/rerank` 端点）
+- 融合方式与生产管线（`src/retrieval/manager.ts`）一致：`score = rerank_score × 0.6 + normalized_base × 0.4`
+- 重排失败/超时时自动回退 embedding 融合排序（fail-safe），不阻断基准
+- 不使用任何 LLM
+
+### Hybrid（+ Gemini embedding-001，历史参考）
+
+- 同样的融合架构，embedding 换成 Google Gemini embedding-001（3072 维）
 - 通过 Gemini API 调用，使用 `RETRIEVAL_QUERY` / `RETRIEVAL_DOCUMENT` task type
-- 仍然不使用任何 LLM
+- 不使用任何 LLM
 
 ---
 
@@ -133,12 +144,12 @@ Builtin 模式总耗时 24 秒。BGE-M3 模式受限于本地 CPU 推理速度�
 
 上述弱项在接入 embedding 后已经有显著改善（preference +33pp，assistant +14pp，temporal +6pp）。两个 embedding 提供者的特点：
 
-- **BGE-M3（本地，1024 维）**：LoCoMo 各类目全面更强，NDCG 更高，适合对数据隐私敏感或需要零 API 调用的场景
-- **Gemini embedding-001（云端，3072 维）**：LME R@5 最高（96.2%），preference R@10 最高（90.0%），速度更快，适合对延迟和 preference 检索有更高要求的场景
+- **BGE-M3（1024 维，硅基流动免费 API）**：LoCoMo 各类目全面更强，NDCG 更高；embedding 也可换成本地 OpenAI-compatible 服务（LM Studio / Ollama）跑，适合对数据隐私敏感的场景
+- **Gemini embedding-001（3072 维）**：LME R@5 最高（96.2%），preference R@10 最高（90.0%），速度更快，适合对延迟和 preference 检索有更高要求的场景
 
 LeafMem 的架构还支持进一步提升：
 
-1. **接入 LLM rerank**（如 Haiku、Gemini Flash），让语言模型对 top-K 候选做阅读理解级别的重排序
+1. **交叉编码器重排**（bge-reranker-v2-m3，已纳入默认配置）——对 top-K 候选做阅读理解级别的重排序
 2. **调整 search weights 和 embedding weight**，针对具体使用场景优化各维度的权重比例
 
 ---
@@ -149,8 +160,9 @@ LeafMem 的架构还支持进一步提升：
 
 - Node.js >= 22.13.0（使用 `node:sqlite` 内置模块）
 - Builtin 模式：无外部依赖
-- Hybrid 模式（本地）：需要 OpenAI-compatible embedding 服务（如 LM Studio、Ollama、vLLM）
-- Hybrid 模式（云端）：需要 Gemini API key
+- Hybrid 模式（embedding）：需要 OpenAI-compatible embedding 服务（本文数字用硅基流动免费 API；也可用 LM Studio / Ollama 等本地服务）
+- 默认配置：在 embedding 基础上加硅基流动 `/v1/rerank`（bge-reranker-v2-m3）
+- Hybrid 模式（Gemini，历史参考）：需要 Gemini API key
 - Builtin 模式结果是确定性的；Hybrid 模式在相同 embedding 服务、相同模型文件和相同参数下可复现到同一结果。不同服务、量化版本或服务端预处理可能带来轻微差异
 
 ### 运行 LongMemEval
@@ -170,6 +182,12 @@ node --experimental-strip-types benchmarks/longmemeval/bench.ts \
 # Hybrid 模式 — 硅基流动免费 BGE-M3 API
 node --experimental-strip-types benchmarks/longmemeval/bench.ts \
   --embed-url https://api.siliconflow.cn --embed-model BAAI/bge-m3 --embed-key YOUR_SILICONFLOW_API_KEY
+
+# 默认配置 — embedding + bge-reranker-v2-m3 交叉编码器重排（即安装引导的形态）
+node --experimental-strip-types benchmarks/longmemeval/bench.ts \
+  --embed-url https://api.siliconflow.cn --embed-model BAAI/bge-m3 --embed-key YOUR_SILICONFLOW_API_KEY \
+  --rerank-url https://api.siliconflow.cn/v1/rerank --rerank-model BAAI/bge-reranker-v2-m3 \
+  --rerank-key YOUR_SILICONFLOW_API_KEY
 
 # Hybrid 模式 — Gemini embedding-001
 node --experimental-strip-types benchmarks/longmemeval/bench.ts \
@@ -193,6 +211,12 @@ node --experimental-strip-types benchmarks/locomo/bench.ts \
 # Hybrid 模式 — 硅基流动免费 BGE-M3 API
 node --experimental-strip-types benchmarks/locomo/bench.ts \
   --embed-url https://api.siliconflow.cn --embed-model BAAI/bge-m3 --embed-key YOUR_SILICONFLOW_API_KEY
+
+# 默认配置 — embedding + bge-reranker-v2-m3 交叉编码器重排（即安装引导的形态）
+node --experimental-strip-types benchmarks/locomo/bench.ts \
+  --embed-url https://api.siliconflow.cn --embed-model BAAI/bge-m3 --embed-key YOUR_SILICONFLOW_API_KEY \
+  --rerank-url https://api.siliconflow.cn/v1/rerank --rerank-model BAAI/bge-reranker-v2-m3 \
+  --rerank-key YOUR_SILICONFLOW_API_KEY
 
 # Hybrid 模式 — Gemini embedding-001
 node --experimental-strip-types benchmarks/locomo/bench.ts \
@@ -239,7 +263,14 @@ Builtin search 返回 top-20 候选，然后对每个候选的文本做 embeddin
 
 ## 结果文件
 
-2026-08-08 重测（本次发布依据）：
+2026-08-11 默认配置重测（当前发布依据）：
+
+| File | Mode | Benchmark | Score |
+|---|---|---|---|
+| `lme_leafmem_BAAI_bge_m3_rerank_BAAI_bge_reranker_v2_m3_20260811T062459.jsonl` | 默认配置（embedding + 重排） | LongMemEval | 96.4% R@5, 98.4% R@10 |
+| `locomo_leafmem_BAAI_bge_m3_rerank_BAAI_bge_reranker_v2_m3_20260811T060652.jsonl` | 默认配置（embedding + 重排） | LoCoMo | 90.3% R@5, 95.8% R@10 |
+
+2026-08-08 基线测量：
 
 | File | Mode | Benchmark | Score |
 |---|---|---|---|

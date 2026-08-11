@@ -35,9 +35,9 @@ LeafMem 是一个本地长期记忆引擎（MCP server + 控制台）。它默�
         // 向量化（embedding）
         "LEAFMEM_EMBEDDINGS_PROVIDER": "openai",
         "LEAFMEM_EMBEDDINGS_MODEL": "BAAI/bge-m3",
-        "LEAFMEM_EMBEDDINGS_BASE_URL": "https://api.siliconflow.cn/v1",
+        "LEAFMEM_EMBEDDINGS_BASE_URL": "https://api.siliconflow.cn",
         "OPENAI_API_KEY": "sk-<你的硅基流动 Key>",
-        // 重排序（rerank，同源免费，强烈建议一并配置）
+        // 重排序（rerank，同源免费）
         "LEAFMEM_RERANK_URL": "https://api.siliconflow.cn/v1/rerank",
         "LEAFMEM_RERANK_MODEL": "BAAI/bge-reranker-v2-m3",
         "LEAFMEM_RERANK_API_KEY": "sk-<你的硅基流动 Key>",
@@ -50,16 +50,17 @@ LeafMem 是一个本地长期记忆引擎（MCP server + 控制台）。它默�
 ```
 
 > `OPENAI_API_KEY` 同时作为 rerank 的兜底 Key；`LEAFMEM_RERANK_API_KEY` 缺省时也会回退读取 `OPENAI_API_KEY`。
+> ⚠️ 注意两个 URL 的差别（常见错误）：`LEAFMEM_EMBEDDINGS_BASE_URL` 是**不带 `/v1`** 的根地址（LeafMem 内部会自动拼 `/v1/embeddings`）；`LEAFMEM_RERANK_URL` 是**完整端点**（含 `/v1/rerank`）。写反会导致召回无向量加权。
 
 配置完成后在宿主里重连 MCP（或重启宿主），在控制台 Dashboard 确认检索栈生效。
 
 ---
 
-## 2. 反思蒸馏与画像维护（默认免费，无需额外 Key）
+## 2. 反思蒸馏与画像维护（免费，无需额外 Key）
 
-向量化只解决「检索」。反思蒸馏（把碎片记忆提炼为 principle）与用户画像维护需要对话模型，产品默认路径是：
+向量化只解决「检索」。反思蒸馏（把碎片记忆提炼为 principle）与用户画像维护需要对话模型，LeafMem 的路径是：
 
-**`leafmem-maintenance` 运维技能（默认，免费）**——由宿主模型（WorkBuddy/昆仑小智自带）通过 MCP 完成蒸馏与画像刷新，**不需要任何额外 API Key**，配合每周自动化任务运行。这是安装引导默认建立的路径，无需你做任何配置。
+**`leafmem-maintenance` 运维技能**——由宿主模型（WorkBuddy/昆仑小智自带）通过 MCP 完成蒸馏与画像刷新，**不需要任何额外 API Key**，配合每周自动化任务运行。这是安装引导建立的路径，无需你做任何配置。
 
 > 说明：`memory_organize(action=reflect/profile)` 的 MCP 内置路径在**未提供 inferencer 时自动降级关闭**（不报错）。inferencer 是 SDK 编程接口（`createLeafMem({ inferencer })`，见 [`docs/USAGE.md`](docs/USAGE.md)），面向把 LeafMem 嵌入自己代码的开发者；普通双宿主安装不涉及，也没有对应的配置界面——请勿寻找"在哪里填 DeepSeek Key"，默认路径用不上它。
 
@@ -77,8 +78,8 @@ LeafMem 支持 WorkBuddy（`~/.workbuddy/`）与昆仑小智（`~/.kunlunxiaozhi
 ## 4. 验证
 
 ```bash
-# 启动控制台（含 Dashboard / Insights / Explorer）
-leafmem-agent serve
+# 启动控制台（含 Dashboard / Insights / Explorer；在解压目录内执行）
+node dist/bin/leafmem-agent.js ui
 # 浏览器打开 http://127.0.0.1:3377/console
 ```
 

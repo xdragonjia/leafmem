@@ -37,7 +37,7 @@ flowchart TB
         KXZ["昆仑小智"]
     end
 
-    subgraph Hooks[" 生命周期 Hook（默认安装）"]
+    subgraph Hooks["⚡ 生命周期 Hook"]
         H1["UserPromptSubmit<br/>自动召回注入"]
         H2["Stop<br/>自动 capture"]
     end
@@ -60,8 +60,8 @@ flowchart TB
         BUILTIN["内置加权检索"]
         FTS["FTS5 BM25"]
         ENTITY["实体图谱加权"]
-        EMB["BGE-M3 向量化<br/>（默认开启）"]
-        RRK["bge-reranker-v2-m3 重排<br/>（默认开启）"]
+        EMB["BGE-M3 向量化"]
+        RRK["bge-reranker-v2-m3 重排"]
     end
 
     subgraph Ops["🤖 自动化治理"]
@@ -132,7 +132,7 @@ LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个�
 
 **日常使用只有一个正确 scope 类型：`agent:<宿主>`（具体是哪个宿主 scope，取决于安装配置）。**
 
-- **共用拓扑**（双宿主都装了时推荐）：统一落**主 scope**——按安装顺序第一个宿主的自身 scope（WorkBuddy 先装 → `agent:workbuddy`；只装了昆仑小智 → `agent:kunlunxiaozhi`）。两宿主共用一个记忆池，互相可见可写——这是"共用一套记忆"的实现方式，而不是写 `user:` scope；
+- **共用拓扑**（双宿主都装了时推荐）：统一落**主 scope**。主 scope 按固定优先级解析——两个宿主都配置时为 `agent:workbuddy`（WorkBuddy 优先），只有昆仑小智时为 `agent:kunlunxiaozhi`。两宿主共用一个记忆池，互相可见可写——这是"共用一套记忆"的实现方式，而不是写 `user:` scope；
 - **分拆拓扑**：各落各的（`agent:workbuddy` / `agent:kunlunxiaozhi`），互不可见；
 - **单宿主安装**：只装哪个宿主就只有那个 scope，天然单一记忆池，无共用/分拆问题。
 
@@ -152,7 +152,7 @@ LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个�
 3. **task 层** —— 任务窗口（如有 taskId）
 4. **palace/retrieval 层** —— 加权检索结果
 
-加权信号：**词法重叠 + hash 向量 + 实体图谱加权 + FTS5 BM25 + recency + importance + principle 加成**，过期记录自动降权。**BGE-M3 向量化 + bge-reranker-v2-m3 重排为默认配置**：安装引导默认帮你配好（硅基流动免费额度即可，无需付费），开启后 LongMemEval R@10 从 94.6% 提升到 97.6%；不配任何 Key 也能用内置检索运行，只是精度按基准表"内置"一行的水平。
+加权信号：**词法重叠 + hash 向量 + 实体图谱加权 + FTS5 BM25 + recency + importance + principle 加成**，过期记录自动降权。**BGE-M3 向量化 + bge-reranker-v2-m3 重排为默认配置**：安装引导默认帮你配好（硅基流动免费额度即可，无需付费），开启后 LongMemEval R@10 从 94.6%（内置）提升到 98.4%（2026-08-11 实测）；不配任何 Key 也能用内置检索运行，只是精度按基准表"内置"一行的水平。
 
 **蒸馏与画像默认免费**：reflect 蒸馏原则、profile 画像刷新由 `leafmem-maintenance` 运维技能驱动**宿主模型**完成，不需要任何额外 API Key（见 1.5）。SDK 编程接入场景另可在代码里给 `createLeafMem` 传自定义 inferencer 函数（见 [`docs/USAGE.md`](docs/USAGE.md)）；不配置时蒸馏降级关闭，核心召回不受影响。
 
@@ -171,14 +171,14 @@ LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个�
 | 衰减降权 | `memory_organize(action=decay)` | 无 |
 | 镜像同步 | ops/mirror-sync.js 导出全量记忆 | 无 |
 
-> 💡 **节奏选择**：每周一次（记忆增量 ~20-50 条/周，每日无料可整；语义整理是 LLM 重活，每周成本可控）。如需每日异常告警，可加一个只读哨兵（不整理、零成本）。
-
-**现成的自动化提示词模板**（随仓库/包分发，宿主读取即可创建定时任务）：
+**现成的自动化提示词模板**（随仓库/包分发，宿主读取即可创建定时任务；安装引导会把两者都建成，不是可选项）：
 
 | 模板 | 节奏 | 作用 |
 |------|------|------|
 | `ops/automations/weekly-maintenance.md` | 每周一 04:00 | 深度整理（自动加载本技能） |
 | `ops/automations/daily-sentinel.md` | 每日 10:00 | 只读健康哨兵（含误删检测 + hook 心跳检查），异常才提醒 |
+
+两者分工明确：深度整理每周一次（记忆增量 ~20-50 条/周，每日无料可整；语义整理是宿主模型的 LLM 重活，每周节奏成本可控）；哨兵每日只读巡检（不整理、零写入、零成本，仅报异常）。
 
 ### 1.6 纪律文件与生命周期 Hook（0.3.0 双保险）
 
@@ -279,9 +279,9 @@ node dist/bin/leafmem-agent.js tui
 
 ### 2.6 API Key 快速上手
 
-LeafMem 开箱即用（本地内置检索即可工作）。**默认配置**（安装引导会默认帮你配好）：
+LeafMem 开箱即用（不配任何 Key 时用内置检索工作）。在此基础上，安装引导会自动帮你配好完整的检索栈：
 
-- **向量化 + 重排**：硅基流动 BGE-M3（embedding）+ bge-reranker-v2-m3（rerank），免费额度即可，默认开启，显著提升召回精度
+- **向量化 + 重排**：硅基流动 BGE-M3（embedding）+ bge-reranker-v2-m3（rerank），免费额度即可，显著提升召回精度
 - **蒸馏/画像**：由运维技能用宿主模型完成，免费，无需任何额外配置
 
 配置细节见 [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md)。
@@ -368,10 +368,11 @@ LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使�
 
 ## 📈 基准测试
 
-在 2026-08-08 于本代码库重测。基准的两种模式**明确区分配置层级**：
+基线测量 2026-08-08；**默认配置（BGE-M3 embedding + bge-reranker-v2-m3 重排）完整重测 2026-08-11**。基准的三个配置层级：
 
 - **内置（零配置）**：不配任何 embedding / rerank 模型与 API Key，仅内置 hash 向量 + 五维加权评分；
-- **+ BGE-M3 embedding**：在内置评分上叠加 BGE-M3 向量相似度（0.65/0.35 融合），走硅基流动免费 API；**不含** bge-reranker-v2-m3 交叉编码器重排。
+- **+ BGE-M3 embedding（未含重排）**：在内置评分上叠加 BGE-M3 向量相似度（0.65/0.35 融合），走硅基流动免费 API；
+- **默认配置 = BGE-M3 embedding + bge-reranker-v2-m3 交叉编码器重排**：安装引导配出的形态（重排对 top-40 候选与检索分 60/40 融合，fail-safe）。
 
 完整方法与复现见 [`benchmarks/BENCHMARKS.md`](benchmarks/BENCHMARKS.md)。
 
@@ -379,10 +380,12 @@ LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使�
 |-----------|---------|-----|------|---------|-----------|
 | LongMemEval (500q) | 内置（零配置） | 89.6% | 94.6% | 0.834 | 否 |
 | LongMemEval (500q) | + BGE-M3 embedding（未含重排） | 95.8% | 97.6% | 0.916 | 是（硅基流动免费） |
+| LongMemEval (500q) | 默认配置（+ 重排） | 96.4% | 98.4% | 0.929 | 是（硅基流动免费） |
 | LoCoMo (1986q) | 内置（零配置） | 84.1% | 92.0% | 0.733 | 否 |
 | LoCoMo (1986q) | + BGE-M3 embedding（未含重排） | 88.4% | 94.9% | 0.790 | 是（硅基流动免费） |
+| LoCoMo (1986q) | 默认配置（+ 重排） | 90.3% | 95.8% | 0.819 | 是（硅基流动免费） |
 
-> **与默认配置的关系**：安装引导的默认配置 = BGE-M3 embedding **+ bge-reranker-v2-m3 交叉编码器重排**（同枚硅基流动 Key）。表中「+ BGE-M3 embedding」行是**未含重排**的测量值；默认配置在其上再叠一层重排（top-40 候选与检索分 60/40 融合）。该组合未单独跑基准——重排层的设计是优化排序、且 fail-safe（超时/出错自动回退原排序，不会比表中更差）。
+默认配置相对 embedding-only 的提升：LME R@10 +0.8pp / NDCG@10 +0.013；LoCoMo R@5 +1.9pp / R@10 +0.9pp / NDCG@10 +0.029——重排层的增益一致且稳定。
 
 ---
 

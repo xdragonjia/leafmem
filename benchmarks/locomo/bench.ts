@@ -218,6 +218,13 @@ function parseArgs() {
   let embedKey = "";
   let embedBatch = 0;
   let embedWeight = 0.35;
+  // 2026-08-11: cross-encoder rerank stage mirroring the production pipeline
+  let rerankUrl = "";
+  let rerankModel = "";
+  let rerankKey = "";
+  let rerankTopK = 40;
+  let rerankWeight = 0.6;
+  let rerankTimeoutMs = 15_000;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--data" && args[i + 1]) dataPath = resolve(args[++i]);
@@ -230,6 +237,12 @@ function parseArgs() {
     else if (args[i] === "--embed-key" && args[i + 1]) embedKey = args[++i];
     else if (args[i] === "--embed-batch" && args[i + 1]) embedBatch = parseInt(args[++i], 10);
     else if (args[i] === "--embed-weight" && args[i + 1]) embedWeight = parseFloat(args[++i]);
+    else if (args[i] === "--rerank-url" && args[i + 1]) rerankUrl = args[++i];
+    else if (args[i] === "--rerank-model" && args[i + 1]) rerankModel = args[++i];
+    else if (args[i] === "--rerank-key" && args[i + 1]) rerankKey = args[++i];
+    else if (args[i] === "--rerank-top-k" && args[i + 1]) rerankTopK = parseInt(args[++i], 10);
+    else if (args[i] === "--rerank-weight" && args[i + 1]) rerankWeight = parseFloat(args[++i]);
+    else if (args[i] === "--rerank-timeout-ms" && args[i + 1]) rerankTimeoutMs = parseInt(args[++i], 10);
   }
 
   if (!embedUrl && embedProvider === "gemini") embedUrl = "https://generativelanguage.googleapis.com";
@@ -237,23 +250,83 @@ function parseArgs() {
 
   if (!outputPath) {
     const ts = new Date().toISOString().replace(/[:-]/g, "").slice(0, 15);
-    const tag = embedModel ? `_${embedModel.replace(/[^a-zA-Z0-9]/g, "_")}` : "";
+    const embedTag = embedModel ? `_${embedModel.replace(/[^a-zA-Z0-9]/g, "_")}` : "";
+    const rerankTag = rerankModel ? `_rerank_${rerankModel.replace(/[^a-zA-Z0-9]/g, "_")}` : "";
     const resultsDir = resolve(import.meta.dirname, "../results");
     if (!existsSync(resultsDir)) mkdirSync(resultsDir, { recursive: true });
-    outputPath = resolve(resultsDir, `locomo_leafmem${tag}_${ts}.jsonl`);
+    outputPath = resolve(resultsDir, `locomo_leafmem${embedTag}${rerankTag}_${ts}.jsonl`);
   }
 
   const embedder = (embedUrl && embedModel) ? new RemoteEmbedder({
     provider: embedProvider, baseUrl: embedUrl, model: embedModel,
     apiKey: embedKey, batchSize: embedBatch || undefined,
   }) : null;
-  return { dataPath, topK, limit, outputPath, embedder, embedWeight };
+  const reranker = (rerankUrl && rerankModel) ? {
+    url: rerankUrl,
+    model: rerankModel,
+    apiKey: rerankKey || embedKey,
+    topK: rerankTopK,
+    weight: rerankWeight,
+    timeoutMs: rerankTimeoutMs,
+  } : null;
+  return { dataPath, topK, limit, outputPath, embedder, embedWeight, reranker };
+}
+
+// ── Cross-encoder rerank client (mirrors src/retrieval/reranker.ts) ────
+async function crossEncoderRerank(
+  cfg: { url: string; model: string; apiKey: string; topK: number; timeoutMs: number },
+  query: string,
+  documents: string[],
+): Promise<number[] | null> {
+  const docs = documents.map((d) => d.trim()).filter((d) => d.length > 0);
+  if (!query.trim() || docs.length === 0) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
+  try {
+    const response = await fetch(cfg.url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${cfg.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: cfg.model,
+        query: query.trim(),
+        documents: docs.slice(0, cfg.topK),
+        top_n: Math.min(docs.length, cfg.topK),
+        return_documents: false,
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as {
+      results?: Array<{ index: number; relevance_score: number }>;
+    };
+    if (!Array.isArray(payload.results) || payload.results.length === 0) return null;
+    const scores = new Array<number>(docs.length).fill(-1);
+    for (const result of payload.results) {
+      if (
+        Number.isInteger(result.index) &&
+        result.index >= 0 &&
+        result.index < scores.length &&
+        typeof result.relevance_score === "number"
+      ) {
+        scores[result.index] = clamp(result.relevance_score, 0, 1);
+      }
+    }
+    return scores;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ── Main ───────────────────────────────────────────────────────────────
 async function main() {
   const opts = parseArgs();
-  const mode = opts.embedder ? `hybrid (${opts.embedWeight * 100}% vector)` : "builtin (hash only)";
+  const rerankTag = opts.reranker ? " + cross-encoder rerank" : "";
+  const mode = opts.embedder ? `hybrid (${opts.embedWeight * 100}% vector)${rerankTag}` : "builtin (hash only)";
   console.log(`\n🧠 LeafMem × LoCoMo Benchmark`);
   console.log(`   Mode:    ${mode}`);
   console.log(`   Data:    ${opts.dataPath}`);
@@ -311,7 +384,9 @@ async function main() {
       const qStart = Date.now();
       const gtSessions = evidenceToSessions(qa.evidence);
 
-      const candidatePool = opts.embedder ? 20 : opts.topK;
+      const candidatePool = opts.reranker
+        ? Math.max(opts.topK, opts.reranker.topK)
+        : opts.embedder ? 20 : opts.topK;
       const hits = await memory.search(qa.question, {
         maxResults: candidatePool,
         minScore: 0,
@@ -320,23 +395,53 @@ async function main() {
       let finalHits: { id: string; score: number }[];
 
       if (opts.embedder && sessionVecs && hits.length > 0) {
-        const queryVec = await opts.embedder.embedOne(qa.question);
-        const builtinWeight = 1 - opts.embedWeight;
-        finalHits = hits.map((h: any) => {
-          const sid = h.record.scope.id as string;
-          const sVec = sessionVecs!.get(sid);
-          const vecScore = sVec ? clamp(cosineSimilarity(queryVec, sVec), 0, 1) : 0;
-          return {
-            id: sid,
-            score: h.score * builtinWeight + vecScore * opts.embedWeight,
-          };
-        });
-        finalHits.sort((a, b) => b.score - a.score);
+        // 2026-08-11 robustness: degrade to builtin ordering if this question's
+        // embedding fails, instead of aborting the 1986-question run.
+        try {
+          const queryVec = await opts.embedder.embedOne(qa.question);
+          const builtinWeight = 1 - opts.embedWeight;
+          finalHits = hits.map((h: any) => {
+            const sid = h.record.scope.id as string;
+            const sVec = sessionVecs!.get(sid);
+            const vecScore = sVec ? clamp(cosineSimilarity(queryVec, sVec), 0, 1) : 0;
+            return {
+              id: sid,
+              score: h.score * builtinWeight + vecScore * opts.embedWeight,
+            };
+          });
+          finalHits.sort((a, b) => b.score - a.score);
+        } catch (err) {
+          console.warn(`  ⚠ QA ${qi}: embedding failed, using builtin order`);
+          finalHits = hits.map((h: any) => ({
+            id: h.record.scope.id as string,
+            score: h.score as number,
+          }));
+        }
       } else {
         finalHits = hits.map((h: any) => ({
           id: h.record.scope.id as string,
           score: h.score as number,
         }));
+      }
+
+      // 2026-08-11: cross-encoder rerank stage, mirroring the production
+      // pipeline (pool limited to reranker.topK; fuse rerank*0.6 + normalized
+      // base*0.4; fail-safe keeps embedding-fused ordering on any failure).
+      if (opts.reranker && finalHits.length >= 3) {
+        const pool = finalHits.slice(0, opts.reranker.topK);
+        const documents = pool.map((h) => sessionTexts.get(h.id) ?? h.id);
+        const scores = await crossEncoderRerank(opts.reranker, qa.question, documents);
+        if (scores) {
+          const maxBase = pool[0]?.score ?? 1;
+          finalHits = pool.map((h, index) => {
+            const rerankScore = scores[index] ?? 0;
+            const normalizedBase = maxBase > 0 ? h.score / maxBase : 0;
+            return {
+              ...h,
+              score: rerankScore * opts.reranker!.weight + normalizedBase * (1 - opts.reranker!.weight),
+            };
+          }).sort((a, b) => b.score - a.score);
+        }
       }
 
       const retrievedSessions = finalHits.map(h => h.id);
@@ -358,6 +463,9 @@ async function main() {
 
       allResults.push(result);
       if (result.hitAt10) convHits++;
+      // 2026-08-11 robustness: append each result incrementally so a mid-run
+      // crash (API 400 / network) never loses completed questions.
+      writeFileSync(opts.outputPath, allResults.map(r => JSON.stringify(r)).join("\n") + "\n", "utf-8");
     }
 
     const convR10 = (convHits / conv.qa.length * 100).toFixed(1);
