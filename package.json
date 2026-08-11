@@ -1,6 +1,6 @@
 {
   "name": "@xdragonjia/leafmem",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "LeafMem — long-term memory engine for AI agents (recall, reflect, profile, governance).",
   "type": "module",
   "keywords": [

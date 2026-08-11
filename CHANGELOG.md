@@ -5,6 +5,15 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.7] - 2026-08-12
+
+### Fixed
+- **单测污染真实审计日志**：`runMemoryMcpStdioServer` 在测试传 in-memory memory
+  但未传 storagePath 时，审计事件库回落到真实 `~/.leafmem/memory.sqlite`——
+  测试的 mock 写入把幽灵 memory_written 事件写进生产 console 事件页，记录本身
+  随进程消亡（事件 61d8652c 即此，用户截图发现）。现 events 可注入，stdio 测试
+  注入 InMemoryInspectEventStore；实测跑测试对真库零污染；6 条幽灵事件已清。
+
 ## [0.3.6] - 2026-08-11
 
 ### Fixed
