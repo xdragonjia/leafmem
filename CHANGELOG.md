@@ -5,6 +5,22 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.4] - 2026-08-11
+
+### Added
+- **任务生命周期关闭路径**：`TaskContextManager.setStatus()` + MCP `memory_write`
+  的 `task_append` 接受可选 `status`（active/paused/completed/archived），创建时与
+  存量转换均可。此前四态枚举只有类型定义、无任何转换写路径，task_append 建的
+  任务永远停在 active（08-11 用户截图发现的机制缺陷）。
+- **Stop 驱动指令④ 关闭一致性**：传 `status="completed"` 必须同传闭环版
+  `rollingSummary`（清除待办/未完成表述）——completed 徽章配过时待办比没有
+  summary 更误导。
+
+### Docs
+- ARCHITECTURE.md 新增 Task Lifecycle 节（任务 born active、永不自动关闭、
+  显式转换三件套）；API.md 补 setRollingSummary/setStatus 示例；USAGE.md
+  task_append 参数补全。
+
 ## [0.3.3] - 2026-08-11
 
 ### Fixed
