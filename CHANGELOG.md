@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-11
+
+### Fixed
+- **hook 自动 capture 注入垃圾入库（根因修复）**：宿主会话文件把
+  `<system-reminder>`/身份文件等系统注入块原样嵌入 transcript，bridge 按原文
+  capture 后被规则提取器当"用户偏好"入库（08-11 实测 2 条 turn_inference 垃圾，
+  已删）。修复为双层净化：①服务端 `captureTurn` 入口统一
+  `sanitizeCapturedText`（提取 `<user_query>` 正文、剥离注入块、纯注入则直接跳过）；
+  ②bridge 脚本同逻辑客户端先行净化。新增 2 条回归测试（238/238）。
+
 ## [0.3.0] - 2026-08-11
 
 ### Added

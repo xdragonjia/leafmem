@@ -3,6 +3,7 @@ import { parseProfileSections } from "../core/memory.js";
 import type { MemoryInput, MemoryRecallResult, MemoryRecord, MemoryScope } from "../core/types.js";
 import type { MemoryCaptureResult, MemoryProposalExtractor, MemoryRuntime } from "../runtime/types.js";
 import { createMemoryRuntime, inferMemoryProposals } from "../runtime/runtime.js";
+import { sanitizeCapturedText } from "../system/sanitize.js";
 import type { InspectEventStore } from "../inspect/types.js";
 import type { PlanGate } from "../cloud/gate.js";
 import type { UsageMeter } from "../cloud/usage.js";
@@ -92,30 +93,43 @@ export class LeafMemPlatformService implements PlatformMemoryService {
   // -----------------------------------------------------------------------
 
   async captureTurn(input: CaptureTurnInput): Promise<MemoryCaptureResult> {
-    const resolvedScopes = resolveContextScopes(input.context);
+    // 2026-08-11 root-cause defense: hosts embed system-injected boilerplate
+    // (SOUL.md, <system-reminder> blocks) verbatim in transcripts. Sanitize at
+    // the entry so no client can persist system templates as durable memory
+    // (real incident: two turn_inference records of raw injection markup).
+    const userMessage = sanitizeCapturedText(input.userMessage);
+    if (!userMessage) {
+      return { proposals: [], stored: [], taskEntries: [] };
+    }
+    const cleanInput: CaptureTurnInput = {
+      ...input,
+      userMessage,
+      assistantMessage: sanitizeCapturedText(input.assistantMessage),
+    };
+    const resolvedScopes = resolveContextScopes(cleanInput.context);
     const { writeScope, recallScopes } = resolvedScopes;
-    const taskKey = canonicalTaskId(input.context);
+    const taskKey = canonicalTaskId(cleanInput.context);
     const taskScope = recallScopes.find((scope) => scope.type === "task");
     const userScope = recallScopes.find((scope) => scope.type === "user");
     const lifecycleScopes = [writeScope, ...recallScopes.filter((scope) => !sameScope(scope, writeScope))];
     const rawProposals = this.proposalExtractor
       ? await this.proposalExtractor.extract({
-          userMessage: input.userMessage,
-          assistantMessage: input.assistantMessage,
-          recentMessages: input.recentMessages,
+          userMessage: cleanInput.userMessage,
+          assistantMessage: cleanInput.assistantMessage,
+          recentMessages: cleanInput.recentMessages,
           scopes: lifecycleScopes,
           taskId: taskKey,
-          taskTitle: input.taskTitle,
-          toolContext: input.toolContext,
+          taskTitle: cleanInput.taskTitle,
+          toolContext: cleanInput.toolContext,
         })
       : inferMemoryProposals({
-          userMessage: input.userMessage,
-          assistantMessage: input.assistantMessage,
-          recentMessages: input.recentMessages,
+          userMessage: cleanInput.userMessage,
+          assistantMessage: cleanInput.assistantMessage,
+          recentMessages: cleanInput.recentMessages,
           scopes: lifecycleScopes,
           taskId: taskKey,
-          taskTitle: input.taskTitle,
-          toolContext: input.toolContext,
+          taskTitle: cleanInput.taskTitle,
+          toolContext: cleanInput.toolContext,
         });
     const proposals = rawProposals.map((proposal) => ({
       ...proposal,
@@ -131,14 +145,14 @@ export class LeafMemPlatformService implements PlatformMemoryService {
 
     const runtime = this.buildRuntime(lifecycleScopes);
     const result = await runtime.captureTurn({
-      userMessage: input.userMessage,
-      assistantMessage: input.assistantMessage,
-      recentMessages: input.recentMessages,
+      userMessage: cleanInput.userMessage,
+      assistantMessage: cleanInput.assistantMessage,
+      recentMessages: cleanInput.recentMessages,
       scopes: lifecycleScopes,
       proposals,
       taskId: taskKey,
-      taskTitle: input.taskTitle,
-      toolContext: input.toolContext,
+      taskTitle: cleanInput.taskTitle,
+      toolContext: cleanInput.toolContext,
     });
 
     if (this.events && result.stored.length > 0) {

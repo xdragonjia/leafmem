@@ -93,7 +93,7 @@ async function main() {
   };
 
   if (event === "UserPromptSubmit") {
-    const prompt = typeof payload.prompt === "string" ? payload.prompt.trim() : "";
+    const prompt = sanitizeCapturedText(typeof payload.prompt === "string" ? payload.prompt : "");
     if (!prompt) return done(event, null);
     const data = await postJson(
       base,
@@ -123,7 +123,9 @@ async function main() {
   }
 
   if (event === "Stop" || event === "SessionEnd") {
-    const { userMessage, assistantMessage } = await extractTurn(payload);
+    const raw = await extractTurn(payload);
+    const userMessage = sanitizeCapturedText(raw.userMessage ?? "");
+    const assistantMessage = sanitizeCapturedText(raw.assistantMessage ?? "");
     if (!userMessage) {
       await heartbeat(`${event} capture: no user message, skipped`);
       return done(event, null); // nothing reliable to commit
@@ -219,6 +221,54 @@ function extractRecallContext(data) {
     "";
   const trimmed = typeof text === "string" ? text.trim() : "";
   return trimmed || null;
+}
+
+/**
+ * Sanitize text captured from the host before it enters the memory store.
+ *
+ * Host transcripts embed system-injected boilerplate (SOUL.md, identity files,
+ * <system-reminder> / <additional_data> / <memory_and_skills_reminder> blocks,
+ * connector status lists) verbatim. If captured raw, the rule extractor stores
+ * system boilerplate as durable "preferences" (real incident 2026-08-11: two
+ * turn_inference records containing raw <system-reminder> markup had to be
+ * deleted). Rules here:
+ *   1. When a <user_query> tag is present, keep only its body (the human's
+ *      actual message).
+ *   2. Strip system-injected blocks and XML scaffolding wholesale.
+ *   3. Return trimmed plain text, or "" when nothing human-authored remains.
+ */
+function sanitizeCapturedText(text) {
+  if (typeof text !== "string" || !text.trim()) return "";
+  let out = text;
+
+  // 1. Prefer the <user_query> body when the host wraps the human message.
+  const uq = out.match(/<user_query>([\s\S]*?)<\/user_query>/i);
+  if (uq?.[1] && uq[1].trim()) {
+    out = uq[1];
+  }
+
+  // 2. Strip system-injected blocks (balanced and self-closing forms).
+  out = out
+    .replace(/<system-reminder[\s\S]*?<\/system-reminder>/gi, " ")
+    .replace(/<system-reminder[^>]*>(?![\s\S]*<\/system-reminder>)[\s\S]*/gi, " ")
+    .replace(/<additional_data>[\s\S]*?<\/additional_data>/gi, " ")
+    .replace(/<connector-status>[\s\S]*?<\/connector-status>/gi, " ")
+    .replace(/<memory_and_skills_reminder>[\s\S]*?<\/memory_and_skills_reminder>/gi, " ")
+    .replace(/<identity_context>[\s\S]*?<\/identity_context>/gi, " ")
+    .replace(/<project_context>[\s\S]*?<\/project_context>/gi, " ")
+    .replace(/<product_identity>[\s\S]*?<\/product_identity>/gi, " ")
+    .replace(/<tone_and_style>[\s\S]*?<\/tone_and_style>/gi, " ")
+    .replace(/<user_info>[\s\S]*?<\/user_info>/gi, " ")
+    .replace(/<image[^>]*>[\s\S]*?<\/image>/gi, " ")
+    .replace(/<image_local_path>[\s\S]*?<\/image_local_path>/gi, " ");
+
+  const trimmed = out.trim();
+  // Nothing human-authored left (pure injection) -> skip.
+  if (!trimmed) return "";
+  // Guard: if the remainder still smells like injection scaffolding, skip.
+  if (/^(#|##)\s*(SOUL\.md|IDENTITY\.md|USER\.md)/i.test(trimmed)) return "";
+  if (/<(hook|user-context|memory\b)/i.test(trimmed.slice(0, 60))) return "";
+  return trimmed;
 }
 
 /**

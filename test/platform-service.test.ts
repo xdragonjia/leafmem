@@ -369,6 +369,31 @@ describe("LeafMemPlatformService", () => {
       assert.ok(Array.isArray(result.stored));
     });
 
+    it("sanitizes system-injected boilerplate before extraction", async () => {
+      // 2026-08-11 incident: hosts embed <system-reminder>/identity boilerplate
+      // verbatim; raw capture stored it as durable "preferences". captureTurn
+      // must strip injection and keep only the <user_query> body.
+      const injected =
+        '<system-reminder data-role="user-context">\n<user_info>\nOS: darwin\n</user_info>\nSOUL rules...\n</system-reminder>\n' +
+        "<user_query>Remember that reports go in the runs folder.</user_query>";
+      const result = await service.captureTurn({
+        context: makeContext(),
+        userMessage: injected,
+      });
+      const stored = result.stored.find((record) => record.content.includes("runs folder"));
+      assert.ok(stored, "human-authored remember request should still be captured");
+      assert.ok(!stored!.content.includes("system-reminder"), "injection markup must not persist");
+      assert.ok(!stored!.content.includes("<user_info>"), "injected identity must not persist");
+    });
+
+    it("skips turns that are pure system injection", async () => {
+      const result = await service.captureTurn({
+        context: makeContext(),
+        userMessage: '<system-reminder data-role="hook">Active context only.</system-reminder>',
+      });
+      assert.equal(result.stored.length, 0);
+    });
+
     it("stores durable preferences on the user scope instead of the task scope", async () => {
       const result = await service.captureTurn({
         context: makeContext({ taskId: "reply_style" }),
