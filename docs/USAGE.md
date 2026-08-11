@@ -836,7 +836,7 @@ const memory = createLeafMem({ store: new InMemoryStore() });
 ## 15. 当前的限制
 
 - 长期记忆存储对外暴露的是 `MemoryStore` 接口（`load()` / `save()`），不是直接的 SQL 查询 API。
-- Builtin retrieval 基于确定性的本地评分，remote embeddings 是可选的 rerank 层。
+- Builtin retrieval 基于确定性的本地评分；remote embeddings + rerank 是叠加层——对 SDK 裸接入是可选的，但双宿主安装引导**默认开启**（硅基流动免费额度，见 README 基准表与 GETTING_STARTED）。
 - 使用 QMD backend 需要运行环境中已安装 `qmd` CLI。
 - Turn capture 中的记忆提取使用的是启发式正则匹配，不是 LLM 调用。
 - Session-flush wrapper 的 buffer 存在 adapter 进程内存中，由宿主决定何时 flush。

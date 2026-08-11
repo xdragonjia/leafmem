@@ -156,7 +156,7 @@ capture 本轮要点——记忆的写入与召回由机制保障，不再依赖
 1. **MCP 连通**：`memory_recall(action="recall", message="连通性测试")` 正常返回。
 2. **写入闭环**：`memory_write(action="remember", content="LeafMem 安装自检通过", kind="note")`
    写入成功，再 recall 能命中；确认后删除该测试记忆。
-3. **向量化生效**：配置了硅基流动 Key 时，召回结果带向量加权（控制台/状态可见 embedding 与 rerank 生效）。
+3. **向量化+重排生效**（默认配置）：硅基流动 Key 已写入时，召回结果带向量加权与交叉编码器重排（控制台/状态可见 embedding 与 rerank 生效）。
 4. **纪律置顶**：`~/.kunlunxiaozhi/SOUL.md` 顶部（H1 之后）含 `leafmem-agent-instructions` 块；
    `MEMORY.md` 中无该块残留。
 5. **初始导入**：`memory_recall(action="list")` 或控制台能看到 `source=workbuddy_import` 的记录，

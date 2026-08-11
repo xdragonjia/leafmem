@@ -1,11 +1,10 @@
 # LeafMem 快速上手（API Key 引导）
 
-LeafMem 是一个本地长期记忆引擎（MCP server + 控制台）。它默认使用本地 SQLite 存储，**不需要任何账号即可运行基础记忆功能**。但要启用高质量检索（向量化）与反思蒸馏（inferencer），需要配置 1~2 个模型 API Key。
+LeafMem 是一个本地长期记忆引擎（MCP server + 控制台）。它默认使用本地 SQLite 存储，**不需要任何账号即可运行基础记忆功能**。要启用高质量检索（向量化 + 重排），需要一枚**免费**的硅基流动 API Key（安装引导会默认帮你配好）；蒸馏与画像由宿主模型完成，不需要任何额外 Key。
 
-本文引导你完成两件事：
+本文引导你完成一件事：
 
 1. **申请硅基流动（SiliconFlow）API Key** —— 配置**免费**的向量化（embedding）与重排序（rerank）模型。
-2. **（可选）配置 DeepSeek 或其他模型 API Key** —— 用于反思蒸馏、画像维护等需要对话模型的能力。
 
 > 全部配置只写在你本机的宿主 MCP 配置里（如 `~/.workbuddy/mcp.json`），LeafMem 不会上传你的 Key 或记忆内容。
 
@@ -58,20 +57,11 @@ LeafMem 是一个本地长期记忆引擎（MCP server + 控制台）。它默�
 
 ## 2. 反思蒸馏与画像维护（默认免费，无需额外 Key）
 
-向量化只解决「检索」。反思蒸馏（把碎片记忆提炼为 principle）与用户画像维护需要对话模型，LeafMem 提供两条路径：
+向量化只解决「检索」。反思蒸馏（把碎片记忆提炼为 principle）与用户画像维护需要对话模型，产品默认路径是：
 
-**路径一（推荐，免费）**：`leafmem-maintenance` 运维技能——由宿主模型（WorkBuddy/昆仑小智自带）通过 MCP 完成蒸馏，**不需要任何额外 API Key**。配合每周自动化任务运行。
+**`leafmem-maintenance` 运维技能（默认，免费）**——由宿主模型（WorkBuddy/昆仑小智自带）通过 MCP 完成蒸馏与画像刷新，**不需要任何额外 API Key**，配合每周自动化任务运行。这是安装引导默认建立的路径，无需你做任何配置。
 
-**路径二（可选，付费）**：配置独立 inferencer（DeepSeek 等 OpenAI 兼容模型），供 `memory_organize(action=reflect/profile)` 的 MCP 内置路径使用：
-
-```jsonc
-{
-  "DEEPSEEK_API_KEY": "sk-<你的 DeepSeek Key>",
-  "LEAFMEM_INFERENCER": "{\"provider\":\"deepseek\",\"model\":\"deepseek-chat\"}"
-}
-```
-
-> 不配置 inferencer 时，MCP 内置蒸馏自动降级关闭，但路径一（运维技能）仍完整可用。两条路径都不影响基础记忆与检索。
+> 说明：`memory_organize(action=reflect/profile)` 的 MCP 内置路径在**未提供 inferencer 时自动降级关闭**（不报错）。inferencer 是 SDK 编程接口（`createLeafMem({ inferencer })`，见 [`docs/USAGE.md`](docs/USAGE.md)），面向把 LeafMem 嵌入自己代码的开发者；普通双宿主安装不涉及，也没有对应的配置界面——请勿寻找"在哪里填 DeepSeek Key"，默认路径用不上它。
 
 ---
 

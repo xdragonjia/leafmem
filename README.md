@@ -37,6 +37,11 @@ flowchart TB
         KXZ["昆仑小智"]
     end
 
+    subgraph Hooks[" 生命周期 Hook（默认安装）"]
+        H1["UserPromptSubmit<br/>自动召回注入"]
+        H2["Stop<br/>自动 capture"]
+    end
+
     subgraph MCP["🔌 MCP 4 工具（闭环）"]
         W["memory_write<br/>写记忆"]
         R["memory_recall<br/>召回"]
@@ -55,7 +60,8 @@ flowchart TB
         BUILTIN["内置加权检索"]
         FTS["FTS5 BM25"]
         ENTITY["实体图谱加权"]
-        RERANK["BGE-M3 向量重排（可选）"]
+        EMB["BGE-M3 向量化<br/>（默认开启）"]
+        RRK["bge-reranker-v2-m3 重排<br/>（默认开启）"]
     end
 
     subgraph Ops["🤖 自动化治理"]
@@ -69,6 +75,8 @@ flowchart TB
         UI["仪表盘 / 记忆浏览 / 洞察<br/>知识图谱 / 事件日志 / 召回检查 / 宿主接入"]
     end
 
+    WB & KXZ --> Hooks
+    Hooks -->|注入召回 / 回写 capture| MCP
     WB & KXZ --> W & R & O & G
     W --> PALACE & ACTIVE & TASK
     W --> GRAPH
@@ -144,9 +152,9 @@ LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个�
 3. **task 层** —— 任务窗口（如有 taskId）
 4. **palace/retrieval 层** —— 加权检索结果
 
-加权信号：**词法重叠 + hash 向量 + 实体图谱加权 + FTS5 BM25 + recency + importance + principle 加成**，过期记录自动降权。**BGE-M3 向量重排为推荐默认配置**（安装引导默认开启，免费硅基流动额度即可），开启后 LongMemEval R@10 从 94.6% 提升到 97.6%。
+加权信号：**词法重叠 + hash 向量 + 实体图谱加权 + FTS5 BM25 + recency + importance + principle 加成**，过期记录自动降权。**BGE-M3 向量化 + bge-reranker-v2-m3 重排为默认配置**：安装引导默认帮你配好（硅基流动免费额度即可，无需付费），开启后 LongMemEval R@10 从 94.6% 提升到 97.6%；不配任何 Key 也能用内置检索运行，只是精度按基准表"内置"一行的水平。
 
-**蒸馏与画像默认免费**：reflect 蒸馏原则、profile 画像刷新由 `leafmem-maintenance` 运维技能驱动**宿主模型**完成，不需要任何额外 API Key（见 1.5）。另保留可选的独立 inferencer 配置（DeepSeek 等 OpenAI 兼容模型，走 MCP 内置路径）；两者都不配置时蒸馏降级关闭，核心召回不受影响。
+**蒸馏与画像默认免费**：reflect 蒸馏原则、profile 画像刷新由 `leafmem-maintenance` 运维技能驱动**宿主模型**完成，不需要任何额外 API Key（见 1.5）。SDK 编程接入场景另可在代码里给 `createLeafMem` 传自定义 inferencer 函数（见 [`docs/USAGE.md`](docs/USAGE.md)）；不配置时蒸馏降级关闭，核心召回不受影响。
 
 ### 1.5 周期性维护（leafmem-maintenance 运维技能）
 
@@ -271,10 +279,10 @@ node dist/bin/leafmem-agent.js tui
 
 ### 2.6 API Key 快速上手
 
-LeafMem 开箱即用（本地内置检索即可工作）。**推荐默认配置**（安装引导会默认帮你配好）：
+LeafMem 开箱即用（本地内置检索即可工作）。**默认配置**（安装引导会默认帮你配好）：
 
-- **向量化 + 重排**：硅基流动 BGE-M3（免费额度，显著提升召回精度，默认开启）
-- **蒸馏/画像**：默认由运维技能用宿主模型完成（免费，无需配置）；如需 MCP 内置蒸馏路径可另配 DeepSeek（可选）
+- **向量化 + 重排**：硅基流动 BGE-M3（embedding）+ bge-reranker-v2-m3（rerank），免费额度即可，默认开启，显著提升召回精度
+- **蒸馏/画像**：由运维技能用宿主模型完成，免费，无需任何额外配置
 
 配置细节见 [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md)。
 
@@ -360,14 +368,21 @@ LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使�
 
 ## 📈 基准测试
 
-在 2026-08-08 于本代码库重测（内置确定性；BGE-M3 重排走硅基流动向量化）。完整方法与复现见 [`benchmarks/BENCHMARKS.md`](benchmarks/BENCHMARKS.md)。
+在 2026-08-08 于本代码库重测。基准的两种模式**明确区分配置层级**：
 
-| Benchmark | 模式 | R@5 | R@10 | NDCG@10 | 需 LLM |
-|-----------|------|-----|------|---------|--------|
-| LongMemEval (500q) | 内置，零依赖 | 89.6% | 94.6% | 0.834 | 否 |
-| LongMemEval (500q) | + BGE-M3 重排 | 95.8% | 97.6% | 0.916 | 否 |
-| LoCoMo (1986q) | 内置，零依赖 | 84.1% | 92.0% | 0.733 | 否 |
-| LoCoMo (1986q) | + BGE-M3 重排 | 88.4% | 94.9% | 0.790 | 否 |
+- **内置（零配置）**：不配任何 embedding / rerank 模型与 API Key，仅内置 hash 向量 + 五维加权评分；
+- **+ BGE-M3 embedding**：在内置评分上叠加 BGE-M3 向量相似度（0.65/0.35 融合），走硅基流动免费 API；**不含** bge-reranker-v2-m3 交叉编码器重排。
+
+完整方法与复现见 [`benchmarks/BENCHMARKS.md`](benchmarks/BENCHMARKS.md)。
+
+| Benchmark | 检索配置 | R@5 | R@10 | NDCG@10 | 需 API Key |
+|-----------|---------|-----|------|---------|-----------|
+| LongMemEval (500q) | 内置（零配置） | 89.6% | 94.6% | 0.834 | 否 |
+| LongMemEval (500q) | + BGE-M3 embedding（未含重排） | 95.8% | 97.6% | 0.916 | 是（硅基流动免费） |
+| LoCoMo (1986q) | 内置（零配置） | 84.1% | 92.0% | 0.733 | 否 |
+| LoCoMo (1986q) | + BGE-M3 embedding（未含重排） | 88.4% | 94.9% | 0.790 | 是（硅基流动免费） |
+
+> **与默认配置的关系**：安装引导的默认配置 = BGE-M3 embedding **+ bge-reranker-v2-m3 交叉编码器重排**（同枚硅基流动 Key）。表中「+ BGE-M3 embedding」行是**未含重排**的测量值；默认配置在其上再叠一层重排（top-40 候选与检索分 60/40 融合）。该组合未单独跑基准——重排层的设计是优化排序、且 fail-safe（超时/出错自动回退原排序，不会比表中更差）。
 
 ---
 
@@ -408,9 +423,9 @@ LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使�
 
 ## ⚠️ 能力边界（如实说明）
 
-- **零外部依赖即可运行**：不配任何 API Key 也能召回，只是精度低于开启 BGE-M3 重排的版本（见基准表）
-- **蒸馏类能力双路径**：① MCP 内置 inferencer（需付费 key）② leafmem-maintenance 运维技能由宿主模型蒸馏（免费）。未配置任何模型时降级为本地逻辑
-- **超大存储**：数万条以上建议开启向量重排或检索后端扩展，内置加权检索在千级规模表现最佳
+- **零外部依赖即可运行**：不配任何 API Key 也能召回（内置检索），精度按基准表「内置」一行；配上默认的硅基流动向量化+重排（免费额度）即达「默认配置」一行的水平
+- **蒸馏类能力**：默认且唯一的产品路径是 `leafmem-maintenance` 运维技能由宿主模型蒸馏（免费）。SDK 编程接入可另传自定义 inferencer 函数（见 docs/USAGE.md）；未配置时蒸馏降级关闭，不影响基础记忆与召回
+- **超大存储**：数万条以上依赖向量重排或检索后端扩展（默认配置已含向量化+重排），内置加权检索在千级规模表现最佳
 - **Markdown 宿主桥接为单向**：首次导入后以 SQLite 为准，markdown 仅作展示镜像
 - **平台**：支持 macOS / Windows。核心（MCP/记忆/控制台）与开机自启双平台对齐——macOS 用 launchd、Windows 用任务计划程序，安装程序自动选择，体验一致（开机自启 + 崩溃自恢复）
 

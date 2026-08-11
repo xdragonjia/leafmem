@@ -8,7 +8,7 @@
 
 ## 核心数字
 
-LeafMem 在两种模式下进行了测试：
+LeafMem 在两种模式下进行了测试（模式名消歧 2026-08-11：「+ BGE-M3」指**仅叠加 BGE-M3 embedding 融合层**（0.65/0.35），**不含** bge-reranker-v2-m3 交叉编码器重排；产品默认配置是两者都开，见 README 基准表说明）：
 
 - **Builtin（零 API）**：仅使用内置的 FNV-1a hash embedding（128 维）和五维加权评分，无任何外部依赖
 - **+ BGE-M3（本地）**：在 builtin 评分基础上叠加本地 BGE-M3 embedding rerank（1024 维，权重 65% builtin + 35% vector）
