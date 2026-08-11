@@ -13,7 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   昆仑小智安装把 167 条重复导入记录写进 agent:kunlunxiaozhi（内容 100% 已存在于主
   scope 的纯重复死池）。提取共享的 `resolveEffectiveScopeId`，import 与 MCP 同用一
   个解析函数，永不分叉。新增回归测试（shared 第二宿主导入落主 scope、自身 scope 零
-  记录），239/239。
+  记录）。
+- **batch DELETE 对 agent scope 记录静默失效**：`/v1/memories/batch` 用裸 projectId
+  上下文，agent scope 记录永远 `deleted: 0`（08-08 修单条 DELETE 时漏了 batch，同根
+  因）。现镜像单条语义：显式 `scope=` 才能删 agent scope 记录。回归测试锁定。
+  240/240。
 
 ## [0.3.1] - 2026-08-11
 

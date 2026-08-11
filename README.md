@@ -3,7 +3,7 @@
 > 面向 AI Agent 的分层长期记忆引擎 —— 让 Agent 写得下、理得清、召得回，最终用记忆高效完成任务。
 
 <p align="center">
-  <img alt="tests" src="https://img.shields.io/badge/tests-236%20passing-16a34a">
+  <img alt="tests" src="https://img.shields.io/badge/tests-240%20passing-16a34a">
   <img alt="node" src="https://img.shields.io/badge/node-%3E%3D22.13-5b6675">
   <img alt="license" src="https://img.shields.io/badge/license-Proprietary-d97706">
 </p>
