@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -44,6 +45,9 @@ export type WorkBuddyMemoryAdapter = {
   paths: WorkBuddyMemoryPaths;
   importExistingMemory(): Promise<WorkBuddyImportResult>;
   syncProjection(): Promise<void>;
+  /** 2026-08-11: sha256 over the six source files + native memory dir listing,
+   * for import idempotency — skip re-import when sources are unchanged. */
+  sourceFingerprint(): Promise<string>;
 };
 
 export function createWorkBuddyMemoryAdapter(params: {
@@ -63,7 +67,26 @@ export function createWorkBuddyMemoryAdapter(params: {
     paths,
     importExistingMemory,
     syncProjection,
+    sourceFingerprint,
   };
+
+  async function sourceFingerprint(): Promise<string> {
+    const targets = ["soul", "user", "memory", "identity", "agents", "system"] as const;
+    const hash = createHash("sha256");
+    for (const target of targets) {
+      const path = resolveEntryPath(target);
+      hash.update(`${target}\x00`);
+      hash.update((await readTextFile(path)) ?? "");
+      hash.update("\x00");
+    }
+    const nativePaths = await listNativeMemoryFiles();
+    for (const path of nativePaths) {
+      hash.update(`${path}\x00`);
+      hash.update((await readTextFile(path)) ?? "");
+      hash.update("\x00");
+    }
+    return hash.digest("hex");
+  }
 
   async function importExistingMemory(): Promise<WorkBuddyImportResult> {
     const [soulEntries, userEntries, memoryEntries, identityEntries, agentsEntries, systemEntries, nativeMemoryEntries] =

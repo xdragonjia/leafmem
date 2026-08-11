@@ -434,20 +434,36 @@ async function installWorkBuddyTakeover(
   options: ResolvedAgentInstallOptions,
   agent: AgentId = "workbuddy",
 ): Promise<Record<string, unknown>> {
-  // Import into the same scope the connector writes to (shared topology ->
-  // primary scope). The adapter content-dedupes, so re-imports are no-ops.
+  // 2026-08-11 import redesign: mechanical per-line import produced hundreds
+  // of fragmented records (isolated headings, structural symbols, split list
+  // items, even literal credentials). The install path no longer shards the
+  // six discipline files. Instead it records a *pending distillation* state;
+  // the host agent (which has an LLM and reads these files anyway in the
+  // install guide's profile step) distills each file into a few coherent
+  // paragraph-unit memories and writes them via memory_write. See
+  // INSTALL-*.md step 7.5.
   const scopeId = await resolveEffectiveScopeId(agent, options);
-  const memory = createLeafMem({ storagePath: options.storagePath });
   const adapter = createWorkBuddyMemoryAdapter({
-    memory,
+    memory: createLeafMem({ storagePath: options.storagePath }),
     defaultScopes: [{ type: "agent", id: scopeId }],
     files: { homePath: AGENTS[agent].defaultSessionsRoot(options.home) },
   });
-  // syncProjection disabled: SOUL.md/USER.md/MEMORY.md are user-authoritative files,
-  // not leafmem projections. Only import existing memory (read files -> write DB);
-  // never project memory back onto user files from the install path.
-  const imported = await adapter.importExistingMemory();
-  return imported;
+  const fingerprint = await adapter.sourceFingerprint();
+  const statePath = join(dirname(options.storagePath), "import-state.json");
+  const state = asObject(await readJsonObject(statePath));
+  const perHost = asObject(state[agent]);
+  const previousPending = perHost.pending === true;
+  const changed = stringValue(perHost.fingerprint) !== fingerprint;
+  if (!changed && !previousPending) {
+    return { imported: 0, skippedAsUnchanged: true, pendingDistillation: false };
+  }
+  // Mark pending so the console/install guide can surface "distillation not
+  // yet done by the host agent". Cleared by the host after distillation.
+  await writeJson(statePath, {
+    ...state,
+    [agent]: { ...perHost, fingerprint, pending: true, pendingAt: new Date().toISOString() },
+  });
+  return { imported: 0, pendingDistillation: true, fingerprint };
 }
 
 function workBuddyUpdateCommand(agent: AgentId = "workbuddy"): string {

@@ -52,21 +52,55 @@ export async function writeMarkdownBlocksFile(path: string, blocks: string[]): P
   await writeText(path, rendered ? `${rendered}\n` : "");
 }
 
+/** A line that introduces context but carries no fact alone: an orphan bold
+ * heading ("**发布能力**"), a bold heading ending with a colon ("**硬规则**："),
+ * or a short colon-ended lead line ("主动服务分为两类："). Bare-word leads like
+ * "Notes:" also qualify. Such lines become prefixes for the entries that follow. */
+function isContextIntro(line: string): boolean {
+  // List markers are handled by the bullet/ordered branches — a bullet whose
+  // text ends with a colon is a colon-lead item, not a bare intro line.
+  if (/^[-*+]\s/.test(line)) return false;
+  if (/^\d+\.\s/.test(line)) return false;
+  if (/^(\*\*|__)[^*_]+(\*\*|__)[：:]?$/.test(line)) return true;
+  if (/^[^#*`\n]{1,24}[：:]$/.test(line)) return true;
+  return false;
+}
+
 export function parseMarkdownEntries(content: string): string[] {
   const lines = content.replace(/\r/g, "").split("\n");
   const entries: string[] = [];
   const paragraph: string[] = [];
   let inFrontmatter = false;
   let inCodeFence = false;
+  // 2026-08-11: a line that is only a bold/underlined heading (e.g. "**发布能力**",
+  // "**硬规则**：") carries no fact on its own. Instead of importing it as a
+  // fragment, hold it and prefix it onto the FOLLOWING entries (until a blank
+  // line or the next heading ends the group) so each entry stays self-contained.
+  let pendingHeading = "";
+  // 2026-08-11: nested bullets (deeper indent than the last top-level bullet)
+  // are sub-points of their parent — appending them (numbering intact) keeps
+  // the parent entry a complete unit instead of sharding the list.
+  let lastBulletIndent = -1;
+
+  const emit = (entry: string, keepHeading: boolean) => {
+    if (!entry) return;
+    entries.push(pendingHeading ? `${pendingHeading} ${entry}` : entry);
+    if (!keepHeading) pendingHeading = "";
+  };
+  const indentOf = (raw: string) => raw.length - raw.trimStart().length;
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
+    const indent = indentOf(rawLine);
     if (!line && paragraph.length > 0) {
-      entries.push(paragraph.join(" ").trim());
+      emit(paragraph.join(" ").trim(), false);
       paragraph.length = 0;
+      lastBulletIndent = -1;
       continue;
     }
     if (!line) {
+      pendingHeading = "";
+      lastBulletIndent = -1;
       continue;
     }
     if (!inFrontmatter && entries.length === 0 && paragraph.length === 0 && line === "---") {
@@ -83,39 +117,95 @@ export function parseMarkdownEntries(content: string): string[] {
       inCodeFence = !inCodeFence;
       continue;
     }
-    if (inCodeFence || line.startsWith("#")) {
+    if (inCodeFence) {
+      continue;
+    }
+    // H1 title is file-level context (too long to prefix); drop it.
+    if (/^#\s/.test(line)) {
+      continue;
+    }
+    // Sub-headings (## … ######) become context prefixes for the entries
+    // that follow, so imported entries stay self-contained.
+    if (/^#{2,6}\s+/.test(line)) {
+      if (paragraph.length > 0) {
+        emit(paragraph.join(" ").trim(), false);
+        paragraph.length = 0;
+      }
+      pendingHeading = line.replace(/^#{2,6}\s+/, "").trim();
+      lastBulletIndent = -1;
+      continue;
+    }
+    // Structural dividers (--- / *** / ___) are not memories; drop them.
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(line)) {
+      continue;
+    }
+    // A context-intro line: orphan bold heading ("**发布能力**"), bold heading
+    // with colon ("**硬规则**："), or short colon-ended lead ("主动服务分为两类：").
+    // Never imported alone — held as prefix for the following group.
+    if (isContextIntro(line)) {
+      if (paragraph.length > 0) {
+        emit(paragraph.join(" ").trim(), false);
+        paragraph.length = 0;
+      }
+      pendingHeading = line;
+      lastBulletIndent = -1;
       continue;
     }
     const bullet = line.match(/^[-*+]\s+(.*)$/);
     if (bullet) {
       if (paragraph.length > 0) {
-        entries.push(paragraph.join(" ").trim());
+        emit(paragraph.join(" ").trim(), false);
         paragraph.length = 0;
       }
-      if (bullet[1]?.trim()) {
-        entries.push(bullet[1].trim());
-      }
+      const text = bullet[1]?.trim() ?? "";
+      handleItem(text, line, indent);
       continue;
     }
     const ordered = line.match(/^\d+\.\s+(.*)$/);
     if (ordered) {
       if (paragraph.length > 0) {
-        entries.push(paragraph.join(" ").trim());
+        emit(paragraph.join(" ").trim(), false);
         paragraph.length = 0;
       }
-      if (ordered[1]?.trim()) {
-        entries.push(ordered[1].trim());
-      }
+      const text = ordered[1]?.trim() ?? "";
+      handleItem(text, line, indent);
       continue;
     }
     paragraph.push(line);
   }
 
-  if (paragraph.length > 0) {
-    entries.push(paragraph.join(" ").trim());
+  function handleItem(text: string, rawLine: string, indent: number) {
+    // The item text may itself be a structural symbol wrapped in a bullet
+    // (e.g. "- ---") — drop it like a top-level divider. A colon-ended bullet
+    // ("主动服务分为两类：") is a parent that absorbs its nested sub-items,
+    // staying one complete entry.
+    if (!text || /^(-{3,}|\*{3,}|_{3,})$/.test(text)) return;
+    if (lastBulletIndent >= 0 && indent > lastBulletIndent && entries.length > 0) {
+      entries[entries.length - 1] += ` ${rawLine.trim()}`;
+    } else {
+      emit(text, true);
+      lastBulletIndent = indent;
+    }
   }
 
-  return entries.filter(Boolean);
+  if (paragraph.length > 0) {
+    emit(paragraph.join(" ").trim(), false);
+  }
+  // A trailing orphan heading with no following entry carries no fact; drop it.
+
+  return sanitizeImportEntries(entries.filter(Boolean));
+}
+
+/**
+ * 2026-08-11: imported discipline files may contain literal credentials
+ * (e.g. "**sudo 密码**：`0000`"). Never let a secret value enter the memory
+ * DB — mask the value, keep the (useful) pointer that a secret exists.
+ */
+// Subject keeps its **...** markers; only the value after ：/: is masked.
+const SECRET_VALUE_RE = /(\*{0,2}(?:sudo\s*)?[^\n：:]{0,12}?(?:密码|password|passwd)\*{0,2})\s*[：:]\s*(?:`[^`]*`|'[^']*'|"[^"]*"|“[^”]*”|\S+)/gi;
+
+export function sanitizeImportEntries(entries: string[]): string[] {
+  return entries.map((entry) => entry.replace(SECRET_VALUE_RE, "$1：<已掩码>"));
 }
 
 export function renderMarkdownList(entries: string[], maxChars?: number): string {

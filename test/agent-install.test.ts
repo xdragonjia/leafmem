@@ -36,11 +36,16 @@ RAW_JSON_END -->
     const parsed = JSON.parse(output);
     assert.equal(parsed.results[0].agent, "workbuddy");
     assert.equal(parsed.results[0].mcp, "installed");
-    assert.equal(parsed.results[0].import, "imported");
     assert.equal(parsed.results[0].instructions, "updated");
     assert.equal(parsed.results[0].hooks, "installed");
-    assert.equal(parsed.results[0].importSummary.imported, 4);
-    assert.equal(parsed.results[0].importSummary.nativeMemoryEntries, 1);
+    // 2026-08-11 import redesign: install no longer mechanically shards the
+    // six files — it records a pending distillation state for the host agent
+    // to distill with its own LLM (see INSTALL-*.md step 7.5).
+    assert.equal(parsed.results[0].importSummary.imported, 0);
+    assert.equal(parsed.results[0].importSummary.pendingDistillation, true);
+    const state = JSON.parse(await readFile(join(root, "import-state.json"), "utf8"));
+    assert.equal(state.workbuddy.pending, true);
+    assert.ok(state.workbuddy.fingerprint, "fingerprint recorded");
 
     // 2026-08-11 hook architecture: lifecycle hooks registered in the host
     // settings.json, bridge script copied to ~/.leafmem/hooks/.
@@ -87,11 +92,14 @@ RAW_JSON_END -->
   }
 });
 
-test("shared-topology second host imports into the primary scope, not its own", async () => {
+test("shared-topology second host resolves the primary scope (no mechanical import)", async () => {
   // Regression (2026-08-11, real incident): a shared kunlunxiaozhi install ran
   // its six-file import against the host's OWN scope while the MCP connector
   // wrote to the shared primary scope — producing 167 dead duplicate records
-  // in agent:kunlunxiaozhi. Import and MCP must resolve scope identically.
+  // in agent:kunlunxiaozhi. Since the 08-11 import redesign the install path
+  // does not write records at all (host-LLM distillation instead), so the
+  // invariant becomes: under shared topology BOTH hosts' MCP env and import
+  // state point at the primary scope, and no records land in the DB.
   const root = await mkdtemp(join(tmpdir(), "leafmem-agent-shared-import-"));
   const storagePath = join(root, "memory.sqlite");
   const mcpPath = join(root, "leafmem-mcp.js");
@@ -102,19 +110,27 @@ test("shared-topology second host imports into the primary scope, not its own", 
     await writeFile(join(root, ".workbuddy", "SOUL.md"), "- Shared soul rule.\n", "utf8");
     await runInstaller("workbuddy", root, storagePath, mcpPath, "--skip-hooks", "--memory", "shared");
 
-    // Second host (kunlunxiaozhi) joins the SAME shared topology with its own
-    // discipline files. Its import must land in agent:workbuddy, content-deduped.
+    // Second host (kunlunxiaozhi) joins the SAME shared topology.
     await mkdir(join(root, ".kunlunxiaozhi"), { recursive: true });
     await writeFile(join(root, ".kunlunxiaozhi", "SOUL.md"), "- Shared soul rule.\n- Kunlun-only rule.\n", "utf8");
     await runInstaller("kunlunxiaozhi", root, storagePath, mcpPath, "--skip-hooks", "--memory", "shared");
 
+    // MCP env for both hosts must resolve to the primary scope.
+    for (const host of ["workbuddy", "kunlunxiaozhi"]) {
+      const config = JSON.parse(await readFile(join(root, `.${host}`, "mcp.json"), "utf8"));
+      assert.equal(config.mcpServers.leafmem.env.LEAFMEM_SCOPE_ID, "workbuddy", `${host} env scope`);
+    }
+    // Import state marks both hosts pending (host LLM distills, not installer).
+    const state = JSON.parse(await readFile(join(root, "import-state.json"), "utf8"));
+    assert.equal(state.workbuddy.pending, true);
+    assert.equal(state.kunlunxiaozhi.pending, true);
+
+    // No mechanical records in any scope.
     const memory = createLeafMem({ storagePath });
     const ownScope = await memory.list({ scopes: [{ type: "agent", id: "kunlunxiaozhi" }] });
     assert.equal(ownScope.length, 0, "no records may land in the second host's own scope under shared topology");
-
     const primary = await memory.list({ scopes: [{ type: "agent", id: "workbuddy" }] });
-    assert.ok(primary.some((r) => r.content.includes("Shared soul rule")));
-    assert.ok(primary.some((r) => r.content.includes("Kunlun-only rule")));
+    assert.equal(primary.length, 0, "installer no longer mechanically imports");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

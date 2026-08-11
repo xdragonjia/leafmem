@@ -31,7 +31,7 @@
 
 ### 步骤 1 · 运行安装器
 
-在终端执行（一条命令完成：MCP 配置、本地记忆初始导入、SOUL.md 纪律置顶、生命周期 hook 注册）：
+在终端执行（一条命令完成：MCP 配置、记忆待蒸馏登记、SOUL.md 纪律置顶、生命周期 hook 注册）：
 
 ```bash
 node "<包根目录>/dist/bin/leafmem-agent.js" install kunlunxiaozhi --memory isolated
@@ -42,9 +42,9 @@ node "<包根目录>/dist/bin/leafmem-agent.js" install kunlunxiaozhi --memory i
 >   安装器会自动把 `LEAFMEM_SCOPE_ID` 解析为主 scope（WorkBuddy 与昆仑小智都配置时，
 >   主 scope 固定是 `agent:workbuddy`）。安装完成后核对两宿主 mcp.json 的
 >   `LEAFMEM_SCOPE_ID` 同为 `workbuddy` 即共用成立。单宿主安装用 `isolated` 即可。
-> - 安装器输出 JSON，其中 `importSummary` 报告初始导入条数（SOUL/USER/MEMORY/IDENTITY/AGENTS/SYSTEM.md
->   与 memory/ 原生档案）。**这就是初始导入——把用户本地既有的记忆文件读入 LeafMem 记忆库**，
->   是步骤 7 生成初版用户画像的原料。
+> - 安装器**不再逐行机械导入**六个记忆文件（那会把标题/分隔符/子项拆成碎片，还曾把明文凭证带进记忆库）。
+>   它只登记「待蒸馏」状态（`import-state.json` 的 `pending: true`），由你在**步骤 7.5 用 LLM
+>   把每个文件蒸馏成几条段落级记忆**写入——这才是初始导入的正确形态。
 > - 安装器同时会：把记忆工作流纪律块**置顶写入 `~/.kunlunxiaozhi/SOUL.md`**（H1 标题之后，
 >   优先级高于其他行为规则）；把生命周期 hook 合并进 `~/.kunlunxiaozhi/settings.json`
 >   （UserPromptSubmit → 自动召回注入上下文；Stop → 自动 capture/commit），并把桥脚本复制到
@@ -110,9 +110,24 @@ Windows → 任务计划程序 `LeafMemAgent`（登录时启动）。装完执�
 
 > 无需任何付费 Key——蒸馏与整理由宿主模型通过 LeafMem MCP 完成。
 
+### 步骤 7.5 · 初始记忆蒸馏（LLM 中介，替代机械导入）
+
+读取用户本地六个记忆文件（SOUL.md / USER.md / MEMORY.md / IDENTITY.md / AGENTS.md / SYSTEM.md），
+**用你的语言理解能力把每个文件蒸馏成 1-4 条段落级记忆**，逐条用
+`memory_write(action="remember", source="workbuddy_import", kind=principle|preference|lesson|note, tags=["workbuddy","<文件名>"])` 写入。
+
+蒸馏纪律（违反即产生碎片/泄密）：
+- 每条是一段完整、自足的话（100-400 字），合并同主题要点；**不要逐行照搬**，不要产出 `---`、孤立标题、半句话。
+- 文件里的明文凭证（密码、AppSecret、token 值）**一律替换为位置指针**（如"见 ~/.workbuddy/secrets/ 与 SYSTEM.md"），值不入记忆库。
+- 写完后把 `~/.leafmem/import-state.json` 中本宿主的 `pending` 置为 `false`（记录 distilledAt）。
+- 用户本地无记忆文件时跳过本步（pending 直接置 false）。
+
+> 本步把"读文件→理解→写成记忆"交给宿主 LLM，安装器只做状态登记——这是 2026-08-11
+> 对机械逐行导入的替代（机械导入曾产出 300+ 碎片并把明文密码带进记忆库）。
+
 ### 步骤 7 · 生成初版用户画像
 
-利用步骤 1 初始导入的记忆，为 LeafMem 建立第一版用户画像：
+利用步骤 7.5 蒸馏出的记忆（尤其 USER/SOUL 条目），为 LeafMem 建立第一版用户画像：
 
 1. 昆仑小智读取 `~/.kunlunxiaozhi/` 下的 `USER.md`、`SOUL.md`、`IDENTITY.md`、`MEMORY.md`
    等文件（它们是画像信息最集中的来源），归纳出分节 markdown，每节形如：
@@ -158,8 +173,8 @@ capture 本轮要点——记忆的写入与召回由机制保障，不再依赖
 3. **向量化+重排生效**：硅基流动 Key 已写入时，召回结果带向量加权与交叉编码器重排（控制台/状态可见 embedding 与 rerank 生效）。
 4. **纪律置顶**：`~/.kunlunxiaozhi/SOUL.md` 顶部（H1 之后）含 `leafmem-agent-instructions` 块；
    `MEMORY.md` 中无该块残留。
-5. **初始导入**：`memory_recall(action="list")` 或控制台能看到 `source=workbuddy_import` 的记录，
-   条数与步骤 1 `importSummary` 一致（用户本地无记忆文件时为 0，属正常）。
+5. **初始导入（蒸馏）**：控制台能看到 `source=workbuddy_import` 的**段落级**记录（每文件 1-4 条，
+   无 `---`/孤立标题类碎片，无明文凭证值——凭证只记位置）。
 6. **用户画像**：`memory_recall(action="active_get")` 返回的 profile 非空。
 7. **hook 已注册**：`~/.kunlunxiaozhi/settings.json` 的 `hooks` 含 UserPromptSubmit 与 Stop
    两项，命令均指向 `~/.leafmem/hooks/leafmem-hooks.mjs`。
