@@ -4,6 +4,7 @@ import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createLeafMem } from "../src/core/memory.js";
 
 test("agent installer writes WorkBuddy MCP config with a default scope", async () => {
   const root = await mkdtemp(join(tmpdir(), "leafmem-agent-workbuddy-"));
@@ -81,6 +82,39 @@ RAW_JSON_END -->
     // user-authoritative files. Import reads them into the DB, but never projects DB
     // contents back onto them. The native memory profile must NOT be written back.
     assert.doesNotMatch(memoryProjection, /WorkBuddy native memory profile/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("shared-topology second host imports into the primary scope, not its own", async () => {
+  // Regression (2026-08-11, real incident): a shared kunlunxiaozhi install ran
+  // its six-file import against the host's OWN scope while the MCP connector
+  // wrote to the shared primary scope — producing 167 dead duplicate records
+  // in agent:kunlunxiaozhi. Import and MCP must resolve scope identically.
+  const root = await mkdtemp(join(tmpdir(), "leafmem-agent-shared-import-"));
+  const storagePath = join(root, "memory.sqlite");
+  const mcpPath = join(root, "leafmem-mcp.js");
+
+  try {
+    // First host (workbuddy) establishes the shared primary pool.
+    await mkdir(join(root, ".workbuddy"), { recursive: true });
+    await writeFile(join(root, ".workbuddy", "SOUL.md"), "- Shared soul rule.\n", "utf8");
+    await runInstaller("workbuddy", root, storagePath, mcpPath, "--skip-hooks", "--memory", "shared");
+
+    // Second host (kunlunxiaozhi) joins the SAME shared topology with its own
+    // discipline files. Its import must land in agent:workbuddy, content-deduped.
+    await mkdir(join(root, ".kunlunxiaozhi"), { recursive: true });
+    await writeFile(join(root, ".kunlunxiaozhi", "SOUL.md"), "- Shared soul rule.\n- Kunlun-only rule.\n", "utf8");
+    await runInstaller("kunlunxiaozhi", root, storagePath, mcpPath, "--skip-hooks", "--memory", "shared");
+
+    const memory = createLeafMem({ storagePath });
+    const ownScope = await memory.list({ scopes: [{ type: "agent", id: "kunlunxiaozhi" }] });
+    assert.equal(ownScope.length, 0, "no records may land in the second host's own scope under shared topology");
+
+    const primary = await memory.list({ scopes: [{ type: "agent", id: "workbuddy" }] });
+    assert.ok(primary.some((r) => r.content.includes("Shared soul rule")));
+    assert.ok(primary.some((r) => r.content.includes("Kunlun-only rule")));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

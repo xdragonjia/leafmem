@@ -384,19 +384,12 @@ async function writeJsonMcpConfig(
   // sharedMemory → single pool at the primary scope (the first configured
   // host's own scope; workbuddy-first installs → agent:workbuddy,
   // 昆仑小智-only installs → agent:kunlunxiaozhi). Memories + graph + profile
-  // + active all share it.
-  const { primaryScopeId } = await getMemoryTopology({ home: options.home });
-  // 2026-08-11 upgrade-safety: when sharedMemory is unspecified (upgrade /
-  // repair path), preserve the already-configured LEAFMEM_SCOPE_ID instead of
-  // resetting it to the host's own scope — otherwise a shared kunlunxiaozhi
-  // install (scope=workbuddy) would silently split into two pools on re-install.
-  const existingScopeId = stringValue(existingEnv.LEAFMEM_SCOPE_ID);
-  const scopeId =
-    options.sharedMemory === undefined && existingScopeId
-      ? existingScopeId
-      : options.sharedMemory
-        ? primaryScopeId
-        : AGENTS[format].scopeId;
+  // + active all share it. Upgrade-safety (2026-08-11): when sharedMemory is
+  // unspecified (upgrade / repair path), preserve the already-configured
+  // LEAFMEM_SCOPE_ID instead of resetting it to the host's own scope.
+  // NOTE: the file-import path (installWorkBuddyTakeover) resolves its scope
+  // through this same function — the two must never disagree.
+  const scopeId = await resolveEffectiveScopeId(format, options);
   const coreEnv = {
     LEAFMEM_STORAGE_PATH: options.storagePath,
     LEAFMEM_SCOPE_TYPE: "agent",
@@ -413,14 +406,41 @@ async function writeJsonMcpConfig(
   await writeJson(configPath, config);
 }
 
+/**
+ * The scope this host's LeafMem connector actually writes to. Shared by the
+ * MCP env writer and the file-import path so the two can never disagree.
+ *
+ * 2026-08-11 incident: the import path hardcoded the host's own scope while
+ * installMcp honored the shared topology, so a shared kunlunxiaozhi install
+ * wrote 167 duplicate six-file import records into agent:kunlunxiaozhi even
+ * though the pool (and the identical workbuddy-scope copies) already held them.
+ */
+async function resolveEffectiveScopeId(
+  format: AgentId,
+  options: ResolvedAgentInstallOptions,
+): Promise<string> {
+  const config = await readJsonObject(AGENTS[format].configPath(options.home));
+  const existingEnv = asObject(asObject(asObject(config.mcpServers).leafmem).env);
+  const existingScopeId = stringValue(existingEnv.LEAFMEM_SCOPE_ID);
+  const { primaryScopeId } = await getMemoryTopology({ home: options.home });
+  return options.sharedMemory === undefined && existingScopeId
+    ? existingScopeId
+    : options.sharedMemory
+      ? primaryScopeId
+      : AGENTS[format].scopeId;
+}
+
 async function installWorkBuddyTakeover(
   options: ResolvedAgentInstallOptions,
   agent: AgentId = "workbuddy",
 ): Promise<Record<string, unknown>> {
+  // Import into the same scope the connector writes to (shared topology ->
+  // primary scope). The adapter content-dedupes, so re-imports are no-ops.
+  const scopeId = await resolveEffectiveScopeId(agent, options);
   const memory = createLeafMem({ storagePath: options.storagePath });
   const adapter = createWorkBuddyMemoryAdapter({
     memory,
-    defaultScopes: [{ type: "agent", id: AGENTS[agent].scopeId }],
+    defaultScopes: [{ type: "agent", id: scopeId }],
     files: { homePath: AGENTS[agent].defaultSessionsRoot(options.home) },
   });
   // syncProjection disabled: SOUL.md/USER.md/MEMORY.md are user-authoritative files,

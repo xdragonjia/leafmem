@@ -5,7 +5,15 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.2] - 2026-08-11
+
+### Fixed
+- **shared 拓扑下第二宿主导入写错 scope（根因修复）**：install 流程里 MCP 配置走拓扑
+  解析（shared → primary scope），但六文件初始导入硬编码宿主自身 scope——shared 的
+  昆仑小智安装把 167 条重复导入记录写进 agent:kunlunxiaozhi（内容 100% 已存在于主
+  scope 的纯重复死池）。提取共享的 `resolveEffectiveScopeId`，import 与 MCP 同用一
+  个解析函数，永不分叉。新增回归测试（shared 第二宿主导入落主 scope、自身 scope 零
+  记录），239/239。
 
 ## [0.3.1] - 2026-08-11
 
