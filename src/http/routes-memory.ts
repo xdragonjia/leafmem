@@ -41,7 +41,15 @@ export async function handleMemoryRoutes(
   if (path === "/v1/memories/batch" && req.method === "DELETE") {
     const body = (await readBody(req)) as Record<string, unknown>;
     const ids = Array.isArray(body.ids) ? body.ids.filter((id): id is string => typeof id === "string") : [];
-    const context = { projectId: ctx.projectId };
+    // 2026-08-11 fix (same root cause as the single-DELETE 404 incident):
+    // batch used a bare projectId context, so recordBelongsToProject never
+    // matched agent-scoped records and every batch delete silently returned
+    // {deleted: 0}. Mirror the single-DELETE semantics: an explicit scope=
+    // selection is required to touch agent-scoped records.
+    const hasExplicitScope = Boolean(url.searchParams.get("scope")?.trim());
+    const context = hasExplicitScope
+      ? memoryContextFromQuery(ctx.projectId, url)
+      : { projectId: ctx.projectId };
     let deleted = 0;
     for (const id of ids) {
       if (await ctx.platform.deleteMemory({ context, id })) {

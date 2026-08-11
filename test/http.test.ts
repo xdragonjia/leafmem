@@ -86,9 +86,10 @@ describe("LeafMem HTTP API", () => {
   let projectId: string;
   let baseUrl: string;
   let close: () => Promise<void>;
+  let memory: ReturnType<typeof createLeafMem>;
 
   beforeEach(async () => {
-    const memory = createLeafMem({ storage: { backend: "memory" } });
+    memory = createLeafMem({ storage: { backend: "memory" } });
     const events = new InMemoryInspectEventStore();
     const platform = new LeafMemPlatformService({ memory, events });
     const projects = new ProjectStore();
@@ -178,6 +179,33 @@ describe("LeafMem HTTP API", () => {
     // Verify deleted
     const getAfterDelete = await api(`/v1/memories/${id}`);
     assert.equal(getAfterDelete.status, 404);
+  });
+
+  it("batch delete honors explicit scope for agent-scoped records", async () => {
+    // 2026-08-11 regression: batch delete used a bare projectId context, so
+    // agent-scoped records were silently undeletable ({deleted: 0}).
+    const agentRecord = await memory.remember({
+      scope: { type: "agent", id: "workbuddy" },
+      kind: "note",
+      content: "Agent-scoped record for batch delete.",
+      summary: "Agent-scoped record for batch delete.",
+    });
+
+    // Without explicit scope: protected, nothing deleted.
+    const noScope = await api("/v1/memories/batch", {
+      method: "DELETE",
+      body: JSON.stringify({ ids: [agentRecord.id] }),
+    });
+    assert.equal(noScope.status, 200);
+    assert.equal((await noScope.json() as { deleted: number }).deleted, 0);
+
+    // With explicit scope: deleted.
+    const scoped = await api(`/v1/memories/batch?scope=agent:workbuddy`, {
+      method: "DELETE",
+      body: JSON.stringify({ ids: [agentRecord.id] }),
+    });
+    assert.equal(scoped.status, 200);
+    assert.equal((await scoped.json() as { deleted: number }).deleted, 1);
   });
 
   it("ignores caller-supplied projectId on POST /v1/memories", async () => {
