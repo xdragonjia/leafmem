@@ -193,19 +193,11 @@ export function parseMarkdownEntries(content: string): string[] {
   }
   // A trailing orphan heading with no following entry carries no fact; drop it.
 
-  return sanitizeImportEntries(entries.filter(Boolean));
-}
-
-/**
- * 2026-08-11: imported discipline files may contain literal credentials
- * (e.g. "**sudo 密码**：`0000`"). Never let a secret value enter the memory
- * DB — mask the value, keep the (useful) pointer that a secret exists.
- */
-// Subject keeps its **...** markers; only the value after ：/: is masked.
-const SECRET_VALUE_RE = /(\*{0,2}(?:sudo\s*)?[^\n：:]{0,12}?(?:密码|password|passwd)\*{0,2})\s*[：:]\s*(?:`[^`]*`|'[^']*'|"[^"]*"|“[^”]*”|\S+)/gi;
-
-export function sanitizeImportEntries(entries: string[]): string[] {
-  return entries.map((entry) => entry.replace(SECRET_VALUE_RE, "$1：<已掩码>"));
+  // Note: no credential masking here. The memory library is a single-machine
+  // store; local discipline files legitimately carry the user's own
+  // credentials (e.g. a sudo password they chose to record). Masking them
+  // would corrupt the user's own notes — they were never leaked anywhere.
+  return entries.filter(Boolean);
 }
 
 export function renderMarkdownList(entries: string[], maxChars?: number): string {

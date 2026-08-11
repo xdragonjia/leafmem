@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseMarkdownEntries, sanitizeImportEntries } from "../src/adapters/markdown-sync.js";
+import { parseMarkdownEntries } from "../src/adapters/markdown-sync.js";
 
 // 2026-08-11: import sharding incident — structural symbols and orphan
 // headings were imported as fragments; nested bullets were split into
@@ -73,18 +73,11 @@ test("frontmatter at file top is still skipped", () => {
   assert.deepEqual(entries, ["first fact"]);
 });
 
-test("literal credentials are masked on import", () => {
-  const entries = sanitizeImportEntries([
-    "**sudo 密码**：`0000`",
-    "sudo 密码: 0000",
-    "password：hunter2",
-    "**API Keys**：`~/.workbuddy/secrets/` 下 AGNES_API_KEY。",
-  ]);
-  assert.equal(entries[0], "**sudo 密码**：<已掩码>");
-  assert.equal(entries[1], "sudo 密码：<已掩码>");
-  assert.equal(entries[2], "password：<已掩码>");
-  // pointer-only line (no literal value) untouched
-  assert.equal(entries[3], "**API Keys**：`~/.workbuddy/secrets/` 下 AGNES_API_KEY。");
+test("literal local credentials are kept as-is (single-machine library)", () => {
+  // 2026-08-11: the memory library is local-only; the user's own discipline
+  // files legitimately carry credentials they chose to record. No masking.
+  const entries = parseMarkdownEntries("**sudo 密码**：`0000`\n");
+  assert.deepEqual(entries, ["**sudo 密码**：`0000`"]);
 });
 
 test("full discipline-file sample yields no sub-20-char fragments", () => {
@@ -105,12 +98,11 @@ test("full discipline-file sample yields no sub-20-char fragments", () => {
     "**sudo 密码**：`0000`",
   ].join("\n");
   const entries = parseMarkdownEntries(md);
-  // No structural-symbol or orphan-heading fragments, no raw secret values.
+  // No structural-symbol or orphan-heading fragments.
   assert.ok(entries.every((e) => !/^(-{3,}|\*{3,}|_{3,})$/.test(e)), JSON.stringify(entries));
   assert.ok(entries.every((e) => !/^(\*\*|__)[^*_]+(\*\*|__)[：:]?$/.test(e)), JSON.stringify(entries));
-  assert.ok(entries.every((e) => !e.includes("0000")));
-  // The masked secret entry stays a complete unit (subject + mask).
-  assert.ok(entries.includes("**sudo 密码**：<已掩码>"));
+  // The credential line stays verbatim (local-only library, no masking).
+  assert.ok(entries.includes("**sudo 密码**：`0000`"));
   // The heading + its fact merged into one self-contained entry.
   assert.ok(entries.includes("**字数限制** JSON 总大小限制约 21000 字符"));
 });

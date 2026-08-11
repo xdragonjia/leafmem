@@ -204,3 +204,52 @@ describe("recordBelongsToProject", () => {
     assert.ok(!recordBelongsToProject({ scope: { type: "agent", id: "antigravity" } }, sharedCtx));
   });
 });
+
+describe("resolveContextScopes — allScopes recall fix (2026-08-11)", () => {
+  it("allScopes:true returns empty recallScopes (search whole library)", () => {
+    // Regression: console "召回检查" with 全部记忆 view previously resolved to
+    // only the session-local projectId scope, so durable agent-scoped memories
+    // were never matched. allScopes must mean "no scope filtering".
+    const result = resolveContextScopes({ projectId: "proj_1", allScopes: true });
+    assert.deepStrictEqual(result.recallScopes, []);
+  });
+
+  it("allScopes still resolves a write home scope (agent > project)", () => {
+    const result = resolveContextScopes({
+      projectId: "proj_1",
+      allScopes: true,
+      agentIds: ["workbuddy"],
+    });
+    assert.deepStrictEqual(result.writeScope, { type: "agent", id: "workbuddy" });
+  });
+
+  it("allScopes falls back to project write scope when no agent", () => {
+    const result = resolveContextScopes({ projectId: "proj_1", allScopes: true });
+    assert.deepStrictEqual(result.writeScope, { type: "project", id: "proj_1" });
+  });
+});
+
+describe("resolveContextScopes — anyScope write targeting fix (2026-08-11)", () => {
+  it("explicit scope selection directs WRITES to that scope too", () => {
+    // Regression (real incident): POST /v1/memories with body scope
+    // "agent:workbuddy" silently landed in the session projectId scope
+    // (proj_local_*) because the anyScope branch hardcoded writeScope to
+    // project. Explicit selection must target both read and write.
+    const result = resolveContextScopes({
+      projectId: "proj_1",
+      anyScope: { type: "agent", id: "workbuddy" },
+    });
+    assert.deepStrictEqual(result.writeScope, { type: "agent", id: "workbuddy" });
+    assert.deepStrictEqual(result.recallScopes, [
+      { type: "agent", id: "workbuddy", weight: 1.0 },
+    ]);
+  });
+
+  it("explicit task scope selection targets task writes", () => {
+    const result = resolveContextScopes({
+      projectId: "proj_1",
+      anyScope: { type: "task", id: "t1" },
+    });
+    assert.deepStrictEqual(result.writeScope, { type: "task", id: "t1" });
+  });
+});

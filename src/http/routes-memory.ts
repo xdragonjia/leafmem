@@ -3,6 +3,35 @@ import type { RequestContext } from "./server.js";
 import { bindAuthorizedContext, json, readBody } from "./server.js";
 import { memoryContextFromQuery } from "./scope-context.js";
 
+/** 2026-08-11 scope-resolution fix: writes must honour an explicit scope.
+ *
+ * Bug: POST /v1/memories only read body.context, so a top-level body.scope
+ * (or nothing at all) silently fell through to the session-local projectId
+ * scope (proj_local_*) — records became invisible to agent-scoped recall and
+ * console views. Precedence now: body.scope > body.context.scope > URL ?scope=.
+ * If none provided, keep the legacy projectId behavior (console session pool).
+ */
+function writeContext(
+  projectId: string,
+  url: URL,
+  bodyContext: unknown,
+  bodyScope?: unknown,
+): Record<string, unknown> {
+  const pick = (value: unknown): string | undefined =>
+    typeof value === "string" && value.trim() ? value.trim() : undefined;
+  const scope =
+    pick(bodyScope) ??
+    pick((bodyContext as Record<string, unknown> | undefined)?.scope) ??
+    pick(url.searchParams.get("scope"));
+  if (scope) {
+    return memoryContextFromQuery(
+      projectId,
+      new URL(`http://local/v1/memories?scope=${encodeURIComponent(scope)}`),
+    ) as unknown as Record<string, unknown>;
+  }
+  return bindAuthorizedContext(projectId, bodyContext);
+}
+
 export async function handleMemoryRoutes(
   req: IncomingMessage,
   res: ServerResponse,
@@ -20,7 +49,7 @@ export async function handleMemoryRoutes(
         continue;
       }
       const memory = item as Record<string, unknown>;
-      const context = bindAuthorizedContext(ctx.projectId, memory.context);
+      const context = writeContext(ctx.projectId, url, memory.context, memory.scope ?? body.scope);
       records.push(await ctx.platform.writeMemory({
         context: context as any,
         kind: (memory.kind as string) ?? "note",
@@ -78,7 +107,7 @@ export async function handleMemoryRoutes(
   // POST /v1/memories — create
   if (path === "/v1/memories" && req.method === "POST") {
     const body = (await readBody(req)) as Record<string, unknown>;
-    const context = bindAuthorizedContext(ctx.projectId, body.context);
+    const context = writeContext(ctx.projectId, url, body.context, body.scope);
     const record = await ctx.platform.writeMemory({
       context: context as any,
       kind: (body.kind as string) ?? "note",

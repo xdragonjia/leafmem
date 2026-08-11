@@ -118,7 +118,7 @@ Windows → 任务计划程序 `LeafMemAgent`（登录时启动）。装完执�
 
 蒸馏纪律（违反即产生碎片/泄密）：
 - 每条是一段完整、自足的话（100-400 字），合并同主题要点；**不要逐行照搬**，不要产出 `---`、孤立标题、半句话。
-- 文件里的明文凭证（密码、AppSecret、token 值）**一律替换为位置指针**（如"见 ~/.workbuddy/secrets/ 与 SYSTEM.md"），值不入记忆库。
+- 如实转录即可：记忆库是本机专用（仅 127.0.0.1 + API Key 访问），纪律文件里用户自己记录的凭证信息按原样写入；若用户明确不想让某类明文值进记忆库，写入后再按其要求修订该条。
 - 写完后把 `~/.leafmem/import-state.json` 中本宿主的 `pending` 置为 `false`（记录 distilledAt）。
 - 用户本地无记忆文件时跳过本步（pending 直接置 false）。
 
@@ -174,7 +174,7 @@ capture 本轮要点——记忆的写入与召回由机制保障，不再依赖
 4. **纪律置顶**：`~/.kunlunxiaozhi/SOUL.md` 顶部（H1 之后）含 `leafmem-agent-instructions` 块；
    `MEMORY.md` 中无该块残留。
 5. **初始导入（蒸馏）**：控制台能看到 `source=workbuddy_import` 的**段落级**记录（每文件 1-4 条，
-   无 `---`/孤立标题类碎片，无明文凭证值——凭证只记位置）。
+   无 `---`/孤立标题类碎片；记录落在宿主自身 scope 如 `agent:workbuddy`，不是 project scope）。
 6. **用户画像**：`memory_recall(action="active_get")` 返回的 profile 非空。
 7. **hook 已注册**：`~/.kunlunxiaozhi/settings.json` 的 `hooks` 含 UserPromptSubmit 与 Stop
    两项，命令均指向 `~/.leafmem/hooks/leafmem-hooks.mjs`。

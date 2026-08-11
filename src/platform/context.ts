@@ -46,11 +46,32 @@ export function resolveContextScopes(context: MemoryContext): ResolvedScopes {
     throw new Error("MemoryContext.projectId is required");
   }
 
+  // "全部记忆" (allScopes): recall searches the whole library (empty scope
+  // list = no filtering in matchesRequestedScopes). Writes still need a home
+  // scope — fall through to the normal write-scope resolution below.
+  // 2026-08-11 fix: this flag was previously ignored, so console recall
+  // inspection only searched the session-local projectId scope.
+  if (context.allScopes) {
+    const repoKey = canonicalRepoId(context);
+    const agentKey = uniqueAgentIds(context)[0];
+    const writeScope: MemoryScope = repoKey
+      ? { type: "repo", id: repoKey }
+      : agentKey
+        ? { type: "agent", id: agentKey }
+        : { type: "project", id: context.projectId };
+    return { writeScope, recallScopes: [] };
+  }
+
   // Console browsing shortcut: explicit single scope of any type.
+  // 2026-08-11 fix (second half of the scope incident): an explicit scope
+  // selection must also direct WRITES to that scope — previously writeScope
+  // was hardcoded to the session projectId, so POST /v1/memories with
+  // scope=agent:workbuddy silently landed in proj_local_* and became
+  // invisible to agent-scoped recall.
   if (context.anyScope) {
     const anyType = normalizeAnyScopeType(context.anyScope.type);
     return {
-      writeScope: { type: "project", id: context.projectId },
+      writeScope: { type: anyType, id: context.anyScope.id },
       recallScopes: [{ type: anyType, id: context.anyScope.id, weight: 1.0 }],
     };
   }
