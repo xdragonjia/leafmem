@@ -429,6 +429,13 @@ export function createMemoryToolSet(params: {
             role: expectString(args.role, "role") as "user" | "assistant" | "system" | "tool",
             content: expectString(args.content, "content"),
           });
+          // 2026-08-11: let task_append carry an optional rolling summary so a
+          // task created purely via appends is not left with transcript-but-no-
+          // summary (console showed "Rolling Summary 暂无" on such tasks).
+          const taskRollingSummary = optionalString(args.rollingSummary);
+          if (taskRollingSummary) {
+            await params.memory.task.setRollingSummary(taskId, taskRollingSummary);
+          }
           return { task, entry };
         }
         if (action === "active_distill") {

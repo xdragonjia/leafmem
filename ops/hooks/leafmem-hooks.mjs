@@ -51,8 +51,9 @@ const DRIVE_INSTRUCTION =
   "① 用 1-3 条记忆提炼本次工作的经验/决策/教训，每条为完整段落（≥100字、原子自足、实体明确），" +
   "kind 取 lesson/decision/experience/preference，通过 memory_write(action=remember) 写入 LeafMem" +
   "（不传 scope，默认 agent:workbuddy；必须给 tags）。" +
-  "② 若存在进行中的任务，另用 memory_write(action=task_append, 传 taskId、role、content) 记录当前进度，" +
-  "供下一会话恢复上下文。完成后可结束对话。";
+  "② 若存在进行中的任务，用 memory_write(action=task_append, 传 taskId、role、content) 记录当前进度，" +
+  "并同传 rollingSummary 参数（一句话任务总览，供任务页展示与下一会话恢复），否则任务会只有 transcript 没有 summary。" +
+  "完成后可结束对话。";
 
 function intEnv(name, fallback) {
   const raw = process.env[name];
