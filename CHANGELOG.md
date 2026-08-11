@@ -5,6 +5,38 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.3] - 2026-08-11
+
+### Fixed
+- **POST /v1/memories 静默忽略 body 顶层 scope（根因双修）**：①路由层只认 URL
+  query 的 scope，body 顶层 `scope` 字段被丢弃；②`resolveContextScopes` 的
+  anyScope 分支把 writeScope 硬编码为会话 projectId——显式 `scope=agent:workbuddy`
+  的写入实际落进 `proj_local_*`，对 agent scope 召回不可见（08-11 实测 14 条蒸馏
+  记录全写错 scope）。现显式 scope 选择同时定向读与写，5 条回归测试锁定。
+- **allScopes（全部记忆）召回范围退化为 project scope**：`resolveContextScopes`
+  无视 allScopes 标志，console「全部记忆」召回检查只在会话 proj_local_* 里搜，
+  永远只命中错 scope 的新记录、旧记忆零命中。现 allScopes 返回空 recallScopes
+  （=全库搜索）。
+- **task_append 不写 rollingSummary**：纯 task_append 建的任务在 console 任务页
+  「有 Transcript、无 Summary」。task_append 现接受可选 rollingSummary 并落
+  task_context_state；Stop 驱动指令同步要求同传。
+
+### Added
+- **Stop hook 驱动 agent 主动写入**：Stop 的关键词启发式 capture 只认
+  记住/偏好/决定/我是四类措辞，复杂工作会话全天零写入。现「实质工作（≥15字）
+  且 stored=0」时 Stop hook 返回 `decision:"block"` 拉回 agent，指令其
+  memory_write 写经验/决策/教训 + task_append 记进度。三重防循环：
+  stop_hook_active 协议标志、capture-state.json 每会话至多一次、已捕获/短会话
+  放行。`LEAFMEM_HOOK_STOP_DRIVE=0` 可关。
+
+### Changed
+- **六文件初始导入改为 LLM 中介蒸馏**：机械逐行导入曾产出 300+ 碎片（分隔符、
+  孤立标题、拆半的列表项）。安装器现只登记 pending 状态，由宿主 LLM 按 INSTALL
+  引导步骤 7.5 把每文件蒸馏成 1-4 条段落级记忆。parseMarkdownEntries 保留为
+  legacy 安全网（分隔符/孤立标题不独立入库、嵌套子项并入父）。
+- **取消导入掩码**：记忆库为单机专用（127.0.0.1 + API Key），用户自记凭证无需
+  掩码，掩码反而损坏笔记可用性。
+
 ## [0.3.2] - 2026-08-11
 
 ### Fixed
