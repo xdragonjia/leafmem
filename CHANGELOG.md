@@ -5,6 +5,18 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.6] - 2026-08-11
+
+### Fixed
+- **Stop 门禁判据错误（双向）**：原门控以「启发式是否捕获」为 block 条件。
+  ①硬写误触发（stored>0）会**致盲门禁**——agent 不被拉回总结，控制台只剩
+  硬写垃圾（0.3.5 身份误存事故的连锁效应）；②agent 主动写过而启发式没捕获
+  时被**多余 block**。现门禁问正确的问题：「本会话 agent 是否主动写入」
+  （UPS 记 sessionStartAt；Stop 查 `GET /v1/memories?scope=agent:<id>`，
+  统计 source 非 capture 路径且 createdAt≥会话起点的记录数；零条且实质工作
+  才 block 一次；查询不可用 fail-open）。启发式 stored 数降为诊断信息。
+  8 门禁测试含事故 fixture。
+
 ## [0.3.5] - 2026-08-11
 
 ### Fixed
