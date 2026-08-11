@@ -487,7 +487,7 @@ MCP handler 提供了 6 个聚合工具：
 
 | 工具 | 功能 |
 |------|------|
-| `memory_write` | `action: "remember" / "commit" / "task_append" / "active_distill"`，写记忆：remember 记录、commit 提交会话、task_append 追加任务条目、active_distill 蒸馏 active |
+| `memory_write` | `action: "remember" / "commit" / "task_append" / "active_distill"`，写记忆：remember 记录、commit 提交会话、task_append 追加任务条目（可选 `rollingSummary` 一句话总览、`status` 生命周期转换 active/paused/completed/archived——任务不会自动关闭，完成时显式传 `status="completed"`）、active_distill 蒸馏 active |
 | `memory_recall` | `action: "recall" / "search" / "get" / "list" / "task_window" / "active_get"`，召回记忆：召回上下文、检索、任务窗口、读 active |
 | `memory_organize` | `action: "prepare" / "apply" / "reflect" / "profile" / "decay" / "calibrate" / "rebuild"`，整理记忆：维护准备/应用、蒸馏原则、刷新画像、衰减、experience 校准重建 |
 | `memory_govern` | `action: "update" / "delete" / "attribute" / "pin"`，管理记忆：更新/删除记录、归因召回价值、固定防衰减 |

@@ -178,6 +178,10 @@ export function createMemoryToolSet(params: {
           timestamp: { type: "string" },
           messageCount: { type: "number" },
           rollingSummary: { type: "string" },
+          // task_append lifecycle (2026-08-11): optional status transition so a
+          // task can be closed ("completed"/"archived") instead of staying
+          // "active" forever.
+          status: { type: "string", enum: ["active", "paused", "completed", "archived"] },
           activeContext: { type: "string" },
           activeExperience: { type: "string" },
           governanceReport: { type: "object", additionalProperties: true },
@@ -412,6 +416,15 @@ export function createMemoryToolSet(params: {
         }
         if (action === "task_append") {
           const taskId = expectString(args.taskId, "taskId");
+          // 2026-08-11 lifecycle: optional status transition ("active" |
+          // "paused" | "completed" | "archived") so tasks can be closed
+          // instead of staying "active" forever.
+          const taskStatus = optionalString(args.status) as
+            | "active"
+            | "paused"
+            | "completed"
+            | "archived"
+            | undefined;
           let task = await params.memory.task.get(taskId);
           if (!task) {
             const scope = parseScopeArgs(args, params.defaultScopes)?.[0];
@@ -422,6 +435,7 @@ export function createMemoryToolSet(params: {
               taskId,
               scope,
               title: optionalString(args.title) ?? taskId,
+              status: taskStatus,
             });
           }
           const entry = await params.memory.task.appendEntry({
@@ -435,6 +449,9 @@ export function createMemoryToolSet(params: {
           const taskRollingSummary = optionalString(args.rollingSummary);
           if (taskRollingSummary) {
             await params.memory.task.setRollingSummary(taskId, taskRollingSummary);
+          }
+          if (taskStatus && task.status !== taskStatus) {
+            task = (await params.memory.task.setStatus(taskId, taskStatus)) ?? task;
           }
           return { task, entry };
         }

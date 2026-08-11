@@ -77,6 +77,13 @@ await memory.task.addDecision({
   content: "Keep the checklist short and action-oriented.",
 });
 
+// Rolling summary (one-line task overview shown on the console task page).
+await memory.task.setRollingSummary("release-flow", "Release flow: QA checklist drafted.");
+
+// Lifecycle transition (2026-08-11): tasks never close themselves — flip the
+// status explicitly when the work is done.
+await memory.task.setStatus("release-flow", "completed");
+
 const window = await memory.task.buildWindow({
   taskId: "release-flow",
   currentQuery: "What is left before release?",

@@ -93,6 +93,26 @@ export class TaskContextManager {
     return await this.options.store.getState(taskId.trim());
   }
 
+  // 2026-08-11: tasks created via task_append had no close path — the status
+  // enum existed in types but nothing ever transitioned a task out of
+  // "active", so the console showed permanently-active tasks. setStatus is
+  // the missing lifecycle transition.
+  async setStatus(taskId: string, status: TaskStatus): Promise<TaskContextRecord | null> {
+    const normalizedTaskId = taskId.trim();
+    if (!normalizedTaskId) {
+      return null;
+    }
+    const existing = await this.options.store.getTask(normalizedTaskId);
+    if (!existing) {
+      return null;
+    }
+    return await this.options.store.upsertTask({
+      ...existing,
+      status,
+      updatedAt: this.now().getTime(),
+    });
+  }
+
   async setRollingSummary(taskId: string, summary: string): Promise<TaskContextState | null> {
     const normalizedTaskId = taskId.trim();
     const content = summary.trim();
