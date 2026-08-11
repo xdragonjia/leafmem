@@ -24,6 +24,10 @@
    ~/.kunlunxiaozhi/settings.json 有命中）但最近 48 小时无任何心跳，说明 hook 可能已失效
    （宿主升级/配置被覆盖），提示用户重跑 `leafmem-agent install <宿主>` 修复；
    未注册 hook 的旧式安装跳过本项。
+7. 重复 scope 池检测（2026-08-11 新增）：统计各 agent scope 的记录数。shared 拓扑下
+   应只有一个非空的 agent scope（主 scope）；若出现第二个非空 agent scope，说明发生
+   过"第二宿主导入写错 scope"类事故（08-11 实测 167 条重复死记录），告警并列出去重
+   建议（对比主 scope 内容哈希，纯重复可批量删除）。
 </task>
 
 <report>
