@@ -5,6 +5,15 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.5] - 2026-08-11
+
+### Fixed
+- **启发式 capture 误存用户原话为 identity 记忆**：「我是通过 proxifier 访问
+  github 的，…删除三行…@image#1:…」整句被存成身份记忆——裸「我是」线索命中
+  了动作描述。identity 分支现排除「我是+方式/动作短语」（我是通过/用/在/正在…
+  及英文等价），真实自我介绍仍捕获；`@image#N:…` 附件标记在所有启发式匹配前
+  剥离。4 个回归测试（真实原话作 fixture）。
+
 ## [0.3.4] - 2026-08-11
 
 ### Added

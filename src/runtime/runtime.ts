@@ -265,7 +265,7 @@ export function inferMemoryProposals(turn: MemoryTurnInput): CapturedMemoryPropo
   // the bare 我是 cue and the whole instruction was stored as an identity
   // memory. 我是+方式/动作短语 ("我是通过/用/在/正在…") is an action
   // description, not an identity declaration — exclude it so the identity
-  // branch only fires on real self-introductions (我是小龙 / 我是做巡察的).
+  // branch only fires on real self-introductions (我是+姓名或职务的自我介绍).
   const identityCue = /(my name is|i am |我是|我的名字是)/iu.test(text);
   const actionPhrasing =
     /我是(?:通过|用|在|正在|从|去|想|要|来|靠|按|按照)\b/u.test(text) ||

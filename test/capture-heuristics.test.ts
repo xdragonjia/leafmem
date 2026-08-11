@@ -16,7 +16,7 @@ test("identity branch ignores 我是+action phrasing (incident quote stores noth
 });
 
 test("identity branch still fires on real self-introductions", () => {
-  const proposals = inferMemoryProposals({ userMessage: "我是小龙，昆仑数智巡察办的", assistantMessage: "" });
+  const proposals = inferMemoryProposals({ userMessage: "我是老王，负责项目管理的", assistantMessage: "" });
   assert.equal(proposals.filter((p) => p.kind === "identity").length, 1);
 });
 
