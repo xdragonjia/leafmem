@@ -116,6 +116,20 @@ async function main() {
   };
 
   if (event === "UserPromptSubmit") {
+    // 2026-08-11 (v0.3.6): remember the first prompt time of the session so the
+    // Stop gate can tell "the agent wrote this session" apart from "the
+    // heuristic hard-captured this turn" (a misfired capture used to blind the
+    // gate, leaving the agent unsummarized).
+    const upsSessionId = typeof payload.session_id === "string" && payload.session_id.trim()
+      ? payload.session_id.trim()
+      : "no-session";
+    const upsState = await readCaptureState();
+    if (!upsState[upsSessionId]?.sessionStartAt) {
+      await writeCaptureState({
+        ...upsState,
+        [upsSessionId]: { ...upsState[upsSessionId], sessionStartAt: new Date().toISOString() },
+      });
+    }
     const prompt = sanitizeCapturedText(typeof payload.prompt === "string" ? payload.prompt : "");
     if (!prompt) return done(event, null);
     const data = await postJson(
@@ -190,17 +204,40 @@ async function main() {
       }
       const storedCount = typeof stored === "number" ? stored : 0;
       const workChars = userMessage.length + assistantMessage.length;
-      if (storedCount === 0 && workChars >= MIN_WORK_CHARS) {
-        await writeCaptureState({
-          ...state,
-          [sessionId]: {
-            drivenAt: new Date().toISOString(),
-            agent,
-            workChars,
-          },
-        });
-        await heartbeat(`${event} drive: BLOCK (workChars=${workChars}, stored=0)`);
-        return done(event, { decision: "block", reason: DRIVE_INSTRUCTION });
+      // 2026-08-11 (v0.3.6) gate signal fix: the block condition used to be
+      // "heuristic stored nothing", which is the wrong question in two ways:
+      // (a) a MISFIRED hard capture (stored>0) blinded the gate and the agent
+      // never summarized the session (real incident: a verbatim identity
+      // capture replaced the agent summary); (b) an agent that wrote pro-
+      // actively while the heuristic stored nothing was blocked pointlessly.
+      // The right signal is "did the agent write on its own this session" —
+      // records whose source is NOT the capture paths. The heuristic's result
+      // is now diagnostic only.
+      if (workChars >= MIN_WORK_CHARS) {
+        const agentWrites = await countAgentWrites(base, headers, agent, sess?.sessionStartAt);
+        if (agentWrites === null) {
+          await heartbeat(`${event} drive: write-check unavailable, allow`);
+          return done(event, { continue: true });
+        }
+        if (agentWrites === 0) {
+          await writeCaptureState({
+            ...state,
+            [sessionId]: {
+              ...state[sessionId],
+              drivenAt: new Date().toISOString(),
+              agent,
+              workChars,
+              heuristicStored: storedCount,
+            },
+          });
+          await heartbeat(
+            `${event} drive: BLOCK (workChars=${workChars}, agentWrites=0, heuristicStored=${storedCount})`,
+          );
+          return done(event, { decision: "block", reason: DRIVE_INSTRUCTION });
+        }
+        await heartbeat(
+          `${event} drive: agent wrote ${agentWrites} this session (heuristicStored=${storedCount}), allow`,
+        );
       }
     }
     return done(event, { continue: true });
@@ -270,6 +307,46 @@ async function writeCaptureState(state) {
   } catch {
     // best-effort; loop guard 1 (stop_hook_active) still protects the host
   }
+}
+
+async function getJson(base, headers, path, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}${path}`, { headers, signal: controller.signal });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// How many records the agent itself wrote this session (memory_write-driven
+// sources). Capture-path records (turn_inference / explicit_remember) do NOT
+// count — the heuristic is a fallback, not evidence that the agent reflected.
+// Returns null when the service is unreachable (the gate then allows rather
+// than blocks on a broken signal).
+const CAPTURE_SOURCES = new Set(["turn_inference", "explicit_remember"]);
+const DRIVE_CHECK_TIMEOUT_MS = intEnv("LEAFMEM_HOOK_DRIVE_CHECK_TIMEOUT_MS", 4000);
+
+async function countAgentWrites(base, headers, agent, sessionStartAt) {
+  const data = await getJson(
+    base,
+    headers,
+    `/v1/memories?scope=${encodeURIComponent(`agent:${agent}`)}&limit=50`,
+    DRIVE_CHECK_TIMEOUT_MS,
+  );
+  if (!data || !Array.isArray(data.memories)) return null;
+  const start = sessionStartAt ? Date.parse(sessionStartAt) : NaN;
+  return data.memories.filter((m) => {
+    if (!m || typeof m !== "object") return false;
+    if (CAPTURE_SOURCES.has(m.source)) return false;
+    if (!Number.isFinite(start)) return true; // no UPS seen: count any agent write
+    const created = Date.parse(m.createdAt ?? "");
+    return Number.isFinite(created) && created >= start;
+  }).length;
 }
 
 async function postJson(base, headers, path, body, timeoutMs) {
