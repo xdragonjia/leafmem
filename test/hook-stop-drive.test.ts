@@ -146,3 +146,64 @@ test("agent write from a PREVIOUS session (no sessionStartAt in state) counts as
   assert.equal(out.decision, undefined);
   await rm(home, { recursive: true, force: true });
 });
+
+test("block names session-fresh unclosed tasks (0.3.8 close-out checklist)", async () => {
+  const home = await mkdtemp(join(tmpdir(), "leafmem-hook-drive-"));
+  await mkdir(join(home, ".leafmem"), { recursive: true });
+  const server = createServer((req, res) => {
+    const url = req.url ?? "";
+    if (req.method === "POST" && url === "/v1/turns/capture") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ stored: 0, proposals: 0, taskEntries: 0 }));
+      return;
+    }
+    if (req.method === "GET" && url.startsWith("/v1/memories?")) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ memories: [], count: 0 }));
+      return;
+    }
+    if (req.method === "GET" && url.startsWith("/v1/tasks?")) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          tasks: [
+            { task_id: "klxz-ai-news-daily", status: "active", updated_at: Date.now() },
+            { task_id: "old-done", status: "completed", updated_at: Date.now() },
+            { task_id: "stale-active", status: "active", updated_at: 1 },
+          ],
+          total: 3,
+        }),
+      );
+      return;
+    }
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end("{}");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as any).port;
+  await writeFile(join(home, ".leafmem", "agent-service.json"), JSON.stringify({ host: "127.0.0.1", port, apiKey: "test-key" }), "utf8");
+  // Seed sessionStartAt so the task freshness filter has a session window.
+  await writeFile(
+    join(home, ".leafmem", "capture-state.json"),
+    JSON.stringify({ "s9": { sessionStartAt: new Date(Date.now() - 60_000).toISOString() } }),
+    "utf8",
+  );
+  const out = await new Promise<string>((resolve, reject) => {
+    const child = spawn(process.execPath, [HOOK_PATH, "Stop", "--agent", "workbuddy"], {
+      env: { ...process.env, HOME: home, LEAFMEM_HOOK_RECALL_TIMEOUT_MS: "2000", LEAFMEM_HOOK_CAPTURE_TIMEOUT_MS: "2000" },
+    });
+    let stdout = "";
+    child.stdout.on("data", (c) => (stdout += c));
+    child.on("close", () => resolve(stdout));
+    child.on("error", reject);
+    child.stdin.write(JSON.stringify({ session_id: "s9", prompt: "完成了 AI 早报推送，飞书卡片发送成功，日志已写", stop_hook_active: false }));
+    child.stdin.end();
+  });
+  server.close();
+  const parsed = JSON.parse(out || "{}");
+  assert.equal(parsed.decision, "block");
+  assert.match(parsed.reason, /klxz-ai-news-daily/);
+  assert.ok(!parsed.reason.includes("old-done"));
+  assert.ok(!parsed.reason.includes("stale-active"));
+  await rm(home, { recursive: true, force: true });
+});

@@ -220,6 +220,10 @@ async function main() {
           return done(event, { continue: true });
         }
         if (agentWrites === 0) {
+          const unclosed = await listUnclosedActiveTasks(base, headers, agent, sess?.sessionStartAt);
+          const instruction = unclosed.length
+            ? `${DRIVE_INSTRUCTION} ⑤ 点名清单：以下任务本会话有新进度但仍未关闭，必须逐条 task_append 同传闭环版 rollingSummary 与 status="completed"：${unclosed.join("、")}。`
+            : DRIVE_INSTRUCTION;
           await writeCaptureState({
             ...state,
             [sessionId]: {
@@ -231,9 +235,9 @@ async function main() {
             },
           });
           await heartbeat(
-            `${event} drive: BLOCK (workChars=${workChars}, agentWrites=0, heuristicStored=${storedCount})`,
+            `${event} drive: BLOCK (workChars=${workChars}, agentWrites=0, heuristicStored=${storedCount}, unclosed=${unclosed.length})`,
           );
-          return done(event, { decision: "block", reason: DRIVE_INSTRUCTION });
+          return done(event, { decision: "block", reason: instruction });
         }
         await heartbeat(
           `${event} drive: agent wrote ${agentWrites} this session (heuristicStored=${storedCount}), allow`,
@@ -347,6 +351,31 @@ async function countAgentWrites(base, headers, agent, sessionStartAt) {
     const created = Date.parse(m.createdAt ?? "");
     return Number.isFinite(created) && created >= start;
   }).length;
+}
+
+// 2026-08-12 (v0.3.8): generic ③④ instructions rely on the agent's diligence —
+// in the real incident the pulled-back agent did a bare task_append (no
+// rollingSummary, no status) and the task page stayed active/summary-less.
+// So when blocking, name every task that got new progress this session but is
+// still not closed; the agent gets a concrete checklist instead of a policy.
+async function listUnclosedActiveTasks(base, headers, agent, sessionStartAt) {
+  const data = await getJson(
+    base,
+    headers,
+    `/v1/tasks?scope=${encodeURIComponent(`agent:${agent}`)}&limit=50`,
+    DRIVE_CHECK_TIMEOUT_MS,
+  );
+  if (!data || !Array.isArray(data.tasks)) return [];
+  const start = sessionStartAt ? Date.parse(sessionStartAt) : NaN;
+  return data.tasks
+    .filter((t) => {
+      if (!t || t.status === "completed" || t.status === "archived") return false;
+      if (!Number.isFinite(start)) return false; // only name session-fresh tasks
+      return (t.updated_at ?? 0) >= start;
+    })
+    .map((t) => t.task_id)
+    .filter((id) => typeof id === "string" && id)
+    .slice(0, 5);
 }
 
 async function postJson(base, headers, path, body, timeoutMs) {

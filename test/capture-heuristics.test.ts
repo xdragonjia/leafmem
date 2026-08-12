@@ -37,3 +37,21 @@ test("preference/decision/remember branches unaffected by the identity guard", (
   const pref = inferMemoryProposals({ userMessage: "我更喜欢直接给方案", assistantMessage: "" });
   assert.ok(pref.some((p) => p.kind === "preference"));
 });
+
+// 2026-08-12 incident: a sanitized transcript remainder of "." passed the
+// preference cue and was stored as a memory with content ".". Quality floor:
+// no proposal may be stored when its content has no substantive payload.
+test("quality floor: punctuation-only remainder stores nothing", () => {
+  const proposals = inferMemoryProposals({ userMessage: "我更喜欢 .", assistantMessage: "" });
+  assert.equal(proposals.length, 0, JSON.stringify(proposals));
+  const dot = inferMemoryProposals({ userMessage: ".", assistantMessage: "" });
+  assert.equal(dot.length, 0);
+});
+
+test("quality floor does not block real preferences", () => {
+  const proposals = inferMemoryProposals({
+    userMessage: "我更喜欢用绝对路径作为脚本参数",
+    assistantMessage: "",
+  });
+  assert.equal(proposals.filter((p) => p.kind === "preference").length, 1);
+});

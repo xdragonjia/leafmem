@@ -207,6 +207,14 @@ export function createMemoryRuntime(params: {
   };
 }
 
+// 2026-08-12 quality floor (real incident: a sanitized transcript remainder of
+// "." passed the preference cue and was stored as a memory with content ".").
+// Heuristic capture must never store content with no substantive payload.
+function isSubstantiveMemoryContent(value: string): boolean {
+  const core = (value ?? "").replace(/[\s.,，。·…!！?？;；:：\-—_#*`"'“”‘’()（）\[\]【】]/g, "");
+  return core.length >= 6;
+}
+
 export function inferMemoryProposals(turn: MemoryTurnInput): CapturedMemoryProposal[] {
   // 2026-08-11: strip host attachment markers before matching — a user quote
   // like "我是通过 proxifier… @image#1:Clipboard_Screenshot.png" was stored
@@ -283,7 +291,9 @@ export function inferMemoryProposals(turn: MemoryTurnInput): CapturedMemoryPropo
     });
   }
 
-  return dedupeProposals(proposals);
+  return dedupeProposals(proposals).filter((proposal) =>
+    isSubstantiveMemoryContent(proposal.content),
+  );
 }
 
 const MEMORY_EXTRACTION_SYSTEM_PROMPT =
