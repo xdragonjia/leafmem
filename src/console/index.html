@@ -296,7 +296,10 @@ const state = {
   apiKey: window.__LEAFMEM_API_KEY__ || _q.get('apiKey') || localStorage.getItem('leafmem_api_key') || '',
   page: ['dashboard','explorer','recall','insights','events','graph','agents','docs','tasks'].includes(_q.get('page')) ? _q.get('page') : 'dashboard',
   connected: false,
-  scope: _q.get('scope') || localStorage.getItem('leafmem_scope') || 'all',
+  // 2026-08-12: normalize legacy bare host shorthands ("workbuddy") stored by
+  // pre-08-10 consoles to agent:workbuddy — bare values silently fell through
+  // to the empty project scope and hid the profile card.
+  scope: ((_q.get('scope') || localStorage.getItem('leafmem_scope') || 'all').replace(/^(workbuddy|kunlunxiaozhi)$/i, 'agent:$1')),
   agentIds: [], scopeList: [],
   explorerCache: null, explorerCacheScope: null,
   explorerPage: 0, explorerQuery: '', explorerKind: '', explorerSource: '', tasksPage: 0,
@@ -495,7 +498,11 @@ async function renderDashboard(el) {
         ${gov.profile.preamble ? `<div class="dw-text" style="color:var(--ink2)">${esc(trunc(gov.profile.preamble, 400))}</div>` : ''}
         <div class="tags-row">${(gov.profile.sections ?? []).map(s => `<span class="pill b">${esc(s.title)}</span>`).join('')}</div>
         <div class="sub" style="font-size:12px;color:var(--ink2);margin-top:10px">完整内容见「洞察」→ 用户画像（点击跳转）</div>
-      </div>` : ''}
+      </div>` : `
+      <div class="card">
+        <h3>用户画像</h3>
+        <div class="empty"><div class="msg">当前范围（${esc(scopeName(state.scope))}）暂无画像——去「洞察」用 reflect 生成，或切换范围</div></div>
+      </div>`}
     </div>`;
   } catch (err) { el.innerHTML = `<div class="empty"><div class="glyph">⚠</div><div class="msg">${esc(err.message)}</div></div>`; }
 }

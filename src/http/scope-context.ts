@@ -12,6 +12,17 @@ export function memoryContextFromQuery(projectId: string, url: URL): MemoryConte
     return { projectId, allScopes: true };
   }
 
+  // 2026-08-12: tolerate bare host shorthand (legacy console localStorage
+  // stored "workbuddy" without the agent: prefix; a bare value has no other
+  // legitimate meaning here) — a silent fall-through to project scope made
+  // the dashboard profile card vanish without explanation.
+  if (scope && !scope.includes(":")) {
+    // Bare values are host-id shorthands left by legacy console localStorage
+    // ("workbuddy" meant agent:workbuddy). Map them to the agent scope so a
+    // stale value never silently degrades to the empty project scope (which
+    // made the dashboard profile card vanish without explanation).
+    return { projectId, anyScope: { type: "agent", id: scope.toLowerCase() } };
+  }
   // Any explicit scope of any type: agent:x / user:x / task:x / ...
   if (scope && scope.includes(":")) {
     const [prefix, ...rest] = scope.split(":");
