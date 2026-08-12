@@ -5,6 +5,15 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.11] - 2026-08-12
+
+### Fixed
+- **事件数据未转义吞掉整块 DOM（含画像卡）**：仪表盘「最近活动」与事件页对
+  事件 data 的字符串值未 esc；08-12 01:50 的 recall 事件 query 恰为含
+  `<!-- … -->` 标记的自动化 prompt，裸 `<!--` 注入 innerHTML 后把后续全部
+  DOM（画像卡）吞进注释节点——卡片不是没渲染，是被 HTML 注释"埋葬"。
+  两处 `tl-data` 渲染补 esc。浏览器实测画像卡恢复、comment 节点归零。
+
 ## [0.3.10] - 2026-08-12
 
 ### Fixed
