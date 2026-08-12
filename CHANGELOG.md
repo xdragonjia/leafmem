@@ -5,6 +5,18 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.9] - 2026-08-12
+
+### Changed
+- **时间存储与展示统一**（行业标准：存 UTC、显式时区渲染）：
+  - 存储与 API：全部时间戳统一为 ISO 8601 UTC 字符串；task 族表由 epoch-ms
+    INTEGER 迁移（`migrateTaskTimestampsToIso`，开库即跑、幂等）；DDL 改 TEXT；
+    读取侧 `isoOrEpoch` 防御性归一。
+  - console：单一 fmtDate/fmtTime/fmtDateTime 入口，基于
+    `Intl.DateTimeFormat(timeZone:'Asia/Shanghai')`——所有页面时间一律北京
+    时间，不随浏览器时区、不显示裸 UTC。此前「有的 UTC 有的本地」的混乱消除。
+  - ARCHITECTURE.md 新增 Time Convention 章节。
+
 ## [0.3.8] - 2026-08-12
 
 ### Fixed
