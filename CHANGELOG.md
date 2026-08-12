@@ -5,6 +5,17 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.10] - 2026-08-12
+
+### Fixed
+- **仪表盘画像卡静默消失**：08-10 前 console 的 localStorage 存裸 scope 值
+  （`workbuddy` 无 `agent:` 前缀），governance 落到空 project scope 找不到画像，
+  卡片三元 else 为空串→整块消失且无提示。现：scope-context 裸值映射
+  agent:<值>；console 读取时归一；卡片 else 分支显示占位说明（不再静默消失）。
+- **备份链路断链修复**：已部署 launchd plist 仍指向已移除的旧外部路径
+  （08-11 23:30 与 08-12 03:15 备份失败）。从仓库模板重新部署
+  com.leafmem.sqlite-backup.plist，立即补备，launchd 健康。
+
 ## [0.3.9] - 2026-08-12
 
 ### Changed
