@@ -93,8 +93,10 @@
   .bar-row .num{width:44px;font-family:var(--mono);font-size:11.5px;color:var(--ink2)}
 
   /* ===== 表格 ===== */
-  table{width:100%;border-collapse:collapse;font-size:13.5px}
-  th,td{padding:11px 16px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  /* 2026-08-12: fixed layout stops long unbreakable strings (paths/tokens) from
+     stretching columns past the page background; content wraps anywhere. */
+  table{width:100%;border-collapse:collapse;font-size:13.5px;table-layout:fixed}
+  th,td{padding:11px 16px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere;word-break:break-word}
   th{color:var(--ink2);font-weight:600;font-size:12px;background:#f8fafc}
   tr:last-child td{border-bottom:none}
   tbody tr{cursor:pointer;transition:background .1s}
@@ -303,7 +305,7 @@ const state = {
   agentIds: [], scopeList: [],
   explorerCache: null, explorerCacheScope: null,
   explorerPage: 0, explorerQuery: '', explorerKind: '', explorerSource: '', tasksPage: 0,
-  recallQuery: '', eventType: '', expandedPrincipleId: null,
+  recallQuery: '', eventType: '', expandedPrincipleId: null, principlesPage: 0, eventsPage: 0,
   sharedMemory: true,
 };
 const PAGE_SIZE = 25;
@@ -690,54 +692,106 @@ async function runRecall() {
 }
 
 // ================================================================ 洞察
+// 2026-08-12 insight redesign: profile gets a full-width card with logically
+// ordered sections; principles become a paginated list with in-place expand
+// (no scroll-to-top, full text + tags visible).
+const PROFILE_SECTION_ORDER = [
+  ['身份', 0], ['角色', 0], ['职责', 0], ['定位', 0],
+  ['偏好', 1], ['喜好', 1], ['喜欢', 1],
+  ['习惯', 2], ['风格', 2], ['节奏', 2], ['作息', 2],
+  ['约束', 3], ['边界', 3], ['纪律', 3], ['原则', 3], ['禁忌', 3],
+  ['环境', 4], ['工具', 4], ['城市', 4], ['时区', 4],
+];
+function profileSectionRank(title) {
+  const t = String(title || '');
+  for (const [kw, rank] of PROFILE_SECTION_ORDER) if (t.includes(kw)) return rank;
+  return 5;
+}
+const PRINCIPLE_PAGE_SIZE = 8;
+
 async function renderInsights(el) {
   el.innerHTML = '<div class="loading">正在加载洞察…</div>';
   try {
     const gov = await api(`/v1/governance?${scopeQuery()}`);
     const ps = gov.principles ?? [], profile = gov.profile;
-    el.innerHTML = `<div class="inner"><div class="grid2">
+    const pages = Math.max(1, Math.ceil(ps.length / PRINCIPLE_PAGE_SIZE));
+    const page = Math.min(state.principlesPage || 0, pages - 1);
+    const pageItems = ps.slice(page * PRINCIPLE_PAGE_SIZE, (page + 1) * PRINCIPLE_PAGE_SIZE);
+    const sections = (profile?.sections ?? [])
+      .map((sec, idx) => ({ ...sec, _rank: profileSectionRank(sec.title), _idx: idx }))
+      .sort((a, b) => a._rank - b._rank || a._idx - b._idx);
+    el.innerHTML = `<div class="inner">
+      <div class="card" style="margin-bottom:16px">
+        <h3>用户画像 <span class="sub">${profile?.present ? `更新于 ${timeAgo(profile.updatedAt)} · ${sections.length} 个分节` : '尚未生成'}</span></h3>
+        ${profile?.present
+          ? `${profile.preamble ? `<div class="dw-text" style="color:var(--ink2);border-left:3px solid var(--brand);padding-left:10px">${esc(profile.preamble)}</div>` : ''}
+             ${sections.length ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:${profile.preamble ? 14 : 0}px">` + sections.map(sec => `
+               <div style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:#fbfcfe">
+                 <div style="font-size:13px;font-weight:700;margin-bottom:6px"><span class="pill b">${esc(sec.title)}</span></div>
+                 <div class="dw-text" style="font-size:12.5px;color:var(--ink2);line-height:1.7">${esc(sec.content)}</div>
+               </div>`).join('') + `</div>` : ''}`
+          : '<div class="empty"><div class="msg">证据积累到一定量后，delta-ops 画像会自动生成</div></div>'}
+      </div>
       <div class="card plain">
-        <div class="head"><h3>蒸馏原则 <span class="sub">${ps.length} 条 · reflect() 产出</span></h3></div>
-        ${ps.length ? ps.map(p => `
+        <div class="toolbar" style="padding:14px 20px;border-bottom:1px solid var(--line)">
+          <h3 style="margin:0">蒸馏原则 <span class="sub">${ps.length} 条 · reflect() 产出 · 点击行就地展开全文</span></h3>
+          <div class="spacer"></div>
+          <div class="pager">
+            <span class="info">第 ${page + 1}/${pages} 页</span>
+            <button class="btn sm" ${page === 0 ? 'disabled' : ''} onclick="state.principlesPage=0;renderPage()">«</button>
+            <button class="btn sm" ${page === 0 ? 'disabled' : ''} onclick="state.principlesPage--;renderPage()">‹</button>
+            <button class="btn sm" ${page >= pages - 1 ? 'disabled' : ''} onclick="state.principlesPage++;renderPage()">›</button>
+            <button class="btn sm" ${page >= pages - 1 ? 'disabled' : ''} onclick="state.principlesPage=${pages - 1};renderPage()">»</button>
+          </div>
+        </div>
+        ${pageItems.length ? pageItems.map(p => `
           <div style="padding:13px 20px;border-bottom:1px solid var(--line);cursor:pointer" onclick="togglePrinciple('${esc(p.id)}')">
             <div style="line-height:1.6">${esc(p.summary)}</div>
             <div class="tags-row" style="margin-top:7px">
               <span class="pill g">principle</span>
               <span class="mono-sm">${p.supportsCount} 条证据 · 重要性 ${Number(p.importance).toFixed(2)}</span>
-              ${state.expandedPrincipleId === p.id ? (p.tags || []).map(t => `<span class="pill">${esc(t)}</span>`).join('') || '<span class="mono-sm">—</span>' : ''}
+              ${(p.tags || []).map(t => `<span class="pill">${esc(t)}</span>`).join('')}
             </div>
+            <div id="pr-full-${esc(p.id)}" style="display:${state.expandedPrincipleId === p.id ? 'block' : 'none'};margin-top:10px;padding:10px 12px;background:#f6f8fb;border-radius:8px;font-size:12.5px;line-height:1.7;color:var(--ink2);white-space:pre-wrap">${esc(p.content || '')}</div>
           </div>`).join('') : '<div class="empty"><div class="msg">暂无蒸馏原则</div></div>'}
       </div>
-      <div class="card">
-        <h3>用户画像 <span class="sub">${profile?.present ? `更新于 ${timeAgo(profile.updatedAt)}` : '尚未生成'}</span></h3>
-        ${profile?.present
-          ? `${profile.preamble ? `<div class="dw-text" style="color:var(--ink2)">${esc(profile.preamble)}</div>` : ''}
-             ${(profile.sections ?? []).length ? `<div class="dw-lbl" style="margin-top:${profile.preamble ? 14 : 0}px">分节 · ${(profile.sections ?? []).length}</div>` + profile.sections.map(s => `
-               <div style="margin-bottom:15px">
-                 <div style="font-size:13px;font-weight:700;margin-bottom:4px">${esc(s.title)}</div>
-                 <div class="dw-text" style="font-size:12.5px;color:var(--ink2)">${esc(s.content)}</div>
-               </div>`).join('') : ''}`
-          : '<div class="empty"><div class="msg">证据积累到一定量后，delta-ops 画像会自动生成</div></div>'}
-      </div>
-    </div></div>`;
+    </div>`;
   } catch (err) { el.innerHTML = `<div class="empty"><div class="glyph">⚠</div><div class="msg">${esc(err.message)}</div></div>`; }
 }
-function togglePrinciple(id) { state.expandedPrincipleId = state.expandedPrincipleId === id ? null : id; renderPage(); }
+// In-place expand: toggle only the target node, no full re-render (no scroll jump).
+function togglePrinciple(id) {
+  const node = document.getElementById('pr-full-' + id);
+  if (!node) return;
+  state.expandedPrincipleId = node.style.display === 'none' ? id : null;
+  node.style.display = state.expandedPrincipleId === id ? 'block' : 'none';
+}
 
 // ================================================================ 事件日志
+// 2026-08-12: paginated event log (store keeps 2000; page 50 at a time).
+const EVENTS_PAGE_SIZE = 50;
 async function renderEvents(el) {
   el.innerHTML = '<div class="loading">正在加载事件…</div>';
   try {
-    const d = await api(`/v1/events?limit=100${state.eventType ? `&type=${state.eventType}` : ''}`);
-    const events = d.events || [];
+    const offset = (state.eventsPage || 0) * EVENTS_PAGE_SIZE;
+    const d = await api(`/v1/events?limit=${EVENTS_PAGE_SIZE}&offset=${offset}${state.eventType ? `&type=${state.eventType}` : ''}`);
+    const events = d.events || [], total = d.total ?? events.length;
+    const pages = Math.max(1, Math.ceil(total / EVENTS_PAGE_SIZE));
+    const page = Math.min(state.eventsPage || 0, pages - 1);
     const types = [...new Set(events.map(e => e.type))];
     el.innerHTML = `<div class="inner">
       <div class="toolbar">
-        <select class="input" onchange="state.eventType=this.value;renderPage()">
+        <select class="input" onchange="state.eventType=this.value;state.eventsPage=0;renderPage()">
           <option value="">全部事件类型</option>
           ${types.map(t => `<option value="${esc(t)}"${t === state.eventType ? ' selected' : ''}>${esc(t)}</option>`).join('')}
         </select>
-        <span class="mono-sm">${events.length} 条事件</span>
+        <span class="mono-sm">${total} 条事件（审计日志保留最近 2000 条）· 第 ${page + 1}/${pages} 页</span>
+        <div class="spacer"></div>
+        <div class="pager">
+          <button class="btn sm" ${page === 0 ? 'disabled' : ''} onclick="state.eventsPage=0;renderPage()">«</button>
+          <button class="btn sm" ${page === 0 ? 'disabled' : ''} onclick="state.eventsPage--;renderPage()">‹</button>
+          <button class="btn sm" ${page >= pages - 1 ? 'disabled' : ''} onclick="state.eventsPage++;renderPage()">›</button>
+          <button class="btn sm" ${page >= pages - 1 ? 'disabled' : ''} onclick="state.eventsPage=${pages - 1};renderPage()">»</button>
+        </div>
       </div>
       <div class="card plain"><div class="tl">
         ${events.length ? events.map(ev => `

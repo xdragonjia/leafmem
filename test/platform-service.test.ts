@@ -70,7 +70,7 @@ describe("LeafMemPlatformService", () => {
         kind: "fact",
         content: "Something.",
       });
-      const recent = events.recent({ type: "memory_written" });
+      const recent = events.recent({ type: "memory_written" }).events;
       assert.equal(recent.length, 1);
       assert.equal(recent[0]!.data!["kind"], "fact");
     });
@@ -249,7 +249,7 @@ describe("LeafMemPlatformService", () => {
       assert.ok(updated);
       assert.equal(updated.content, "New content.");
 
-      const updateEvents = events.recent({ type: "memory_updated" });
+      const updateEvents = events.recent({ type: "memory_updated" }).events;
       assert.equal(updateEvents.length, 1);
     });
 
@@ -284,7 +284,7 @@ describe("LeafMemPlatformService", () => {
       });
       assert.ok(deleted);
 
-      const deleteEvents = events.recent({ type: "memory_deleted" });
+      const deleteEvents = events.recent({ type: "memory_deleted" }).events;
       assert.equal(deleteEvents.length, 1);
 
       const found = await service.getMemory({
@@ -328,7 +328,7 @@ describe("LeafMemPlatformService", () => {
       assert.ok(typeof result.injectedContext === "string");
       assert.ok(result.hits !== undefined);
 
-      const recallEvents = events.recent({ type: "recall_built" });
+      const recallEvents = events.recent({ type: "recall_built" }).events;
       assert.equal(recallEvents.length, 1);
     });
   });
@@ -455,7 +455,7 @@ describe("InMemoryInspectEventStore", () => {
       data: { query: "test" },
     });
 
-    const all = store.recent();
+    const all = store.recent().events;
     assert.equal(all.length, 2);
     // newest first
     assert.equal(all[0]!.type, "recall_built");
@@ -468,7 +468,7 @@ describe("InMemoryInspectEventStore", () => {
     store.emit({ type: "recall_built", context: { projectId: "p1" } });
     store.emit({ type: "memory_written", context: { projectId: "p1" } });
 
-    const writes = store.recent({ type: "memory_written" });
+    const writes = store.recent({ type: "memory_written" }).events;
     assert.equal(writes.length, 2);
   });
 
@@ -477,7 +477,7 @@ describe("InMemoryInspectEventStore", () => {
     for (let i = 0; i < 5; i++) {
       store.emit({ type: "memory_written", context: { projectId: "p1" }, data: { i } });
     }
-    const all = store.recent();
+    const { events: all } = store.recent();
     assert.equal(all.length, 3);
     // newest should be i=4
     assert.equal(all[0]!.data!["i"], 4);
@@ -487,6 +487,6 @@ describe("InMemoryInspectEventStore", () => {
     const store = new InMemoryInspectEventStore();
     store.emit({ type: "memory_written", context: { projectId: "p1" } });
     store.clear();
-    assert.equal(store.recent().length, 0);
+    assert.equal(store.recent().events.length, 0);
   });
 });

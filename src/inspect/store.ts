@@ -28,15 +28,13 @@ export class InMemoryInspectEventStore implements InspectEventStore {
     return full;
   }
 
-  recent(options?: { limit?: number; type?: InspectEventType }): InspectEvent[] {
+  recent(options?: { limit?: number; offset?: number; type?: InspectEventType }): { events: InspectEvent[]; total: number } {
     let events = [...this.buffer].reverse();
-    if (options?.type) {
-      events = events.filter((e) => e.type === options.type);
-    }
-    if (options?.limit && options.limit > 0) {
-      events = events.slice(0, options.limit);
-    }
-    return events;
+    if (options?.type) events = events.filter((e) => e.type === options.type);
+    const total = events.length;
+    const offset = Math.max(0, options?.offset ?? 0);
+    const limit = Math.max(1, Math.min(options?.limit ?? 200, 500));
+    return { total, events: events.slice(offset, offset + limit) };
   }
 
   clear(): void {

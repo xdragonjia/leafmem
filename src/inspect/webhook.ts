@@ -38,7 +38,7 @@ export class DispatchingInspectEventStore implements InspectEventStore {
     return full;
   }
 
-  recent(options?: { limit?: number; type?: InspectEventType }): InspectEvent[] {
+  recent(options?: { limit?: number; offset?: number; type?: InspectEventType }): { events: InspectEvent[]; total: number } {
     return this.store.recent(options);
   }
 

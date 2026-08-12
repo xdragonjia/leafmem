@@ -423,6 +423,7 @@ export class LeafMemPlatformService implements PlatformMemoryService {
       .map((r) => ({
         id: r.id,
         summary: r.summary ?? r.content.slice(0, 160),
+        content: r.content,
         tags: [...r.tags],
         importance: r.importance,
         supportsCount: Array.isArray(r.metadata?.supports) ? (r.metadata!.supports as unknown[]).length : 0,

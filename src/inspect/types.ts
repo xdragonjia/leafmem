@@ -32,7 +32,9 @@ export interface InspectEventStore {
   /**
    * Retrieve recent events, newest first.
    */
-  recent(options?: { limit?: number; type?: InspectEventType }): InspectEvent[];
+  // 2026-08-12 pagination: offset + total so the console events page can page
+  // through the full 2000-event audit log, not just the newest slice.
+  recent(options?: { limit?: number; offset?: number; type?: InspectEventType }): { events: InspectEvent[]; total: number };
 
   /**
    * Clear all stored events.

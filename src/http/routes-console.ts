@@ -99,7 +99,7 @@ export async function handleConsoleRoutes(
       sources: sourceCounts,
       newestMemory: newest,
       oldestMemory: oldest,
-      recentEvents: (ctx.events?.recent({ limit: 10 }) ?? []).length,
+      recentEvents: (ctx.events?.recent({ limit: 10 }).events ?? []).length,
       taskCount,
       activeDocCount,
     });
@@ -296,12 +296,14 @@ export async function handleConsoleRoutes(
 
   if (path === "/v1/events" && req.method === "GET") {
     const limit = parseInt(url.searchParams.get("limit") ?? "50", 10);
+    const offset = parseInt(url.searchParams.get("offset") ?? "0", 10);
     const type = url.searchParams.get("type") ?? undefined;
-    const events = ctx.events?.recent({
+    const result = ctx.events?.recent({
       limit: Math.min(limit, 200),
+      offset,
       type: type as any,
-    }) ?? [];
-    json(res, 200, { events, total: events.length });
+    }) ?? { events: [], total: 0 };
+    json(res, 200, { events: result.events, total: result.total });
     return;
   }
 

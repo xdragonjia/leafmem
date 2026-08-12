@@ -148,6 +148,9 @@ export type ProfileSectionView = {
 export type PrincipleView = {
   id: string;
   summary: string;
+  // 2026-08-12: full text so the console can expand in place (previously the
+  // insight page only showed summary + tags).
+  content: string;
   tags: string[];
   importance: number;
   supportsCount: number;

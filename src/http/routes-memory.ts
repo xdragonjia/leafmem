@@ -160,7 +160,7 @@ export async function handleMemoryRoutes(
   // GET /v1/memories/:id/history
   if (path.endsWith("/history") && req.method === "GET") {
     const events = ctx.events
-      ? ctx.events.recent({ limit: 500 }).filter((event) => event.data?.["recordId"] === id)
+      ? ctx.events.recent({ limit: 500 }).events.filter((event) => event.data?.["recordId"] === id)
       : [];
     json(res, 200, { events, count: events.length });
     return;

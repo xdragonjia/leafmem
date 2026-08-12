@@ -60,26 +60,44 @@ export class SqliteInspectEventStore implements InspectEventStore {
     return full;
   }
 
-  recent(options?: { limit?: number; type?: InspectEventType }): InspectEvent[] {
+  recent(options?: { limit?: number; offset?: number; type?: InspectEventType }): { events: InspectEvent[]; total: number } {
+    const type = options?.type;
+    const limit = Math.max(1, Math.min(options?.limit ?? 200, 500));
+    const offset = Math.max(0, options?.offset ?? 0);
     const rows =
-      this.withDb((db) =>
-        db
-          .prepare(
-            `SELECT id, type, timestamp, context, data FROM inspect_events
-             ORDER BY timestamp DESC LIMIT 200`,
-          )
-          .all() as Array<Record<string, unknown>>,
-      ) ?? [];
-    let events: InspectEvent[] = rows.map((r) => ({
-      id: String(r.id),
-      type: String(r.type) as InspectEventType,
-      timestamp: String(r.timestamp),
-      context: safeParse(r.context),
-      data: safeParse(r.data),
-    }));
-    if (options?.type) events = events.filter((e) => e.type === options.type);
-    if (options?.limit && options.limit > 0) events = events.slice(0, options.limit);
-    return events;
+      this.withDb((db) => {
+        const total = (
+          type
+            ? db.prepare("SELECT COUNT(*) AS c FROM inspect_events WHERE type = ?").get(type)
+            : db.prepare("SELECT COUNT(*) AS c FROM inspect_events").get()
+        ) as { c?: number } | undefined;
+        const page = (
+          type
+            ? db
+                .prepare(
+                  `SELECT id, type, timestamp, context, data FROM inspect_events
+                   WHERE type = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+                )
+                .all(type, limit, offset)
+            : db
+                .prepare(
+                  `SELECT id, type, timestamp, context, data FROM inspect_events
+                   ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+                )
+                .all(limit, offset)
+        ) as Array<Record<string, unknown>>;
+        return { total: Number(total?.c ?? 0), page };
+      }) ?? { total: 0, page: [] };
+    return {
+      total: rows.total,
+      events: rows.page.map((r) => ({
+        id: String(r.id),
+        type: String(r.type) as InspectEventType,
+        timestamp: String(r.timestamp),
+        context: safeParse(r.context),
+        data: safeParse(r.data),
+      })),
+    };
   }
 
   clear(): void {

@@ -5,6 +5,19 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.15] - 2026-08-12
+
+### Fixed
+- **记忆浏览横向溢出**：长不可断字符串（路径/token）撑宽表格超出页面背景。
+  table-layout:fixed + overflow-wrap:anywhere，浏览器实测异常页无横向溢出。
+
+### Changed
+- **洞察页重设计**：用户画像改整宽卡片、分节按逻辑排序（身份→偏好→习惯→
+  约束→环境）双列卡片；蒸馏原则改记忆浏览式交互——分页（8/页）+ 就地展开
+  全文（不再闪回顶部、不再只显示标签）。PrincipleView 增加 content 全文。
+- **事件日志翻页**：/v1/events 支持 offset+total（recent() 返回
+  {events,total}），页面 50/页可翻全量（审计保留 2000 条，页面明示）。
+
 ## [0.3.14] - 2026-08-12
 
 ### Fixed
