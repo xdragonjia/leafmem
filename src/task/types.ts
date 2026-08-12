@@ -75,6 +75,9 @@ export type TaskContextStore = {
   markEntriesSummarized(taskId: string, entryIds: string[], summary: string): Promise<number>;
   getState(taskId: string): Promise<TaskContextState | null>;
   putState(state: TaskContextState): Promise<TaskContextState>;
+  // 2026-08-12: tasks had no removal path — completed test/probe tasks stayed
+  // visible forever. Delete cascades to entries/state/bookmarks (FK).
+  deleteTask(taskId: string): Promise<boolean>;
   putBookmark(bookmark: TaskBookmark): Promise<TaskBookmark>;
   listBookmarks(taskId: string, kind?: TaskBookmarkKind): Promise<TaskBookmark[]>;
 };

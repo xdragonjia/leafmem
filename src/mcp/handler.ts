@@ -159,7 +159,7 @@ export function createMemoryToolSet(params: {
         type: "object",
         additionalProperties: false,
         properties: {
-          action: { type: "string", enum: ["remember", "commit", "task_append", "active_distill"] },
+          action: { type: "string", enum: ["remember", "commit", "task_append", "task_delete", "active_distill"] },
           // remember
           content: { type: "string" },
           kind: { type: "string" },
@@ -454,6 +454,13 @@ export function createMemoryToolSet(params: {
             task = (await params.memory.task.setStatus(taskId, taskStatus)) ?? task;
           }
           return { task, entry };
+        }
+        // 2026-08-12: removal path for tasks that only accumulate noise
+        // (test probes etc.). Cascades to entries/state/bookmarks.
+        if (action === "task_delete") {
+          const taskId = expectString(args.taskId, "taskId");
+          const deleted = await params.memory.task.deleteTask(taskId);
+          return { taskId, deleted };
         }
         if (action === "active_distill") {
           const scope = requireScope(args, params.defaultScopes);

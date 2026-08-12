@@ -246,6 +246,18 @@ export class SqliteTaskContextStore implements TaskContextStore {
     }
   }
 
+  // 2026-08-12: explicit removal path (FK ON DELETE CASCADE clears
+  // entries/state/bookmarks). foreign_keys pragma is ON in openSqliteDatabase.
+  async deleteTask(taskId: string): Promise<boolean> {
+    const db = openSqliteDatabase(this.filePath);
+    try {
+      db.prepare("DELETE FROM task_context WHERE task_id = ?").run(taskId);
+      return readChanges(db) > 0;
+    } finally {
+      db.close();
+    }
+  }
+
   async putBookmark(bookmark: TaskBookmark): Promise<TaskBookmark> {
     const db = openSqliteDatabase(this.filePath);
     try {
@@ -376,6 +388,14 @@ export class InMemoryTaskContextStore implements TaskContextStore {
       task.updatedAt = state.updatedAt;
     }
     return { ...stored };
+  }
+
+  async deleteTask(taskId: string): Promise<boolean> {
+    const existed = this.tasks.delete(taskId);
+    this.entries.delete(taskId);
+    this.states.delete(taskId);
+    this.bookmarks.delete(taskId);
+    return existed;
   }
 
   async putBookmark(bookmark: TaskBookmark): Promise<TaskBookmark> {

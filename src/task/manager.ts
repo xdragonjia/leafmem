@@ -126,6 +126,16 @@ export class TaskContextManager {
     });
   }
 
+  // 2026-08-12: removal path for test/probe tasks that previously could only be
+  // "completed" but never cleared from the console task list.
+  async deleteTask(taskId: string): Promise<boolean> {
+    const normalizedTaskId = taskId.trim();
+    if (!normalizedTaskId) {
+      return false;
+    }
+    return await this.options.store.deleteTask(normalizedTaskId);
+  }
+
   async markEntriesSummarized(taskId: string, entryIds: string[], summary: string): Promise<number> {
     const normalizedTaskId = taskId.trim();
     const content = summary.trim();

@@ -5,6 +5,19 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.13] - 2026-08-12
+
+### Added
+- **任务删除通道**：此前任务只能 completed/archived，测试探针等噪音任务
+  永久可见（用户截图发现 probe4/probe5）。现：
+  - store（Sqlite 级联 FK + InMemory）与 manager 增加 `deleteTask`；
+  - MCP `memory_write(action="task_delete", taskId)`；
+  - 删除不存在的任务返回 `deleted:false`（干净语义，非报错）。
+
+### Tests
+- 删除级联回归（InMemory）+ 真实 MCP stdio 端到端（真库创建→删除→零残留）；
+  连带影响扫描（events/capture-state/tmp）全绿。281/281。
+
 ## [0.3.12] - 2026-08-12
 
 ### Added

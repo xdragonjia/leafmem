@@ -151,3 +151,28 @@ test("task timestamps are ISO strings for legacy and new rows", async () => {
   assert.match(task!.createdAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, task!.createdAt);
   assert.match(task!.updatedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, task!.updatedAt);
 });
+
+// 2026-08-12: task_delete removes the task and its state/entries (probe tasks
+// used to stay visible forever — only "completed", never clearable).
+test("task_delete removes task with cascade", async () => {
+  const memory = createLeafMem({ store: new InMemoryStore() });
+  await callTool(memory, {
+    action: "task_append",
+    taskId: "probe-x",
+    role: "assistant",
+    content: "探针内容",
+    scopeType: "agent",
+    scopeId: "workbuddy",
+  });
+  const delMsg = await callTool(memory, {
+    action: "task_delete",
+    taskId: "probe-x",
+  });
+  const del = JSON.parse(delMsg.result.content[0].text);
+  assert.equal(del.deleted, true);
+  assert.equal(await memory.task.get("probe-x"), null);
+  assert.equal((await memory.task.listEntries("probe-x")).length, 0);
+  // deleting a missing task is a clean false, not an error
+  const againMsg = await callTool(memory, { action: "task_delete", taskId: "probe-x" });
+  assert.equal(JSON.parse(againMsg.result.content[0].text).deleted, false);
+});
