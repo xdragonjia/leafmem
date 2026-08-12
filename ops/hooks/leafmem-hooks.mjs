@@ -404,11 +404,16 @@ async function countAgentWrites(base, headers, agent, sessionStartAt) {
     DRIVE_CHECK_TIMEOUT_MS,
   );
   if (!data || !Array.isArray(data.memories)) return null;
-  const start = sessionStartAt ? Date.parse(sessionStartAt) : NaN;
+  // 2026-08-12 (found by full v0.3.12 acceptance): with no sessionStartAt
+  // (UPS never ran / not registered) the old fallback counted ANY historical
+  // agent write, which is >0 for any long-lived account and silently disabled
+  // the gate forever. Conservative fallback: a 2h window approximating "this
+  // session" instead of "ever".
+  const DEFAULT_SESSION_WINDOW_MS = 2 * 60 * 60 * 1000;
+  const start = sessionStartAt ? Date.parse(sessionStartAt) : Date.now() - DEFAULT_SESSION_WINDOW_MS;
   return data.memories.filter((m) => {
     if (!m || typeof m !== "object") return false;
     if (CAPTURE_SOURCES.has(m.source)) return false;
-    if (!Number.isFinite(start)) return true; // no UPS seen: count any agent write
     const created = Date.parse(m.createdAt ?? "");
     return Number.isFinite(created) && created >= start;
   }).length;

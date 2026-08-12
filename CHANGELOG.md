@@ -5,6 +5,18 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.14] - 2026-08-12
+
+### Fixed
+- **门禁无 sessionStartAt 时静默失效**（完整验收 v0.3.12 时发现）：countAgentWrites
+  旧回退"无数话起点则数任何历史写入"，对长期账户恒>0→门禁永远放行。现回退为
+  保守 2h 窗口近似"本会话"。实测三态矩阵正确（BLOCK/问号豁免/近期有写放行）。
+
+### Added
+- **console 任务页删除按钮**：详情浮窗「删除该任务上下文」+列表 DELETE
+  /v1/tasks?id= 路由（两段 confirm，级联清除 transcript/摘要，不影响记忆记录）。
+  浏览器实测全流程通过（按钮→确认文案→列表消失→浮窗关闭→DB 归零）。
+
 ## [0.3.13] - 2026-08-12
 
 ### Added

@@ -116,6 +116,26 @@ export async function handleConsoleRoutes(
     return;
   }
 
+  // DELETE /v1/tasks?id= (2026-08-12): console surfaces task removal to the
+  // data owner (two-step confirm on the client). Cascade relies on the FK
+  // ON DELETE CASCADE definitions + foreign_keys pragma in openSqliteDatabase.
+  if (path === "/v1/tasks" && req.method === "DELETE") {
+    const id = url.searchParams.get("id") ?? "";
+    try {
+      const storagePath = ctx.agents?.storagePath;
+      if (!storagePath || !id) {
+        json(res, 200, { deleted: false });
+        return;
+      }
+      using db = openSqliteDatabase(storagePath);
+      db.prepare("DELETE FROM task_context WHERE task_id = ?").run(id);
+      json(res, 200, { deleted: true });
+    } catch {
+      json(res, 200, { deleted: false });
+    }
+    return;
+  }
+
   // GET /v1/tasks (2026-08-09): paginated task_context listing. Tasks are the
   // agent's working state (transcript + rolling summary), distinct from memory
   // records; the console tasks page is their landing.

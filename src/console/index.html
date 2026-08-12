@@ -1055,8 +1055,23 @@ function openTaskDrawer(id) {
             <div style="font-size:12.5px;line-height:1.6;margin-top:3px">${esc(e.content)}</div>
           </div>`).join('') : '<div class="empty"><div class="msg">该任务未追加 transcript（由 task_append 显式写入）</div></div>'}
       </div>
-      <div class="mono-sm" style="margin-top:10px">任务上下文是 Agent 工作态，不是记忆类型；长期知识经 commit 沉淀为记忆记录。</div>`;
+      <div class="dw-sec" style="margin-top:14px">
+        <button class="btn sm danger" onclick="deleteTask('${esc(t.task_id)}')">删除该任务上下文</button>
+      </div>
+      <div class="mono-sm" style="margin-top:10px">任务上下文是 Agent 工作态，不是记忆类型；长期知识经 commit 沉淀为记忆记录。删除仅清除工作态（含 transcript/摘要），不影响记忆记录。</div>`;
   }).catch(err => { body.innerHTML = `<div class="empty"><div class="msg">${esc(err.message)}</div></div>`; });
+}
+
+// 2026-08-12: task removal surfaced to the data owner (mirrors memory explorer
+// delete; two-step confirm). Tasks are working state, not long-term memory.
+async function deleteTask(id) {
+  if (!confirm(`确定删除任务上下文「${id}」？\n将连带清除其 transcript 与进展摘要（不影响记忆记录）。`)) return;
+  try {
+    await api('/v1/tasks?id=' + encodeURIComponent(id), { method: 'DELETE' });
+    toast('任务上下文已删除');
+    document.getElementById('drawer')?.classList.remove('open');
+    renderPage();
+  } catch (err) { toast(`删除失败：${err.message}`, true); }
 }
 
 // ================================================================ 宿主接入
