@@ -5,6 +5,24 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.12] - 2026-08-12
+
+### Added
+- **SessionStart hook（会话预热）**：新会话注入进行中的任务上下文
+  （active/paused 任务+rolling_summary），跨会话续接从"用户口述"变"自动恢复"；
+  无在途任务静默跳过。`/v1/tasks` 列表路由补 rolling_summary（LEFT JOIN
+  state 表）。双宿主注册（install 器 events 数组加 SessionStart）。
+- **Stop 门禁问号豁免**：`last_assistant_message` 以 ?/？ 结尾（回合未完结、
+  等用户输入）不拉回——借鉴 workbuddy-buddy ends_with_question 信号
+  （其 spool 实测 1/6 Stop 为 True）。
+
+### Changed
+- **stdin 限读**：hook 输入超 1MB 整包丢弃 fail-open（与 buddy 同纪律，防
+  异常 payload 拖垮/撑爆 hook）。
+
+### Docs
+- 桌宠研究报告 v1.5：未竟观测三项补全 + buddy 源码再读 + 实施记录。
+
 ## [0.3.11] - 2026-08-12
 
 ### Fixed

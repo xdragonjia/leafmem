@@ -76,7 +76,9 @@ export async function installHostHooks(
   }
 
   // 2. Build the hooks block for this host.
-  const events = ["UserPromptSubmit", "Stop"];
+  // 2026-08-12 (v0.3.12): SessionStart added for task warm-up injection
+  // (workbuddy-buddy research P0-1); non-blocking like UPS.
+  const events = ["SessionStart", "UserPromptSubmit", "Stop"];
   const block = buildHooksBlock(scriptPath, scopeId);
 
   // 3. Merge into settings.json.
@@ -98,6 +100,9 @@ function buildHooksBlock(scriptPath: string, scopeId: string): Record<string, un
   const command = (event: string) =>
     `node ${shellQuote(scriptPath)} ${event} --agent ${scopeId}`;
   return {
+    SessionStart: [
+      { hooks: [{ type: "command", command: command("SessionStart"), timeout: 10 }] },
+    ],
     UserPromptSubmit: [
       { hooks: [{ type: "command", command: command("UserPromptSubmit"), timeout: 10 }] },
     ],

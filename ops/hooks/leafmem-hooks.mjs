@@ -115,6 +115,41 @@ async function main() {
     Authorization: `Bearer ${cfg.apiKey}`,
   };
 
+  // 2026-08-12 (v0.3.12, workbuddy-buddy P0-1): SessionStart is the session
+  // boundary signal UPS cannot give. On it, pre-warm with the running task
+  // window so a fresh session resumes in-flight work automatically instead of
+  // waiting for the user to restate it. Non-blocking, fail-open.
+  if (event === "SessionStart") {
+    // Warm context = in-flight task working state (title + rolling summary),
+    // which is what a fresh session most needs to resume. Semantic recall of a
+    // fixed query is a poor proxy for "what was running", so query the task
+    // list directly.
+    const data = await getJson(
+      base,
+      headers,
+      `/v1/tasks?scope=${encodeURIComponent(`agent:${agent}`)}&limit=20`,
+      RECALL_TIMEOUT_MS,
+    );
+    const active = (data?.tasks ?? [])
+      .filter((t) => t && (t.status === "active" || t.status === "paused"))
+      .slice(0, 3);
+    if (active.length === 0) {
+      await heartbeat(`${event}: no in-flight tasks, skipped`);
+      return done(event, null);
+    }
+    const lines = active
+      .map((t) => `- [${t.status}] ${t.task_id}${t.rolling_summary ? `：${String(t.rolling_summary).slice(0, 200)}` : ""}`)
+      .join("\n");
+    await heartbeat(`${event}: warmed ${active.length} in-flight task(s)`);
+    return done(event, {
+      continue: true,
+      hookSpecificOutput: {
+        hookEventName: "SessionStart",
+        additionalContext: `LeafMem 会话预热——进行中的任务（可 task_window 恢复详情）：\n${lines}`,
+      },
+    });
+  }
+
   if (event === "UserPromptSubmit") {
     // 2026-08-11 (v0.3.6): remember the first prompt time of the session so the
     // Stop gate can tell "the agent wrote this session" apart from "the
@@ -195,6 +230,18 @@ async function main() {
         await heartbeat(`${event} drive: stop_hook_active, allow`);
         return done(event, null);
       }
+      // 2026-08-12 (v0.3.12, borrowed from workbuddy-buddy's ends_with_question
+      // signal, verified live in its spool): a turn ending in a question means
+      // the agent is waiting on the user — the session is unresolved, and
+      // pulling the agent back to "close out" mid-conversation is wrong.
+      // (buddy uses the same signal for its Waiting state.)
+      const lastMsg = typeof payload.last_assistant_message === "string"
+        ? payload.last_assistant_message.trimEnd()
+        : "";
+      if (lastMsg.endsWith("?") || lastMsg.endsWith("？")) {
+        await heartbeat(`${event} drive: ends_with_question, allow`);
+        return done(event, { continue: true });
+      }
       // Loop guard 2 (state): at most one drive per session.
       const state = await readCaptureState();
       const sess = state[sessionId];
@@ -269,11 +316,25 @@ function flagValue(argv, flag) {
   return i !== -1 && argv[i + 1] ? argv[i + 1] : undefined;
 }
 
+// 2026-08-12 (v0.3.12, borrowed from workbuddy-buddy status-runtime.mjs): a
+// hostile/oversized host payload must not OOM or hang the hook. Bounded read;
+// over the cap we give up entirely (fail-open) instead of parsing a truncated
+// half.
+const MAX_STDIN_BYTES = 1024 * 1024;
+
 async function readStdinJson() {
   try {
     const chunks = [];
-    for await (const chunk of process.stdin) chunks.push(chunk);
-    const text = Buffer.concat(chunks).toString("utf8").trim();
+    let total = 0;
+    for await (const chunk of process.stdin) {
+      total += chunk.length;
+      if (total > MAX_STDIN_BYTES) {
+        await heartbeat("stdin: over 1MB, discarded (fail-open)");
+        return {};
+      }
+      chunks.push(chunk);
+    }
+    const text = Buffer.concat(chunks, total).toString("utf8").trim();
     return text ? JSON.parse(text) : {};
   } catch {
     return {};

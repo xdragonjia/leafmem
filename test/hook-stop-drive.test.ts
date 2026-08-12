@@ -207,3 +207,17 @@ test("block names session-fresh unclosed tasks (0.3.8 close-out checklist)", asy
   assert.ok(!parsed.reason.includes("stale-active"));
   await rm(home, { recursive: true, force: true });
 });
+
+test("Stop drive: turn ending in a question is allowed (0.3.12 ends_with_question)", async () => {
+  const { out, home } = await runStop(
+    {
+      session_id: "s10",
+      prompt: "做了大量开发工作没有写记忆",
+      last_assistant_message: "以上方案你觉得如何？",
+      stop_hook_active: false,
+    },
+    { stored: 0, agentMemories: [] },
+  );
+  assert.equal(out.decision, undefined, "question-ending turn must not block");
+  await rm(home, { recursive: true, force: true });
+});

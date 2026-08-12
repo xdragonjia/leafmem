@@ -132,11 +132,15 @@ export async function handleConsoleRoutes(
       const total = Number(
         (db.prepare("SELECT COUNT(*) AS c FROM task_context").get() as { c?: number } | undefined)?.c ?? 0,
       );
+      // 2026-08-12: include rolling_summary (SessionStart warm-up injection and
+      // the console task list both need it; summary lives in task_context_state).
       const tasks = db
         .prepare(
-          `SELECT task_id, scope_type, scope_id, title, status, created_at, updated_at
-           FROM task_context
-           ORDER BY updated_at DESC
+          `SELECT t.task_id, t.scope_type, t.scope_id, t.title, t.status, t.created_at, t.updated_at,
+                  s.rolling_summary
+           FROM task_context t
+           LEFT JOIN task_context_state s ON s.task_id = t.task_id
+           ORDER BY t.updated_at DESC
            LIMIT ? OFFSET ?`,
         )
         .all(limit, offset) as Array<Record<string, unknown>>;
