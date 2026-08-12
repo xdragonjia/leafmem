@@ -5,6 +5,16 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.16] - 2026-08-12
+
+### Fixed
+- **翻页闪回顶部**：renderPage 渲染后恢复滚动位置（keepScroll 助手），
+  洞察原则/记忆浏览/任务/事件四处翻页均不再跳顶（浏览器实测 scroll 保持）。
+- **切页页码残留**：goPage 切走时重置 explorer/tasks/events/principles 四个
+  页码（与 recallQuery 同纪律），切回即第一页（实测第3页→切走→返回第1页）。
+- **事件时间列**：第一列改完整日期时间（2026-08-12 23:09），翻页可辨日。
+- **任务详情时间**：浮窗加「创建 · 更新」完整日期时间行。
+
 ## [0.3.15] - 2026-08-12
 
 ### Fixed

@@ -404,7 +404,14 @@ function setScope(v) {
 function goPage(p) {
   // 修复：离开页面即视为一次会话结束，召回检查的查询词不跨页残留——
   // 否则每次切回「召回检查」都会因残留的 recallQuery 自动重跑一次检索。
-  if (p !== state.page) state.recallQuery = '';
+  // 2026-08-12：列表页码同理——切走再切回应回到第一页，不残留旧翻页位置。
+  if (p !== state.page) {
+    state.recallQuery = '';
+    state.explorerPage = 0;
+    state.tasksPage = 0;
+    state.eventsPage = 0;
+    state.principlesPage = 0;
+  }
   state.page = p;
   chrome();
   state.connected ? renderPage() : renderConnect();
@@ -424,13 +431,20 @@ function jumpEvents(type) {
 function jumpInsights() { goPage('insights'); }
 function jumpTasks() { goPage('tasks'); }
 
-function renderPage() {
+async function renderPage() {
   const el = document.getElementById('page');
   closeDrawer();
   if (!state.connected) return renderConnect();
-  ({ dashboard: renderDashboard, explorer: renderExplorer, recall: renderRecall,
+  await ({ dashboard: renderDashboard, explorer: renderExplorer, recall: renderRecall,
      insights: renderInsights, events: renderEvents, graph: renderGraph, agents: renderAgents, docs: renderDocs, tasks: renderTasks })[state.page](el);
+  // 2026-08-12: pagination must not snap the viewport to the top.
+  if (state.__keepScroll != null) {
+    el.scrollTop = state.__keepScroll;
+    state.__keepScroll = null;
+  }
 }
+// Pagination helper: preserve the current scroll position across re-render.
+function keepScroll() { state.__keepScroll = document.getElementById('page').scrollTop; }
 
 function renderConnect() {
   document.getElementById('page').innerHTML = `
@@ -487,7 +501,7 @@ async function renderDashboard(el) {
           <div class="tl" style="padding:0">
             ${events.length ? events.map(ev => `
               <div class="tl-item">
-                <span class="tl-time">${fmtTime(ev.timestamp)}</span>
+                <span class="tl-time">${fmtDateTime(ev.timestamp)}</span>
                 <span class="tl-type"><span class="pill ${evPill(ev.type)}">${esc(ev.type)}</span></span>
                 <span class="tl-data">${ev.data ? Object.entries(ev.data).map(([k, v]) => `${esc(k)}: ${typeof v === 'string' ? esc(trunc(v, 22)) : v}`).join(' · ') : '—'}</span>
               </div>`).join('') : '<div class="empty"><div class="msg">暂无事件</div></div>'}
@@ -565,10 +579,10 @@ async function renderExplorer(el) {
         <button class="btn sm" onclick="exportMemories()">导出 JSON ↓</button>
         <div class="pager">
           <span class="info">第 ${state.explorerPage + 1}/${pages} 页</span>
-          <button class="btn sm" ${state.explorerPage === 0 ? 'disabled' : ''} onclick="state.explorerPage=0;renderPage()">«</button>
-          <button class="btn sm" ${state.explorerPage === 0 ? 'disabled' : ''} onclick="state.explorerPage--;renderPage()">‹</button>
-          <button class="btn sm" ${state.explorerPage >= pages - 1 ? 'disabled' : ''} onclick="state.explorerPage++;renderPage()">›</button>
-          <button class="btn sm" ${state.explorerPage >= pages - 1 ? 'disabled' : ''} onclick="state.explorerPage=${pages - 1};renderPage()">»</button>
+          <button class="btn sm" ${state.explorerPage === 0 ? 'disabled' : ''} onclick="keepScroll();state.explorerPage=0;renderPage()">«</button>
+          <button class="btn sm" ${state.explorerPage === 0 ? 'disabled' : ''} onclick="keepScroll();state.explorerPage--;renderPage()">‹</button>
+          <button class="btn sm" ${state.explorerPage >= pages - 1 ? 'disabled' : ''} onclick="keepScroll();state.explorerPage++;renderPage()">›</button>
+          <button class="btn sm" ${state.explorerPage >= pages - 1 ? 'disabled' : ''} onclick="keepScroll();state.explorerPage=${pages - 1};renderPage()">»</button>
         </div>
       </div>
       <div class="card plain">
@@ -738,10 +752,10 @@ async function renderInsights(el) {
           <div class="spacer"></div>
           <div class="pager">
             <span class="info">第 ${page + 1}/${pages} 页</span>
-            <button class="btn sm" ${page === 0 ? 'disabled' : ''} onclick="state.principlesPage=0;renderPage()">«</button>
-            <button class="btn sm" ${page === 0 ? 'disabled' : ''} onclick="state.principlesPage--;renderPage()">‹</button>
-            <button class="btn sm" ${page >= pages - 1 ? 'disabled' : ''} onclick="state.principlesPage++;renderPage()">›</button>
-            <button class="btn sm" ${page >= pages - 1 ? 'disabled' : ''} onclick="state.principlesPage=${pages - 1};renderPage()">»</button>
+            <button class="btn sm" ${page === 0 ? 'disabled' : ''} onclick="keepScroll();state.principlesPage=0;renderPage()">«</button>
+            <button class="btn sm" ${page === 0 ? 'disabled' : ''} onclick="keepScroll();state.principlesPage--;renderPage()">‹</button>
+            <button class="btn sm" ${page >= pages - 1 ? 'disabled' : ''} onclick="keepScroll();state.principlesPage++;renderPage()">›</button>
+            <button class="btn sm" ${page >= pages - 1 ? 'disabled' : ''} onclick="keepScroll();state.principlesPage=${pages - 1};renderPage()">»</button>
           </div>
         </div>
         ${pageItems.length ? pageItems.map(p => `
@@ -787,16 +801,16 @@ async function renderEvents(el) {
         <span class="mono-sm">${total} 条事件（审计日志保留最近 2000 条）· 第 ${page + 1}/${pages} 页</span>
         <div class="spacer"></div>
         <div class="pager">
-          <button class="btn sm" ${page === 0 ? 'disabled' : ''} onclick="state.eventsPage=0;renderPage()">«</button>
-          <button class="btn sm" ${page === 0 ? 'disabled' : ''} onclick="state.eventsPage--;renderPage()">‹</button>
-          <button class="btn sm" ${page >= pages - 1 ? 'disabled' : ''} onclick="state.eventsPage++;renderPage()">›</button>
-          <button class="btn sm" ${page >= pages - 1 ? 'disabled' : ''} onclick="state.eventsPage=${pages - 1};renderPage()">»</button>
+          <button class="btn sm" ${page === 0 ? 'disabled' : ''} onclick="keepScroll();state.eventsPage=0;renderPage()">«</button>
+          <button class="btn sm" ${page === 0 ? 'disabled' : ''} onclick="keepScroll();state.eventsPage--;renderPage()">‹</button>
+          <button class="btn sm" ${page >= pages - 1 ? 'disabled' : ''} onclick="keepScroll();state.eventsPage++;renderPage()">›</button>
+          <button class="btn sm" ${page >= pages - 1 ? 'disabled' : ''} onclick="keepScroll();state.eventsPage=${pages - 1};renderPage()">»</button>
         </div>
       </div>
       <div class="card plain"><div class="tl">
         ${events.length ? events.map(ev => `
           <div class="tl-item">
-            <span class="tl-time">${fmtTime(ev.timestamp)}</span>
+            <span class="tl-time">${fmtDateTime(ev.timestamp)}</span>
             <span class="tl-type"><span class="pill ${evPill(ev.type)}">${esc(ev.type)}</span></span>
             <span class="tl-data">${ev.data ? Object.entries(ev.data).map(([k, v]) => `${esc(k)}: ${typeof v === 'string' ? esc(trunc(v, 40)) : v}`).join(' · ') : '—'}</span>
           </div>`).join('') : '<div class="empty"><div class="msg">暂无事件记录</div></div>'}
@@ -1058,10 +1072,10 @@ async function renderTasks(el) {
         <div class="spacer"></div>
         <div class="pager">
           <span class="info">第 ${page + 1}/${pages} 页</span>
-          <button class="btn sm" ${page === 0 ? 'disabled' : ''} onclick="state.tasksPage=0;renderPage()">«</button>
-          <button class="btn sm" ${page === 0 ? 'disabled' : ''} onclick="state.tasksPage--;renderPage()">‹</button>
-          <button class="btn sm" ${page >= pages - 1 ? 'disabled' : ''} onclick="state.tasksPage++;renderPage()">›</button>
-          <button class="btn sm" ${page >= pages - 1 ? 'disabled' : ''} onclick="state.tasksPage=${pages - 1};renderPage()">»</button>
+          <button class="btn sm" ${page === 0 ? 'disabled' : ''} onclick="keepScroll();state.tasksPage=0;renderPage()">«</button>
+          <button class="btn sm" ${page === 0 ? 'disabled' : ''} onclick="keepScroll();state.tasksPage--;renderPage()">‹</button>
+          <button class="btn sm" ${page >= pages - 1 ? 'disabled' : ''} onclick="keepScroll();state.tasksPage++;renderPage()">›</button>
+          <button class="btn sm" ${page >= pages - 1 ? 'disabled' : ''} onclick="keepScroll();state.tasksPage=${pages - 1};renderPage()">»</button>
         </div>
       </div>
       <div class="card plain">
@@ -1100,7 +1114,8 @@ function openTaskDrawer(id) {
         <span class="pill ${t.status === 'completed' ? 'g' : 'b'}">${esc(t.status)}</span>
       </div></div>
       <div class="dw-sec"><div class="dw-lbl">任务</div><div class="dw-text">${esc(t.title)}</div>
-        <div class="mono-sm" style="margin-top:4px">${esc(t.task_id)}</div></div>
+        <div class="mono-sm" style="margin-top:4px">${esc(t.task_id)}</div>
+        <div class="mono-sm" style="margin-top:6px;color:var(--ink2)">创建 ${fmtDateTime(t.created_at)} · 更新 ${fmtDateTime(t.updated_at)}</div></div>
       ${d.rollingSummary ? `<div class="dw-sec"><div class="dw-lbl">Rolling Summary（进展摘要）</div><div class="dw-text">${esc(d.rollingSummary)}</div></div>` : '<div class="dw-sec"><div class="dw-lbl">Rolling Summary</div><div class="empty"><div class="msg">暂无</div></div></div>'}
       <div class="dw-sec"><div class="dw-lbl">Transcript 条目（${(d.entries || []).length}）</div>
         ${(d.entries || []).length ? d.entries.map(e => `
