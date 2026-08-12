@@ -5,6 +5,18 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.8] - 2026-08-12
+
+### Fixed
+- **启发式质量底线**：净化后的 transcript 残余「.」通过 preference 线索被存成
+  内容为「.」的记忆（KLXZ 自动化会话事故）。现 `inferMemoryProposals` 过滤无
+  实质内容的 proposal（去标点后≥6 字符才算实质）。
+- **门禁 block 指令点名未关闭任务**：0.3.6 门禁正确拉回 agent 后，agent 仍可能
+  做裸 task_append（无 rollingSummary/status），任务页保持 active 无 summary。
+  通用③④依赖 agent 自觉。现 block 时查询本会话有新进度
+  （updated_at≥sessionStartAt）且未 completed/archived 的任务，点名加入指令⑤，
+  要求逐条闭环。
+
 ## [0.3.7] - 2026-08-12
 
 ### Fixed
