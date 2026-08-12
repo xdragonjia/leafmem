@@ -371,7 +371,9 @@ async function listUnclosedActiveTasks(base, headers, agent, sessionStartAt) {
     .filter((t) => {
       if (!t || t.status === "completed" || t.status === "archived") return false;
       if (!Number.isFinite(start)) return false; // only name session-fresh tasks
-      return (t.updated_at ?? 0) >= start;
+      // updated_at is ISO 8601 UTC post-unification; legacy integer rows also parse.
+      const updated = Date.parse(t.updated_at ?? "") || Number(t.updated_at ?? NaN);
+      return Number.isFinite(updated) && updated >= start;
     })
     .map((t) => t.task_id)
     .filter((id) => typeof id === "string" && id)

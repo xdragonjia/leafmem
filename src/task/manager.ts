@@ -35,7 +35,7 @@ export class TaskContextManager {
     title: string;
     status?: TaskStatus;
   }): Promise<TaskContextRecord> {
-    const now = this.now().getTime();
+    const now = this.now().toISOString();
     return await this.options.store.upsertTask({
       taskId: input.taskId.trim(),
       scope: normalizeScope(input.scope),
@@ -71,7 +71,7 @@ export class TaskContextManager {
     if (!task) {
       return null;
     }
-    const createdAt = this.now().getTime();
+    const createdAt = this.now().toISOString();
     return await this.options.store.appendEntry({
       id: randomUUID(),
       taskId,
@@ -109,7 +109,7 @@ export class TaskContextManager {
     return await this.options.store.upsertTask({
       ...existing,
       status,
-      updatedAt: this.now().getTime(),
+      updatedAt: this.now().toISOString(),
     });
   }
 
@@ -122,7 +122,7 @@ export class TaskContextManager {
     return await this.options.store.putState({
       taskId: normalizedTaskId,
       rollingSummary: content,
-      updatedAt: this.now().getTime(),
+      updatedAt: this.now().toISOString(),
     });
   }
 
@@ -173,7 +173,7 @@ export class TaskContextManager {
     const stored = await this.options.store.putState({
       taskId,
       rollingSummary: result.ok ? clampChars(result.text, maxChars) : fallback,
-      updatedAt: this.now().getTime(),
+      updatedAt: this.now().toISOString(),
     });
     await this.options.store.markEntriesSummarized(taskId, pending.map((entry) => entry.id), stored.rollingSummary ?? "");
     return stored;
@@ -194,7 +194,7 @@ export class TaskContextManager {
       taskId,
       kind: "decision",
       content,
-      createdAt: this.now().getTime(),
+      createdAt: this.now().toISOString(),
       metadata: input.metadata,
     });
   }

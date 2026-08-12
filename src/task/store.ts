@@ -16,8 +16,8 @@ type TaskRow = {
   scope_id: string;
   title: string;
   status: string;
-  created_at: number;
-  updated_at: number;
+  created_at: string;
+  updated_at: string;
 };
 
 type TaskEntryRow = {
@@ -28,7 +28,7 @@ type TaskEntryRow = {
   content: string;
   summary: string | null;
   token_count: number;
-  created_at: number;
+  created_at: string;
   metadata_json: string | null;
   summarized: number;
 };
@@ -36,7 +36,7 @@ type TaskEntryRow = {
 type TaskStateRow = {
   task_id: string;
   rolling_summary: string | null;
-  updated_at: number;
+  updated_at: string;
 };
 
 type TaskBookmarkRow = {
@@ -44,7 +44,7 @@ type TaskBookmarkRow = {
   task_id: string;
   kind: string;
   content: string;
-  created_at: number;
+  created_at: string;
   metadata_json: string | null;
 };
 
@@ -314,7 +314,7 @@ export class InMemoryTaskContextStore implements TaskContextStore {
     const normalizedKey = scope ? scopeKey(normalizeScope(scope)) : null;
     return [...this.tasks.values()]
       .filter((task) => (normalizedKey ? scopeKey(task.scope) === normalizedKey : true))
-      .sort((left, right) => right.updatedAt - left.updatedAt || right.createdAt - left.createdAt)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))
       .map((task) => cloneTask(task)!)
       .filter(Boolean);
   }
@@ -400,7 +400,15 @@ export class InMemoryTaskContextStore implements TaskContextStore {
   }
 }
 
-function touchTaskContext(db: DatabaseSync, taskId: string, updatedAt: number): void {
+// 2026-08-12 storage unification: new rows persist ISO 8601 UTC strings;
+// pre-unification rows hold epoch ms. Read side normalizes both to ISO so the
+// API contract is uniformly "UTC ISO string".
+function isoOrEpoch(value: number | string): string {
+  if (typeof value === "number") return new Date(value).toISOString();
+  return value;
+}
+
+function touchTaskContext(db: DatabaseSync, taskId: string, updatedAt: string): void {
   db.prepare("UPDATE task_context SET updated_at = ? WHERE task_id = ?").run(updatedAt, taskId);
 }
 
@@ -415,8 +423,8 @@ function rowToTask(row: TaskRow): TaskContextRecord {
     scope: { type: row.scope_type as MemoryScope["type"], id: row.scope_id },
     title: row.title,
     status: normalizeTaskStatus(row.status),
-    createdAt: Number(row.created_at),
-    updatedAt: Number(row.updated_at),
+    createdAt: isoOrEpoch(row.created_at),
+    updatedAt: isoOrEpoch(row.updated_at),
   };
 }
 
@@ -429,7 +437,7 @@ function rowToEntry(row: TaskEntryRow): TaskContextEntry {
     content: row.content,
     summary: row.summary ?? undefined,
     tokenCount: Number(row.token_count),
-    createdAt: Number(row.created_at),
+    createdAt: isoOrEpoch(row.created_at),
     metadata: parseJsonObject(row.metadata_json),
     summarized: Number(row.summarized) > 0,
   };
@@ -439,7 +447,7 @@ function rowToState(row: TaskStateRow): TaskContextState {
   return {
     taskId: row.task_id,
     rollingSummary: row.rolling_summary ?? undefined,
-    updatedAt: Number(row.updated_at),
+    updatedAt: isoOrEpoch(row.updated_at),
   };
 }
 
@@ -449,7 +457,7 @@ function rowToBookmark(row: TaskBookmarkRow): TaskBookmark {
     taskId: row.task_id,
     kind: row.kind as TaskBookmarkKind,
     content: row.content,
-    createdAt: Number(row.created_at),
+    createdAt: isoOrEpoch(row.created_at),
     metadata: parseJsonObject(row.metadata_json),
   };
 }

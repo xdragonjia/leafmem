@@ -117,6 +117,17 @@ Default local MCP storage path: `~/.leafmem/memory.sqlite`
 
 The schema is created automatically on first connection. SQLite runs with WAL mode and foreign keys enabled.
 
+### Time Convention (2026-08-12)
+
+- **Storage & API**: all timestamps are ISO 8601 UTC strings (`...Z`), in every
+  table. Task-family tables were migrated from epoch-ms INTEGER by
+  `migrateTaskTimestampsToIso` (runs on every open, idempotent); readers also
+  normalize legacy integers defensively.
+- **Console display**: all rendering converts to Asia/Shanghai (Beijing time)
+  via `Intl.DateTimeFormat` with explicit `timeZone`, never the browser's local
+  zone and never raw UTC strings. One set of fmtDate/fmtTime/fmtDateTime
+  helpers is the single display entry point.
+
 ## Scope Model
 
 Memory records are scoped so recall can merge broad and narrow context without mixing unrelated projects.

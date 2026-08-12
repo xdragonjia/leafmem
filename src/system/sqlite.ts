@@ -19,6 +19,31 @@ export function openSqliteDatabase(filePath: string): DatabaseSync {
   return db;
 }
 
+// 2026-08-12 storage unification: task-family timestamps were epoch ms INTEGER
+// while the memory family used ISO 8601 UTC TEXT. New rows are ISO everywhere;
+// legacy integer rows are migrated on open (idempotent, cheap at this scale).
+// ORDER BY on these columns is only well-defined once the encoding is uniform.
+function migrateTaskTimestampsToIso(db: DatabaseSync): void {
+  const targets: Array<[string, string[]]> = [
+    ["task_context", ["created_at", "updated_at"]],
+    ["task_context_entries", ["created_at"]],
+    ["task_context_state", ["updated_at"]],
+    ["task_context_bookmarks", ["created_at"]],
+  ];
+  for (const [table, cols] of targets) {
+    for (const col of cols) {
+      const rows = db
+        .prepare(`SELECT rowid AS rid, ${col} AS v FROM ${table} WHERE typeof(${col}) = 'integer'`)
+        .all() as Array<{ rid: number; v: unknown }>;
+      for (const row of rows) {
+        db
+          .prepare(`UPDATE ${table} SET ${col} = ? WHERE rowid = ?`)
+          .run(new Date(Number(row.v)).toISOString(), row.rid);
+      }
+    }
+  }
+}
+
 export function ensureMemorySubsystemSchema(db: DatabaseSync): void {
   db.exec(
     "CREATE TABLE IF NOT EXISTS memory_items (" +
@@ -76,8 +101,8 @@ export function ensureMemorySubsystemSchema(db: DatabaseSync): void {
       "scope_id TEXT NOT NULL, " +
       "title TEXT NOT NULL, " +
       "status TEXT NOT NULL, " +
-      "created_at INTEGER NOT NULL, " +
-      "updated_at INTEGER NOT NULL" +
+      "created_at TEXT NOT NULL, " +
+      "updated_at TEXT NOT NULL" +
       ");",
   );
   db.exec(
@@ -89,7 +114,7 @@ export function ensureMemorySubsystemSchema(db: DatabaseSync): void {
       "content TEXT NOT NULL, " +
       "summary TEXT, " +
       "token_count INTEGER NOT NULL, " +
-      "created_at INTEGER NOT NULL, " +
+      "created_at TEXT NOT NULL, " +
       "metadata_json TEXT, " +
       "summarized INTEGER NOT NULL DEFAULT 0, " +
       "FOREIGN KEY (task_id) REFERENCES task_context(task_id) ON DELETE CASCADE" +
@@ -103,7 +128,7 @@ export function ensureMemorySubsystemSchema(db: DatabaseSync): void {
     "CREATE TABLE IF NOT EXISTS task_context_state (" +
       "task_id TEXT PRIMARY KEY, " +
       "rolling_summary TEXT, " +
-      "updated_at INTEGER NOT NULL, " +
+      "updated_at TEXT NOT NULL, " +
       "FOREIGN KEY (task_id) REFERENCES task_context(task_id) ON DELETE CASCADE" +
       ");",
   );
@@ -113,11 +138,13 @@ export function ensureMemorySubsystemSchema(db: DatabaseSync): void {
       "task_id TEXT NOT NULL, " +
       "kind TEXT NOT NULL, " +
       "content TEXT NOT NULL, " +
-      "created_at INTEGER NOT NULL, " +
+      "created_at TEXT NOT NULL, " +
       "metadata_json TEXT, " +
       "FOREIGN KEY (task_id) REFERENCES task_context(task_id) ON DELETE CASCADE" +
       ");",
   );
+
+  migrateTaskTimestampsToIso(db);
 
   db.exec(
     "CREATE TABLE IF NOT EXISTS entities (" +

@@ -133,3 +133,21 @@ test("task_append without status keeps existing task active (back-compat)", asyn
   const task = await memory.task.get("t5");
   assert.equal(task?.status, "active");
 });
+
+// 2026-08-12 storage unification: legacy epoch-ms task rows must read back as
+// ISO 8601 UTC strings (and new writes must be ISO), so the API contract is
+// uniformly UTC ISO regardless of which vintage of row is stored.
+test("task timestamps are ISO strings for legacy and new rows", async () => {
+  const memory = createLeafMem({ store: new InMemoryStore() });
+  await callTool(memory, {
+    action: "task_append",
+    taskId: "t6",
+    role: "assistant",
+    content: "timestamp contract check",
+    scopeType: "agent",
+    scopeId: "workbuddy",
+  });
+  const task = await memory.task.get("t6");
+  assert.match(task!.createdAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, task!.createdAt);
+  assert.match(task!.updatedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/, task!.updatedAt);
+});

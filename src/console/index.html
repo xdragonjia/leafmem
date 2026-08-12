@@ -634,8 +634,8 @@ async function openDrawer(id) {
         <span class="k">ID</span><span class="v">${esc(m.id)}</span>
         <span class="k">来源</span><span class="v">${esc(m.source || '—')}</span>
         <span class="k">重要性</span><span class="v">${m.importance != null ? Number(m.importance).toFixed(2) : '—'}</span>
-        <span class="k">创建</span><span class="v">${esc(m.createdAt || '—')}</span>
-        <span class="k">更新</span><span class="v">${esc(m.updatedAt || '—')}</span>
+        <span class="k">创建</span><span class="v">${fmtDateTime(m.createdAt)}</span>
+        <span class="k">更新</span><span class="v">${fmtDateTime(m.updatedAt)}</span>
         ${m.metadata?.originFile ? `<span class="k">原始文件</span><span class="v">${esc(m.metadata.originFile)}</span>` : ''}
       </div>
     </div>
@@ -1013,7 +1013,7 @@ async function renderTasks(el) {
                 <td>${esc(t.title)}</td>
                 <td><span class="pill p">${esc(t.scope_type)}:${esc(trunc(t.scope_id, 12))}</span></td>
                 <td><span class="pill ${t.status === 'completed' ? 'g' : 'b'}">${esc(t.status)}</span></td>
-                <td class="mono-sm">${timeAgo(new Date(t.updated_at).toISOString())}</td>
+                <td class="mono-sm">${timeAgo(t.updated_at)}</td>
                 <td class="mono-sm">详情 ⮕</td>
               </tr>`).join('') : '<tr><td colspan="6"><div class="empty"><div class="glyph">⌀</div><div class="msg">暂无任务上下文</div></div></td></tr>'}
           </tbody>
@@ -1044,7 +1044,7 @@ function openTaskDrawer(id) {
       <div class="dw-sec"><div class="dw-lbl">Transcript 条目（${(d.entries || []).length}）</div>
         ${(d.entries || []).length ? d.entries.map(e => `
           <div style="padding:7px 0;border-bottom:1px solid var(--line)">
-            <div class="mono-sm">${esc(e.role)} · ${timeAgo(new Date(e.created_at).toISOString())}</div>
+            <div class="mono-sm">${esc(e.role)} · ${timeAgo(e.created_at)}</div>
             <div style="font-size:12.5px;line-height:1.6;margin-top:3px">${esc(e.content)}</div>
           </div>`).join('') : '<div class="empty"><div class="msg">该任务未追加 transcript（由 task_append 显式写入）</div></div>'}
       </div>
@@ -1363,8 +1363,15 @@ function timeAgo(iso) {
   const h = Math.floor(m / 60); if (h < 24) return `${h} 小时前`;
   return `${Math.floor(h / 24)} 天前`;
 }
-function fmtDate(iso) { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : d.toISOString().slice(0, 10); }
-function fmtTime(iso) { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : d.toTimeString().slice(0, 5); }
+// 2026-08-12 display-layer unification: storage/API are ISO 8601 UTC; ALL
+// console rendering converts via Intl to Asia/Shanghai so every timestamp on
+// the page is Beijing time regardless of the browser's own timezone.
+const BEIJING_DT = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+const BEIJING_D = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' });
+const BEIJING_T = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false });
+function fmtDate(iso) { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : BEIJING_D.format(d); }
+function fmtTime(iso) { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : BEIJING_T.format(d); }
+function fmtDateTime(iso) { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : BEIJING_DT.format(d); }
 function toast(msg, isErr) {
   const w = document.getElementById('toasts');
   const t = document.createElement('div');

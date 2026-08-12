@@ -10,8 +10,9 @@ export type TaskContextRecord = {
   scope: MemoryScope;
   title: string;
   status: TaskStatus;
-  createdAt: number;
-  updatedAt: number;
+  // 2026-08-12: all persisted timestamps are ISO 8601 UTC strings.
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type TaskContextEntry = {
@@ -22,7 +23,7 @@ export type TaskContextEntry = {
   content: string;
   summary?: string;
   tokenCount: number;
-  createdAt: number;
+  createdAt: string;
   metadata?: Record<string, unknown>;
   summarized: boolean;
 };
@@ -30,7 +31,7 @@ export type TaskContextEntry = {
 export type TaskContextState = {
   taskId: string;
   rollingSummary?: string;
-  updatedAt: number;
+  updatedAt: string;
 };
 
 export type TaskBookmark = {
@@ -38,7 +39,7 @@ export type TaskBookmark = {
   taskId: string;
   kind: TaskBookmarkKind;
   content: string;
-  createdAt: number;
+  createdAt: string;
   metadata?: Record<string, unknown>;
 };
 
