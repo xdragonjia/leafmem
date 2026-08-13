@@ -5,6 +5,14 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.18] - 2026-08-13
+
+### Fixed
+- **画像卡间距**：dashboard 用户画像卡片加 margin-top 16px，与 grid2 卡片间距一致。
+- **详情浮窗半透明**：drawer 背景改 rgba(255,255,255,.92) 实色+毛玻璃模糊，不再透字。
+- **任务详情固定文字溢出**：底部说明文字 white-space normal+wrap，不再溢出屏幕。
+- **图谱视觉打磨**：节点发光+白描边、边按连接强度变粗、hover 浮窗圆角玻璃底。
+
 ## [0.3.17] - 2026-08-13
 
 ### Changed
