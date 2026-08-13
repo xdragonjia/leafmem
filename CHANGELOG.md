@@ -5,6 +5,15 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.17] - 2026-08-13
+
+### Changed
+- **console 全面换肤为玻璃拟态（V2-glass，用户选定）**：浅色渐变背景+光斑
+  装饰、毛玻璃侧边栏（backdrop-filter）、卡片/KPI 毛玻璃浮层+hover 抬起
+  动效。仅视觉层，页面结构/逻辑/条件渲染零改动。
+- **侧边栏加三组导航分类**：概览（仪表盘/记忆浏览/任务上下文/召回检查）、
+  治理（洞察/知识图谱/事件日志）、系统（宿主接入/帮助文档）。
+
 ## [0.3.16] - 2026-08-12
 
 ### Fixed

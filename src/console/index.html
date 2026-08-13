@@ -6,41 +6,46 @@
 <title>LeafMem Console</title>
 <style>
   :root{
-    --bg:#f5f7fa; --card:#ffffff; --ink:#1a2332; --ink2:#5b6675; --line:#e5e9f0;
-    --brand:#16a34a; --brand2:#15803d; --accent:#65a30d;
-    --ok:#16a34a; --warn:#d97706; --err:#dc2626; --purple:#7c3aed;
-    --radius:14px; --shadow:0 1px 3px rgba(16,24,40,.07),0 4px 14px rgba(16,24,40,.06);
+    --bg:#eef2f7; --card:rgba(255,255,255,.62); --ink:#1e293b; --ink2:#64748b; --line:rgba(255,255,255,.75);
+    --brand:#6366f1; --brand2:#4f46e5; --accent:#8b5cf6;
+    --ok:#10b981; --warn:#f59e0b; --err:#ef4444; --purple:#8b5cf6;
+    --radius:18px; --shadow:0 8px 24px rgba(30,41,59,.08);
     --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+    --glass-blur:saturate(180%) blur(18px);
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{-webkit-text-size-adjust:100%}
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
-    background:var(--bg);color:var(--ink);line-height:1.6;font-size:14px;display:flex;height:100vh;overflow:hidden}
+    background:linear-gradient(135deg,#e0e7ff 0%,#fdf4ff 30%,#dbeafe 60%,#f0fdf4 100%);background-attachment:fixed;
+    color:var(--ink);line-height:1.6;font-size:14px;display:flex;height:100vh;overflow:hidden}
+  body::before,body::after{content:"";position:fixed;border-radius:50%;filter:blur(90px);z-index:0;pointer-events:none}
+  body::before{width:520px;height:520px;background:rgba(99,102,241,.22);top:-120px;right:-80px}
+  body::after{width:480px;height:480px;background:rgba(16,185,129,.16);bottom:-140px;left:180px}
   a{color:var(--brand);text-decoration:none}
 
   /* ===== 侧边栏 ===== */
-  .side{width:216px;background:#0f1b2d;color:#cdd6e4;flex-shrink:0;display:flex;flex-direction:column;padding:18px 12px}
+  .side{width:228px;background:rgba(255,255,255,.42);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);border-right:1px solid rgba(255,255,255,.55);color:#475569;flex-shrink:0;display:flex;flex-direction:column;padding:20px 14px;position:relative;z-index:1}
   .side .logo{display:flex;align-items:center;gap:10px;padding:6px 10px 18px;border-bottom:1px solid rgba(255,255,255,.08)}
-  .side .logo .ic{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#16a34a,#65a30d);
-    display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 10px rgba(22,163,74,.4)}
+  .side .logo .ic{width:36px;height:36px;border-radius:11px;background:linear-gradient(135deg,#6366f1,#8b5cf6);
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 14px rgba(99,102,241,.4)}
   .side .logo .ic svg{width:18px;height:18px}
-  .side .logo .t b{color:#fff;font-size:15px;display:block;letter-spacing:.2px}
-  .side .logo .t span{font-size:11px;color:#8ea0bd}
+  .side .logo .t b{color:#0f172a;font-size:15px;display:block;letter-spacing:.2px}
+  .side .logo .t span{font-size:11px;color:#94a3b8}
   .nav{margin-top:14px;display:flex;flex-direction:column;gap:2px}
-  .nav .grp{font-size:11px;color:#6b7a96;padding:12px 12px 5px;letter-spacing:.08em}
+  .nav .grp{font-size:10.5px;color:#94a3b8;padding:12px 12px 5px;letter-spacing:.09em;font-weight:600}
   .nav button{display:flex;align-items:center;gap:11px;width:100%;padding:11px 12px;border:none;background:none;
-    color:#b7c3d8;border-radius:10px;cursor:pointer;font-size:14px;text-align:left;min-height:44px;transition:.15s;font-family:inherit}
+    color:#64748b;border-radius:12px;cursor:pointer;font-size:14px;text-align:left;min-height:42px;transition:all .18s;font-family:inherit}
   .nav button svg{width:18px;height:18px;flex-shrink:0;opacity:.85}
-  .nav button:hover{background:rgba(255,255,255,.06);color:#fff}
-  .nav button.on{background:linear-gradient(90deg,rgba(22,163,74,.32),rgba(101,163,13,.16));color:#fff;font-weight:600}
-  .side .foot{margin-top:auto;font-size:11px;color:#6b7a96;padding:10px;line-height:1.7}
+  .nav button:hover{background:rgba(255,255,255,.6);color:#1e293b;transform:translateX(2px)}
+  .nav button.on{background:rgba(255,255,255,.85);color:#6366f1;font-weight:700;box-shadow:0 4px 14px rgba(30,41,59,.08);border:1px solid rgba(255,255,255,.9)}
+  .side .foot{margin-top:auto;font-size:11px;color:#94a3b8;padding:10px;line-height:1.7;border-top:1px solid rgba(255,255,255,.6)}
   .side .foot .row{display:flex;align-items:center;gap:7px}
-  .dot{width:8px;height:8px;border-radius:50%;background:#44536b;flex-shrink:0}
-  .dot.on{background:#4ade80;box-shadow:0 0 8px rgba(74,222,128,.7)}
+  .dot{width:8px;height:8px;border-radius:50%;background:#cbd5e1;flex-shrink:0}
+  .dot.on{background:#10b981;box-shadow:0 0 8px rgba(16,185,129,.7)}
   .side .foot .mono{font-family:var(--mono);font-size:10.5px;color:#8ea0bd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   /* ===== 主区 ===== */
-  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative;z-index:1}
   .topbar{display:flex;align-items:center;gap:12px;padding:16px 26px 0;flex-wrap:wrap}
   .topbar h1{font-size:20px;letter-spacing:.3px}
   .topbar .meta{font-size:12.5px;color:var(--ink2)}
@@ -76,11 +81,12 @@
 
   /* ===== KPI ===== */
   .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
-  .kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+  .kpi{background:var(--card);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);border:1px solid rgba(255,255,255,.8);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);transition:transform .18s,box-shadow .18s}
   .kpi .lbl{font-size:12.5px;color:var(--ink2);display:flex;align-items:center;gap:6px}
   .kpi .val{font-size:27px;font-weight:700;margin-top:5px;letter-spacing:.5px;font-variant-numeric:tabular-nums}
   .kpi .sub{font-size:12px;color:var(--ink2);margin-top:2px}
   .kpi.c1 .val{color:var(--brand)} .kpi.c2 .val{color:var(--ok)} .kpi.c3 .val{color:var(--purple)} .kpi.c4 .val{color:var(--accent)}
+  .kpi:hover{transform:translateY(-3px);box-shadow:0 14px 34px rgba(30,41,59,.13)}
 
   .grid2{display:grid;grid-template-columns:1.5fr 1fr;gap:16px}
   .grid2 .card{margin-bottom:0}
@@ -229,6 +235,7 @@
     <div class="t"><b>LeafMem</b><span>记忆控制台</span></div>
   </div>
   <nav class="nav">
+    <div class="grp">概览</div>
     <button class="on" data-page="dashboard" onclick="goPage('dashboard')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
       仪表盘
@@ -241,6 +248,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
       任务上下文
     </button>
+    <div class="grp">治理</div>
     <button data-page="insights" onclick="goPage('insights')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></svg>
       洞察
@@ -257,6 +265,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
       召回检查
     </button>
+    <div class="grp">系统</div>
     <button data-page="agents" onclick="goPage('agents')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
       宿主接入
