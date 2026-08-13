@@ -163,7 +163,7 @@
   .agent-actions .btn{flex:1;justify-content:center}
 
   /* ===== 抽屉 ===== */
-  #drawer{position:fixed;top:0;right:0;bottom:0;width:500px;max-width:92vw;background:var(--card);
+  #drawer{position:fixed;top:0;right:0;bottom:0;width:500px;max-width:92vw;background:rgba(255,255,255,.92);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);
     border-left:1px solid var(--line);box-shadow:-8px 0 30px rgba(16,24,40,.12);transform:translateX(100%);
     transition:transform .22s ease;z-index:60;display:flex;flex-direction:column}
   #drawer.open{transform:translateX(0)}
@@ -518,13 +518,13 @@ async function renderDashboard(el) {
         </div>
       </div>
       ${gov?.profile?.present ? `
-      <div class="card" style="cursor:pointer" onclick="jumpInsights()" title="去洞察 · 用户画像">
+      <div class="card" style="cursor:pointer;margin-top:16px" onclick="jumpInsights()" title="去洞察 · 用户画像">
         <h3>用户画像 <span class="sub">更新于 ${timeAgo(gov.profile.updatedAt)} · ${(gov.profile.sections ?? []).length} 个分节 →</span></h3>
         ${gov.profile.preamble ? `<div class="dw-text" style="color:var(--ink2)">${esc(trunc(gov.profile.preamble, 400))}</div>` : ''}
         <div class="tags-row">${(gov.profile.sections ?? []).map(s => `<span class="pill b">${esc(s.title)}</span>`).join('')}</div>
         <div class="sub" style="font-size:12px;color:var(--ink2);margin-top:10px">完整内容见「洞察」→ 用户画像（点击跳转）</div>
       </div>` : `
-      <div class="card">
+      <div class="card" style="margin-top:16px">
         <h3>用户画像</h3>
         <div class="empty"><div class="msg">当前范围（${esc(scopeName(state.scope))}）暂无画像——去「洞察」用 reflect 生成，或切换范围</div></div>
       </div>`}
@@ -957,20 +957,30 @@ function startForceLayout(canvas, nodes, edges) {
       else if (hovered && (a === hovered || b === hovered)) { ctx.globalAlpha = 0.95; ctx.strokeStyle = '#16a34a'; ctx.lineWidth = 2; }
       else if (hovered) { ctx.globalAlpha = 0.08; ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1; }
       else { ctx.globalAlpha = 0.3; ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1; }
+      const w = 0.6 + 1.4 * Math.min(1, (degree[a._i] + degree[b._i]) / 10);
+      ctx.lineWidth = w;
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
     ctx.globalAlpha = 1;
     // 节点
     for (const n of nodes) {
       const isHl = hovered && neighbors?.has(n);
+      // 柔和发光（玻璃拟态质感）
+      ctx.shadowColor = KIND_COLOR[n.kind] || '#64748b';
+      ctx.shadowBlur = isHl || n === hovered || n === selected ? 18 : 8;
       ctx.beginPath();
       ctx.arc(n.x, n.y, radius(n), 0, Math.PI * 2);
       ctx.fillStyle = KIND_COLOR[n.kind] || '#64748b';
       ctx.globalAlpha = !visible(n) ? 0.07 : hovered ? (isHl ? 1 : 0.15) : 0.92;
       ctx.fill();
+      ctx.shadowBlur = 0;
       ctx.globalAlpha = 1;
-      if (n === hovered || n === selected) { ctx.strokeStyle = '#1a2332'; ctx.lineWidth = 2.5; ctx.stroke(); }
-      else if (isHl) { ctx.strokeStyle = '#16a34a'; ctx.lineWidth = 1.5; ctx.stroke(); }
+      // 白描边增强可读性（在光斑背景上节点更清晰）
+      ctx.strokeStyle = 'rgba(255,255,255,.9)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      if (n === hovered || n === selected) { ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 2.5; ctx.stroke(); }
+      else if (isHl) { ctx.strokeStyle = '#6366f1'; ctx.lineWidth = 2; ctx.stroke(); }
     }
     // 标签：全显；hover 邻接/选中加深，其余按态淡化
     ctx.font = '10px -apple-system, "PingFang SC", sans-serif';
@@ -989,11 +999,11 @@ function startForceLayout(canvas, nodes, edges) {
         return '— ' + e.rel + ' → ' + other.name;
       });
       ctx.textAlign = 'left';
-      ctx.fillStyle = 'rgba(255,255,255,.97)';
       const bw = 240, bh = 26 + lines.length * 16;
       const bx = Math.min(mouseX + 14, W() - bw - 8), by = Math.min(mouseY + 10, H() - bh - 8);
-      ctx.fillRect(bx, by, bw, bh);
-      ctx.strokeStyle = '#e5e9f0'; ctx.strokeRect(bx, by, bw, bh);
+      ctx.fillStyle = 'rgba(255,255,255,.88)';
+      ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 10); ctx.fill();
+      ctx.strokeStyle = 'rgba(99,102,241,.35)'; ctx.lineWidth = 1; ctx.stroke();
       ctx.fillStyle = '#1a2332';
       ctx.font = 'bold 12px -apple-system, "PingFang SC", sans-serif';
       ctx.fillText(hovered.name + '（' + hovered.kind + ' · ' + hovered.link_count + ' 条记忆链接）', bx + 10, by + 17);
@@ -1136,7 +1146,7 @@ function openTaskDrawer(id) {
       <div class="dw-sec" style="margin-top:14px">
         <button class="btn sm danger" onclick="deleteTask('${esc(t.task_id)}')">删除该任务上下文</button>
       </div>
-      <div class="mono-sm" style="margin-top:10px">任务上下文是 Agent 工作态，不是记忆类型；长期知识经 commit 沉淀为记忆记录。删除仅清除工作态（含 transcript/摘要），不影响记忆记录。</div>`;
+      <div class="mono-sm" style="margin-top:10px;white-space:normal;overflow-wrap:anywhere">任务上下文是 Agent 工作态，不是记忆类型；长期知识经 commit 沉淀为记忆记录。删除仅清除工作态（含 transcript/摘要），不影响记忆记录。</div>`;
   }).catch(err => { body.innerHTML = `<div class="empty"><div class="msg">${esc(err.message)}</div></div>`; });
 }
 
