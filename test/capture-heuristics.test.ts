@@ -55,3 +55,31 @@ test("quality floor does not block real preferences", () => {
   });
   assert.equal(proposals.filter((p) => p.kind === "preference").length, 1);
 });
+
+// 2026-08-14 identity rule v3 (structural positive test). Four real incidents:
+// the \b-laden blacklist never fired between CJK chars, and any bare 我是
+// anywhere — even quoted as a reference — triggered a store.
+const INCIDENT_20260814 = [
+  "刚才我是在班车上，所以连接的我的手机热点，现在我到家了，接入家里的网，昆仑小智直接就恢复正常了，你通过今天这么长时间的排查，有什么收获呢？",
+  "刚发现，又把一条我发给你的话写成记忆了，是因为这句话里有“我是”这两个字吗？不能只根据这两个字识别呀，这个问题之前就出现过了",
+  "问题还没有解决呢呀，而且刚才那句话又被记录进去了",
+];
+
+test("identity v3: quoted 我是 and transient-state 我是 store nothing (2026-08-14 incidents)", () => {
+  for (const quote of INCIDENT_20260814) {
+    const proposals = inferMemoryProposals({ userMessage: quote, assistantMessage: "" });
+    assert.equal(proposals.filter((p) => p.kind === "identity").length, 0, quote.slice(0, 30));
+  }
+});
+
+test("identity v3: real self-introductions still fire (start-cue, declarative, unquoted)", () => {
+  const good = [
+    "我是贾小龙，昆仑数智巡察办副主任",
+    "你好，我是小虾的同事老王",
+    "My name is Xiaolong, I work at Kunlun",
+  ];
+  for (const quote of good) {
+    const proposals = inferMemoryProposals({ userMessage: quote, assistantMessage: "" });
+    assert.ok(proposals.some((p) => p.kind === "identity"), quote.slice(0, 20));
+  }
+});

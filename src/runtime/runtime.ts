@@ -269,16 +269,25 @@ export function inferMemoryProposals(turn: MemoryTurnInput): CapturedMemoryPropo
     });
   }
 
-  // 2026-08-11 incident: "我是通过 proxifier 访问 github 的，…删掉三行" matched
-  // the bare 我是 cue and the whole instruction was stored as an identity
-  // memory. 我是+方式/动作短语 ("我是通过/用/在/正在…") is an action
-  // description, not an identity declaration — exclude it so the identity
-  // branch only fires on real self-introductions (我是+姓名或职务的自我介绍).
-  const identityCue = /(my name is|i am |我是|我的名字是)/iu.test(text);
+  // 2026-08-14 v3 identity rule (four incidents: 0.3.5, 08-14 17:43/22:26/22:28).
+  // The old design — bare 我是 cue anywhere + a prefix blacklist — is provably
+  // fragile: (a) the blacklist regexes carried a trailing \b which NEVER matches
+  // between CJK chars in JS regex, so "我是通过/在…" was never excluded; (b) any
+  // sentence that merely *quotes* the two chars ("…里有"我是"这两个字吗？") or
+  // describes a transient state ("刚才我是在班车上") still fired the cue.
+  // New design flips to a STRUCTURAL positive test: an identity declaration puts
+  // the cue at the sentence start (optional greeting first), is a short
+  // declarative (no question mark), and the cue is not wrapped in quotes.
+  // Action-verb exclusion stays as a second guard, this time without \b.
+  const quotedCue = /["“'']我是["”'']|["“'']i am["”'']/iu.test(text);
+  const isQuestion = /[？?]/u.test(text) || /[吗呢吧呀]\s*$/u.test(text);
+  const cueAtStart =
+    /^(?:你好|您好|hi|hello|hey)[,，!！\s]*(?:我是|我的名字是|my name is|i am\b)/iu.test(text) ||
+    /^(?:我是|我的名字是|my name is|i am\b)/iu.test(text);
   const actionPhrasing =
-    /我是(?:通过|用|在|正在|从|去|想|要|来|靠|按|按照)\b/u.test(text) ||
+    /我是(?:通过|用|在|正在|从|去|想|要|来|靠|按|按照|先|刚|因为|为了|觉得|认为)/u.test(text) ||
     /\bi am (?:going to|trying to|using|working|living|staying|accessing)\b/iu.test(text);
-  if (identityCue && !actionPhrasing) {
+  if (cueAtStart && !actionPhrasing && !isQuestion && !quotedCue && text.length <= 100) {
     const candidate = normalizeMemoryCandidate(text);
     proposals.push({
       kind: "identity",
