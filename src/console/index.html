@@ -72,7 +72,12 @@
 
   /* ===== 卡片 ===== */
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
-    padding:18px 20px;margin-bottom:16px}
+    padding:18px 20px;margin-bottom:16px;overflow:clip}
+  /* 2026-08-14：grid/flex 子项 min-width 默认 auto，长内容会把列顶出视口且不随缩放回收 */
+  .grid2{min-width:0}
+  .grid2>.card{min-width:0}
+  .tl-item{min-width:0}
+  .tl-item>.tl-time,.tl-item>.tl-type{flex-shrink:0}
   .card h3{font-size:15px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
   .card h3 .sub{font-size:12px;color:var(--ink2);font-weight:400}
   .card.plain{padding:0}
@@ -133,7 +138,7 @@
   .tl-item:last-child{border-bottom:none}
   .tl-time{font-family:var(--mono);font-size:11px;color:#94a3b8;width:64px;flex-shrink:0}
   .tl-type{width:96px;flex-shrink:0}
-  .tl-data{font-family:var(--mono);font-size:11.5px;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .tl-data{font-family:var(--mono);font-size:11.5px;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 
   /* ===== 召回 ===== */
   .hit{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 18px;margin-bottom:12px}
