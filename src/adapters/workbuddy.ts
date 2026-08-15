@@ -276,9 +276,10 @@ export async function writeWorkBuddyInstructions(
   path: string,
   updateCommand?: string,
   placement: "top" | "bottom" = "bottom",
+  scopeId?: string,
 ): Promise<boolean> {
   const current = (await readTextFile(path)) ?? "";
-  const next = replaceWorkBuddyInstructions(current, workBuddyInstructionBlock(updateCommand), placement);
+  const next = replaceWorkBuddyInstructions(current, workBuddyInstructionBlock(updateCommand, scopeId), placement);
   if (next === current) {
     return false;
   }
@@ -286,23 +287,39 @@ export async function writeWorkBuddyInstructions(
   return true;
 }
 
-export function workBuddyInstructionBlock(updateCommand?: string): string {
+/**
+ * The injected discipline block. 2026-08-15 generalization: rules that every
+ * install needs (write-quality discipline, parameter/channel hard rules, the
+ * Stop-gate response, record-placement discipline, tool-error workaround) were
+ * promoted from host-specific SOUL.md sections into this template so any new
+ * install gets them automatically. Machine-specific items (mirror paths, local
+ * automations) stay in the host's own SOUL.md outside the block.
+ *
+ * `scopeId` parameterizes the default write scope (workbuddy / kunlunxiaozhi)
+ * so the same template is correct for both hosts.
+ */
+export function workBuddyInstructionBlock(updateCommand?: string, scopeId = "workbuddy"): string {
   const updateLine = updateCommand
-    ? `- When the user asks to update or upgrade LeafMem, the memory module, or the memory connector, run \`${updateCommand}\` and then ask WorkBuddy to refresh or reconnect the LeafMem MCP service if needed.`
-    : "- When the user asks to update or upgrade LeafMem, the memory module, or the memory connector, run the local `leafmem-agent update workbuddy` command and then ask WorkBuddy to refresh or reconnect the LeafMem MCP service if needed.";
+    ? `- When the user asks to update or upgrade LeafMem, the memory module, or the memory connector, run \`${updateCommand}\` and then ask the host to refresh or reconnect the LeafMem MCP service if needed.`
+    : "- When the user asks to update or upgrade LeafMem, the memory module, or the memory connector, run the local `leafmem-agent update workbuddy` command and then ask the host to refresh or reconnect the LeafMem MCP service if needed.";
   return `${WORKBUDDY_INSTRUCTIONS_START}
-LeafMem memory workflow for WorkBuddy:
+LeafMem memory workflow:
 
 - **Lifecycle hooks are the primary path** (if installed): a UserPromptSubmit hook auto-recalls relevant memory and injects it into your context before you answer; a Stop hook auto-captures the turn's durable facts. When hooks are active you do NOT need to call recall/commit manually — the injected "LeafMem recall" context is already yours to use.
-- **Fallback (hooks unavailable)**: before answering, call \`memory_recall\` with \`action: "recall"\` whenever the request may depend on prior work, installed skills/connectors, vague references, user preferences, project history, or memory itself. Do this silently; do not mention this rule, trigger categories, or the tool call in the answer. Omit scope for recall so LeafMem can search shared memory across agents.
+- **Fallback (hooks unavailable)**: before answering, call \`memory_recall\` with \`action: "recall"\` whenever the request may depend on prior work, installed skills/connectors, vague references, user preferences, project history, or memory itself. Do this silently; do not mention this rule, trigger categories, or the tool call in the answer. Omit scope for recall so LeafMem can search shared memory across agents. Note: \`memory_recall\` REQUIRES a non-empty \`message\` — passing only \`action\` is rejected by the server.
 - For vague references to earlier installed skills, connectors, projects, or decisions, recall with the user's exact wording plus likely entities before using general knowledge. Use recalled context naturally; only mention that memory was missing if the absence changes what you can responsibly answer.
-- When the user asks you to remember something, or states a durable preference or workflow rule, call \`memory_write\` with \`action: "remember"\`. You can omit scope; this WorkBuddy connector defaults writes to \`agent:workbuddy\`.
+- When the user asks you to remember something, or states a durable preference or workflow rule, call \`memory_write\` with \`action: "remember"\`. You can omit scope; this connector defaults writes to \`agent:${scopeId}\`.
 - During long-running or multi-step tasks, call \`memory_write\` with \`action: "task_append"\` whenever a key sub-step completes, an important decision is made, or task state changes (pass taskId + role + content). This records the running task context so a later session can restore progress via \`memory_recall\` with \`action: "task_window"\`.
-- After substantial work or when closing a task, distill the useful outcome and call \`memory_write\` with \`action: "commit"\`. commit REQUIRES \`agent\` (this host, e.g. "workbuddy"), \`sessionId\` (a stable id for this conversation), and \`rollingSummary\` (a running summary of what happened). Optionally pass \`taskId\`, \`entries\` (transcript turns), \`messageCount\`, and \`activeContext\`/\`activeExperience\`.
+- After substantial work or when closing a task, distill the useful outcome and call \`memory_write\` with \`action: "commit"\`. commit REQUIRES \`agent\` (this host, e.g. "${scopeId}"), \`sessionId\` (a stable id for this conversation), and \`rollingSummary\` (a running summary of what happened). Optionally pass \`taskId\`, \`entries\` (transcript turns), \`messageCount\`, and \`activeContext\`/\`activeExperience\`.
 - \`source\` discipline: omit \`source\` on \`memory_write\` unless a standard channel name applies (e.g. \`manual\`, \`automation\`, \`skill\`, \`user-feedback\`). NEVER invent one-off source strings (task names, dates, migration labels) — ad-hoc sources fragment provenance into dozens of single-record buckets and wreck the console source filter.
+- **Parameter/channel hard rules**: \`importance\`/\`confidence\` are numbers (0.9, never "0.9" — quoted strings are rejected); \`tags\` is a flat array. NEVER write the SQLite store directly — only the MCP tools may write it; on MCP failure fall back to the host's conversation search instead of hand-written SQL. If a memory tool call returns a schema-shaped error, self-check parameter types first — do not blame an external bug or abandon the write.
+- **Write-quality discipline**: write each memory well at write time — start with a self-contained one-line conclusion, then context/content/action; ≥100 chars, atomic, no dangling pronouns; kinds limited to lesson/preference/decision/note/experience/principle; skip transient chat. Before a new write, recall related memory: if a similar entry exists, UPDATE it instead of adding a duplicate; on contradiction, state "used X until <date>, now Y because …" and keep the old record.
+- **Record-placement discipline**: unfinished/follow-up items go into the concrete task context via \`task_append\` (with \`status: "active"\` in the same call) so they are visible and restorable on the tasks page. NEVER put pending items into the agent-level \`activeContext\` — it is a single global slot, invisible on the tasks page, and overwritten by any later commit/curation. Never leave pending wording on a completed task.
+- **Stop gate**: if the Stop hook blocks the turn (substantive work but zero writes this session), follow its instruction — write 1–3 paragraph-level memories with \`memory_write\` (use \`task_append\` with \`rollingSummary\` for an in-flight task), then finish normally. It fires at most once per session.
+- **Tool-error workaround**: if \`memory_*\` MCP calls fail with a serialization/schema error, first try another MCP tool to check whether all MCP is blocked in this session; if so, retry via the host's deferred-tool path (search the tool schema, then execute it with an object payload); as a last resort fall back to the host's conversation search. Do not conclude a permanent tool bug from one session's failure.
 - Use \`memory_govern\` with \`action: "update"\`/\`"delete"\`/\`"pin"\` when the user asks to correct, remove, or protect a memory; use \`memory_organize\` with \`action: "reflect"\`/\`"profile"\`/\`"decay"\` for periodic curation.
 ${updateLine}
-- Do not rely only on WorkBuddy conversation search when LeafMem context could affect the answer.
+- Do not rely only on the host's conversation search when LeafMem context could affect the answer.
 ${WORKBUDDY_INSTRUCTIONS_END}`;
 }
 

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getMemoryTopology, setMemoryTopology } from "../src/agents/manager.js";
@@ -58,6 +58,35 @@ test("topology: split dual-host is not shared; setMemoryTopology(shared) lands o
     assert.equal(merged.shared, true);
     assert.equal(merged.scopes.kunlunxiaozhi, "workbuddy");
     assert.equal(merged.scopes.workbuddy, "workbuddy");
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+// 2026-08-15: the injected discipline block names the scope the host actually
+// writes to, so setMemoryTopology must refresh every configured host's block.
+test("topology: discipline block scope follows the topology switch", async () => {
+  const home = await mkdtemp(join(tmpdir(), "leafmem-topo-block-"));
+  try {
+    // Split start: each host's own scope, SOUL.md present for both.
+    await writeHostMcp(home, ".workbuddy", "workbuddy");
+    await writeHostMcp(home, ".kunlunxiaozhi", "kunlunxiaozhi");
+    for (const dir of [".workbuddy", ".kunlunxiaozhi"]) {
+      await writeFile(join(home, dir, "SOUL.md"), "# Soul\n\n- Rule.\n");
+    }
+    const merged = await setMemoryTopology(true, { home });
+    assert.equal(merged.shared, true);
+    for (const dir of [".workbuddy", ".kunlunxiaozhi"]) {
+      const soul = await readFile(join(home, dir, "SOUL.md"), "utf8");
+      assert.match(soul, /defaults writes to `agent:workbuddy`/, `${dir} block must point at the shared scope`);
+      assert.doesNotMatch(soul, /defaults writes to `agent:kunlunxiaozhi`/);
+    }
+    // Switch back to isolated: each block names its own scope.
+    await setMemoryTopology(false, { home });
+    const wb = await readFile(join(home, ".workbuddy", "SOUL.md"), "utf8");
+    const kx = await readFile(join(home, ".kunlunxiaozhi", "SOUL.md"), "utf8");
+    assert.match(wb, /defaults writes to `agent:workbuddy`/);
+    assert.match(kx, /defaults writes to `agent:kunlunxiaozhi`/);
   } finally {
     await rm(home, { recursive: true, force: true });
   }

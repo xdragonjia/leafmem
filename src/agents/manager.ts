@@ -244,7 +244,26 @@ export async function installInstructions(
   if (isWorkBuddyFamily(agent)) {
     // Pin the memory workflow to the TOP of SOUL.md — the host loads SOUL.md
     // first, so the workflow outranks every other behavioral rule.
-    const changed = await writeWorkBuddyInstructions(path, workBuddyUpdateCommand(agent), "top");
+    // 2026-08-15: the discipline block must name the scope this host ACTUALLY
+    // writes to. Shared topology → agent:workbuddy for BOTH hosts; isolated →
+    // each host's own scope. Read the effective scope back from mcp.json
+    // (written just above by installMcp, honoring the topology) — same
+    // strategy the hook installer uses.
+    let effectiveScopeId = AGENTS[agent].scopeId;
+    try {
+      const cfg = await readJsonObject(AGENTS[agent].configPath(options.home));
+      const env = asObject(asObject(asObject(cfg.mcpServers).leafmem).env);
+      effectiveScopeId = stringValue(env.LEAFMEM_SCOPE_ID) ?? effectiveScopeId;
+    } catch {
+      // mcp.json unreadable (e.g. --skip-mcp on a fresh host): fall back to
+      // the host's own scope.
+    }
+    const changed = await writeWorkBuddyInstructions(
+      path,
+      workBuddyUpdateCommand(agent),
+      "top",
+      effectiveScopeId,
+    );
     // Migration (0.3.0): pre-0.3.0 installs wrote the discipline block into
     // MEMORY.md. Now that it lives in SOUL.md, strip any stale block from
     // MEMORY.md so the two files never disagree.
@@ -654,7 +673,19 @@ export async function setMemoryTopology(
     cfg.mcpServers = servers;
     await writeJson(path, cfg);
   }
-  return await getMemoryTopology(options);
+  // 2026-08-15: the discipline block names the scope the host writes to, so a
+  // topology switch must refresh every configured host's instructions block
+  // (installInstructions re-reads the effective scope from mcp.json).
+  const topology = await getMemoryTopology(options);
+  for (const agent of AGENT_IDS) {
+    if (topology.scopes[agent] === undefined) continue; // host not configured
+    try {
+      await installInstructions(agent, options);
+    } catch {
+      // Instruction refresh is best-effort; the next install/update reconciles.
+    }
+  }
+  return topology;
 }
 
 function execFileAsync(
