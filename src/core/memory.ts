@@ -196,7 +196,7 @@ export class LeafMem {
   }
 
   async remember(input: MemoryInput): Promise<MemoryRecord> {
-    return this.enqueue(async () => {
+    const record = await this.enqueue(async () => {
       const nowIso = this.now().toISOString();
       const records = await this.store.load();
 
@@ -340,6 +340,38 @@ export class LeafMem {
       await this.syncDerivedState(record);
       return record;
     });
+    await this.markReflectIfPrinciple(input);
+    return record;
+  }
+
+  /**
+   * 2026-08-16 lastReflectAt unification. Distillation has TWO channels: the
+   * built-in reflect() (needs a paid inferencer) and host-driven maintenance
+   * skills that write principles via memory_write (kind=principle +
+   * metadata.reflectedAt). Only the built-in path refreshed the marker, so the
+   * weekly observer saw a frozen timestamp although distillation kept working
+   * (real incident: last_reflect_at stuck at 08-07 for 9 days). Any principle
+   * carrying a reflectedAt mark now refreshes the active-context marker, so
+   * the observed field matches the actual distillation channel. Idempotent —
+   * reflect() also writes the marker itself after its loop.
+   */
+  private async markReflectIfPrinciple(input: MemoryInput): Promise<void> {
+    if (input.kind !== "principle") return;
+    const reflectedAt = (input.metadata ?? {}).reflectedAt;
+    if (typeof reflectedAt !== "string" || !reflectedAt.trim()) return;
+    const scope = normalizeScope(input.scope);
+    try {
+      const doc = await this.active.read("context", scope);
+      const meta = (doc?.metadata ?? {}) as Record<string, unknown>;
+      await this.active.write({
+        kind: "context",
+        scope,
+        content: doc?.content ?? "",
+        metadata: { ...meta, lastReflectAt: reflectedAt },
+      });
+    } catch {
+      // Marker refresh is best-effort; a failure must not break the write.
+    }
   }
 
   async update(id: string, patch: Partial<MemoryInput>): Promise<MemoryRecord | null> {

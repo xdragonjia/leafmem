@@ -97,7 +97,7 @@ description: >
       <description>把同主题 lesson 聚类蒸馏为 principle，替代付费 inferencer 的 reflect</description>
       <action>memory_recall(action="search", kind="lesson") 拉近 30 天 lesson；按 tags 聚类 ≥3 条同主题</action>
       <action>宿主模型归纳共性规律为 1 条 principle，证据 id 存入 metadata.supports</action>
-      <action>memory_write(action="remember", kind="principle", importance=0.85, tags=[主题,principle,reflected])</action>
+      <action>memory_write(action="remember", kind="principle", importance=0.85, tags=[主题,principle,reflected], metadata={supports:[证据id列表], reflectedAt:当前ISO时间, reflectTag:主题, lastRefreshedAt:当前ISO时间}) —— 🔴 reflectedAt 必传：引擎据此刷新 active context 的 lastReflectAt 标记（0.3.19+），周度观察才能看到蒸馏时间戳随本通道刷新</action>
       <throttle>同主题 6 天内已蒸馏（查已有 principle 的 reflectedAt）则跳过</throttle>
     </step>
 
