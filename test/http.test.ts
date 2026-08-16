@@ -98,12 +98,13 @@ describe("LeafMem HTTP API", () => {
     projectId = project.id;
 
     // Use random port
-    const port = 10000 + Math.floor(Math.random() * 50000);
+    // 2026-08-16: port 0 lets the OS assign a free port — random fixed ports
+    // collided under parallel test files (flaky export.count assertion in CI).
     const server = createLeafMemServer({
       platform,
       projects,
       events,
-      port,
+      port: 0,
     });
     await server.listen();
     baseUrl = server.address;

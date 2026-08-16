@@ -126,11 +126,23 @@ export function createLeafMemServer(options: LeafMemServerOptions) {
     }
   });
 
+  // 2026-08-16 flaky CI fix: tests that picked a random fixed port collided
+  // under the parallel test runner (two files drew the same port; macOS
+  // SO_REUSEADDR lets both binds succeed, requests get round-robined to the
+  // wrong server, and assertions hit an empty store). Support port 0 → OS
+  // assigns a free port, and `address` reports the ACTUAL bound port.
+  let boundPort = port;
   return {
     server,
     listen() {
       return new Promise<void>((resolve) => {
-        server.listen(port, host, () => resolve());
+        server.listen(port, host, () => {
+          const addr = server.address();
+          if (addr && typeof addr === "object") {
+            boundPort = addr.port;
+          }
+          resolve();
+        });
       });
     },
     close() {
@@ -139,7 +151,7 @@ export function createLeafMemServer(options: LeafMemServerOptions) {
       });
     },
     get address() {
-      return `http://${host}:${port}`;
+      return `http://${host}:${boundPort}`;
     },
   };
 }
