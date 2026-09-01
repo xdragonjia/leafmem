@@ -6,8 +6,8 @@
   <string>com.leafmem.agent</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/dragon/.workbuddy/binaries/node/versions/22.22.2/bin/node</string>
-    <string>/Users/dragon/projects/leafmem/dist/bin/leafmem-agent.js</string>
+    <string>__LEAFMEM_REPO__/ops/launchd/leafmem-node-launcher.sh</string>
+    <string>__LEAFMEM_REPO__/dist/bin/leafmem-agent.js</string>
     <string>serve</string>
     <string>--config</string>
     <string>/Users/dragon/.leafmem/agent-service.json</string>

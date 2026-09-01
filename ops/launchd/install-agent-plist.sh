@@ -5,6 +5,7 @@
 set -euo pipefail
 
 TEMPLATE="$(dirname "$0")/com.leafmem.agent.plist.template"
+REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 TARGET="$HOME/Library/LaunchAgents/com.leafmem.agent.plist"
 MCP_JSON="$HOME/.workbuddy/mcp.json"
 
@@ -15,7 +16,8 @@ if [[ -z "$KEY" ]]; then
 fi
 
 launchctl bootout "gui/$(id -u)/com.leafmem.agent" 2>/dev/null || true
-sed "s/__SILICONFLOW_API_KEY__/$KEY/" "$TEMPLATE" > "$TARGET"
+chmod +x "$REPO/ops/launchd/leafmem-node-launcher.sh"
+sed -e "s|__SILICONFLOW_API_KEY__|$KEY|" -e "s|__LEAFMEM_REPO__|$REPO|g" "$TEMPLATE" > "$TARGET"
 chmod 600 "$TARGET"
 launchctl bootstrap "gui/$(id -u)" "$TARGET"
 sleep 3
