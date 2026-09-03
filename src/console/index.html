@@ -1066,7 +1066,7 @@ async function showEntityDetail(node) {
       ${rels.length ? '<div class="dw-lbl">实体关联</div>' + rels.map(r => `
         <div class="bar-row" style="margin-bottom:6px">
           <span class="lbl" style="width:110px">${esc(r.dir === 'out' ? r.relation : '← ' + r.relation)}</span>
-          <span style="font-size:12.5px">${esc(r.other_name)} <span class="mono-sm">(${esc(r.other_kind)})</span></span>
+          <span style="font-size:12.5px">${esc(r.other_name)} <span class="mono-sm">(${esc(r.other_kind)})</span>${(r.co_count ?? 1) > 1 ? ` <span class="mono-sm" style="color:#16a34a;font-weight:600">×${r.co_count}</span>` : ''}</span>
         </div>`).join('') : ''}
       ${mems.length ? '<div class="dw-lbl" style="margin-top:12px">关联记忆（' + mems.length + '）</div>' + mems.slice(0, 10).map(m => `
         <div style="padding:8px 0;border-bottom:1px solid var(--line)">

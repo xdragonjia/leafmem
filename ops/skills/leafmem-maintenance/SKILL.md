@@ -143,7 +143,7 @@ description: >
       <trigger>步骤 10.f 发现 entity_count 连续 2 周零增长而记忆在增长；或每月例行一次</trigger>
       <action>扫描近 30 天记忆中高频出现的专名（新项目/新工具/新产品名），与 ~/.leafmem/entity-vocab.json 比对</action>
       <action>把确有所指的新词追加进词表（kind: project/tool/person/org），备份原文件后再写；词表对新写入即时生效</action>
-      <action>存量记忆补链：用引擎自身类（SqliteEntityStore + RuleBasedEntityExtractor）写纯增量脚本——对每条记忆重新抽取，仅对尚未链接的实体 upsertEntity+link+relate（三者均幂等，只加不删），先 --dry 预估再正式跑，跑前备份 memory.sqlite</action>
+      <action>存量记忆补链：node &lt;LeafMem 安装目录&gt;/ops/entity-relink.mjs --dry 预估后再正式跑（纯增量幂等三接口，只加不删；跑前备份 memory.sqlite）</action>
       <note>🔴 只加确有所指的专名，不加通用词； MCP stdio 进程的词表在进程启动时加载，宿主重启后生效，launchd 后台服务可 launchctl kickstart -k 即时生效</note>
     </step>
 

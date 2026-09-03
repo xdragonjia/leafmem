@@ -229,11 +229,17 @@ export async function handleConsoleRoutes(
         )
         .all(limit) as Array<Record<string, unknown>>;
       const ids = new Set(nodes.map((n) => String(n.id)));
+      // 2026-09-03: aggregate per-memory relation rows into one edge per entity
+      // pair (weight = co-occurrence count). Raw rows made the force graph a
+      // hairball (2707 rows vs 712 real pairs) and inflated node degrees that
+      // drive edge widths.
       const edges = (
         db
           .prepare(
-            `SELECT source_entity_id, target_entity_id, relation, confidence
-             FROM entity_relations`,
+            `SELECT source_entity_id, target_entity_id, relation,
+                    COUNT(*) AS weight, MAX(confidence) AS confidence
+             FROM entity_relations
+             GROUP BY source_entity_id, target_entity_id, relation`,
           )
           .all() as Array<Record<string, unknown>>
       ).filter(
@@ -276,14 +282,19 @@ export async function handleConsoleRoutes(
            LIMIT 60`,
         )
         .all(id) as Array<Record<string, unknown>>;
+      // 2026-09-03: aggregate per-memory relation rows by the other entity —
+      // raw rows rendered as endless "co_occurs claude / co_occurs git …"
+      // duplicates in the detail panel (they were per-memory, not true dups).
       const relations = db
         .prepare(
-          `SELECT r.relation, r.confidence, e.id AS other_id, e.name AS other_name, e.kind AS other_kind,
-                  CASE WHEN r.source_entity_id = ? THEN 'out' ELSE 'in' END AS dir
+          `SELECT r.relation, e.id AS other_id, e.name AS other_name, e.kind AS other_kind,
+                  CASE WHEN r.source_entity_id = ? THEN 'out' ELSE 'in' END AS dir,
+                  COUNT(*) AS co_count, MAX(r.confidence) AS confidence
            FROM entity_relations r
            JOIN entities e ON e.id = CASE WHEN r.source_entity_id = ? THEN r.target_entity_id ELSE r.source_entity_id END
            WHERE r.source_entity_id = ? OR r.target_entity_id = ?
-           ORDER BY r.confidence DESC
+           GROUP BY other_id, r.relation, dir
+           ORDER BY co_count DESC, confidence DESC
            LIMIT 60`,
         )
         .all(id, id, id, id) as Array<Record<string, unknown>>;
