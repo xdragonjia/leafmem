@@ -1,12 +1,12 @@
 ---
 name: leafmem-maintenance
-version: "1.2.0"
+version: "1.3.0"
 agent_created: true
 author: xiaoxia
 description: >
   LeafMem 记忆引擎的周期性维护与深度整理 SOP（宿主模型驱动，免付费 inferencer）。
-  覆盖健康检查、强制存档、真重复合并、碎片整合、原则蒸馏、画像刷新、衰减降权、镜像同步。
-  触发词：leafmem 维护、记忆整理、每周健康检查、深度整理、记忆治理、consolidation。
+  覆盖健康检查、强制存档、真重复合并、碎片整合、原则蒸馏、画像刷新、衰减降权、镜像同步、周度观察与趋势判断。
+  触发词：leafmem 维护、记忆整理、每周健康检查、深度整理、记忆治理、周度观察。
   排除场景：不做 WeKnora 知识库维护、不替代每日只读观测告警任务、不处理宿主安装配置。
 ---
 
@@ -14,11 +14,11 @@ description: >
 <skill>
   <metadata>
     <name>leafmem-maintenance</name>
-    <version>1.2.0</version>
+    <version>1.3.0</version>
     <agent_created>true</agent_created>
     <author>xiaoxia</author>
-    <date>2026-08-10</date>
-    <description>LeafMem 记忆引擎的周期性维护与深度整理 SOP（宿主模型驱动，免付费 inferencer）。触发词：leafmem 维护、记忆整理、每周健康检查、深度整理、记忆治理。排除：WeKnora 维护、每日告警、宿主安装。</description>
+    <date>2026-09-03</date>
+    <description>LeafMem 记忆引擎的周期性维护与深度整理 SOP（宿主模型驱动，免付费 inferencer）。覆盖健康检查、强制存档、真重复合并、碎片整合、原则蒸馏、画像刷新、衰减降权、镜像同步、周度观察与趋势判断。排除：WeKnora 维护、每日告警、宿主安装。</description>
     <type>operations</type>
   </metadata>
 
@@ -35,12 +35,13 @@ description: >
       <keyword>每周健康检查</keyword>
       <keyword>深度整理</keyword>
       <keyword>记忆治理</keyword>
+      <keyword>周度观察</keyword>
       <keyword>consolidation</keyword>
     </keywords>
-    <intent>对 LeafMem 记忆库执行周期性质量维护（由每周自动化任务调用，或手动触发）</intent>
+    <intent>对 LeafMem 记忆库执行周期性质量维护与周度趋势观察（由每周自动化任务调用，或手动触发）</intent>
     <exclusions>
       <exclusion>WeKnora 知识库的维护（用 weknora-rag）</exclusion>
-      <exclusion>每日只读观测告警（由「每日观测采集」自动化负责）</exclusion>
+      <exclusion>每日只读健康巡检（由「每日健康哨兵」自动化负责，模板 ops/automations/daily-sentinel.md）</exclusion>
       <exclusion>宿主安装/配置（用安装器或 INSTALL-KUNLUNXIAOZHI.md）</exclusion>
     </exclusions>
   </triggers>
@@ -106,6 +107,7 @@ description: >
       <action>memory_recall(action="search", kind="preference") 拉全部 preference；memory_recall(action="active_get", kind="profile") 读当前画像</action>
       <action>宿主模型比对差异，**只输出需要更新的分节**（"## 分节标题\n新内容" markdown）；memory_write(action="active_distill", kind="profile", content=更新分节)</action>
       <note>🔴 分节合并语义：引擎按分节标题合并——同名分节被替换、新分节追加、**未提到的分节原样保留**。宿主永远不要输出全文覆写，避免误删其他分节。</note>
+      <note id="2026-08-19">🔴 console 洞察页"用户画像"卡片=profile 快照（active_distill kind=profile 的产物），**memory_govern update 修改 preference 记录不会自动反映到画像卡片**；mcp__leafmem__memory_organize(action=profile) 需付费 inferencer（本机返回 no_inferencer）。用户反馈"画像没更新"时走本步骤宿主版 active_distill（2026-08-19 实测成功：sectionsBefore/After 13、merged 1，卡片内容即时含新规则）。</note>
     </step>
 
     <step order="8" name="衰减降权">
@@ -118,11 +120,28 @@ description: >
       <action>node <LeafMem 安装目录>/ops/mirror-sync.js（默认写 ~/.leafmem/mirror，可 --mirror-dir 覆盖）</action>
     </step>
 
-    <step order="10" name="报告与留痕">
-      <description>有动作才推送，无动作静默</description>
+    <step order="10" name="周度观察（只读，2026-09-03 并入）">
+      <description>确定性采集治理指标 + 周环比趋势判断，本步骤不修改任何记忆</description>
+      <action>python3 &lt;LeafMem 安装目录&gt;/ops/observation.py --mode weekly（零 LLM 依赖；自动追加到 ~/.leafmem/observation/leafmem-observation-log.jsonl；scope 自动探测主 scope，可环境变量 LEAFMEM_SCOPE 覆盖）</action>
+      <judge>取最近 2 条 weekly 记录做周环比五项判断（引用脚本输出数字，不心算——NO COMPUTATION）：
+        a. 反馈回路：recall_total 周环比上升（用进废退生效）
+        b. 反思蒸馏：principle_count 增长；last_reflect_at 每周刷新（超 10 天未刷新 → 检查步骤 6 蒸馏是否执行）
+        c. 画像：profile_present 且 profile_updated_at 在近 14 天内
+        d. 数据一致性：fts_stale==0 且 fts_rows==memory_rows；principle_supports_missing==0
+        e. 治理时机：decay_candidates>0 → 建议执行/确认步骤 8 已覆盖
+      </judge>
       <branch>
-        <if>有删除/整合/蒸馏动作</if>
-        <then>通过宿主可用的消息渠道（如飞书/企业微信/仅日志）发送：规模变化/真重复删除数/碎片整合数/新 principle 数/画像 section 数/decay 降权数</then>
+        <if>脚本输出 ALERT（FTS 回归/行数不一致/证据链断裂）</if>
+        <then>标记为需行动，在报告中最优先呈现，必要时提前单独告警</then>
+      </branch>
+      <note>结论格式：正常 / 需关注 / 需行动 + 一句话依据；追加记录到宿主当日记忆日志（含日期，追加不覆盖）</note>
+    </step>
+
+    <step order="11" name="报告与留痕">
+      <description>每周固定推送周报（含观察结论）；无整理动作且观察全绿时可简化为仅日志</description>
+      <branch>
+        <if>有删除/整合/蒸馏动作，或周度观察出现需关注/需行动项</if>
+        <then>通过宿主可用的消息渠道发送周报：规模变化/真重复删除数/碎片整合数/新 principle 数/画像 section 数/decay 降权数 + 本周观察结论与关键环比（memories/principle/recall/profile/一致性）</then>
         <else>仅写宿主当日记忆日志，不推送</else>
       </branch>
       <note>推送渠道由宿主环境决定；无配置渠道时退化为仅日志，不报错</note>
@@ -208,10 +227,13 @@ description: >
 
   <references>
     <file path="<LeafMem 安装目录>/ops/mirror-sync.js">镜像同步脚本（安装目录=`npm root -g`/@xdragonjia/leafmem）</file>
+    <file path="<LeafMem 安装目录>/ops/observation.py">周度观察采集脚本（零 LLM 依赖，约 20 项治理指标 + ALERT/WARN/INFO 判定；--mode weekly；日志 ~/.leafmem/observation/leafmem-observation-log.jsonl）</file>
     <file path="<LeafMem 安装目录>/ops/consolidation.js">⚠️ 历史脚本（硬依赖已移除的 DEEPSEEK_API_KEY，不可运行；仅作存档参考，去重职责已由本技能步骤 3 承担）</file>
   </references>
 
   <notes>
+    <note id="2026-09-03">v1.3.0：并入原「周度观察+飞书提醒」开发期任务的持久机制——新增步骤 10 周度观察（observation.py --mode weekly 确定性采集 + 周环比五项判断），报告步骤升为周报口径（有动作/有观察异常才推送）；observation.py 同期通用化（scope 自动探测、随 npm 包分发）。排除场景措辞同步（每日观测采集→每日健康哨兵）。</note>
+    <note id="2026-08-24">蒸馏节流补充（实测）：候选主题按 tags 聚类 ≥3 条 lesson 后，还必须与已有 principle 的 tags/content 比对覆盖——即使 principle 的 reflectTag 为空，只要其内容已覆盖候选主题（如 52567dbb 已覆盖飞书卡片 schema 2.0 note/ud_icon 坑，导致 ai-news-pusher 主题跳过），就不重复蒸馏；08-24 从 4 个候选主题（auto_collect/external-skill-updater/ai-news-pusher/公众号）蒸馏 2 条。</note>
     <note id="2026-08-10-v12">v1.2.0：明确 consolidation.js 已被本技能替代（其硬依赖的 DEEPSEEK_API_KEY 已移除，脚本不可运行）；supports 断链清理由 forget() 内置级联覆盖，无需脚本兜底。</note>
     <note id="2026-08-10">v1.0.0 首版：Phase 9 收编每周健康检查的整理职责；宿主模型蒸馏免付费 key；每周节奏。</note>
     <note id="2026-08-10b">v1.1.0：按 skill-creator 标准重构为 XML v2.0（author/三段式 description/10 标准模块/checkpoints/never-因为-替代格式）。</note>

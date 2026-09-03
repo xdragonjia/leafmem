@@ -7,12 +7,17 @@ LeafMem 观察记录脚本（2026-08-07，Phase 9 闭环）
 输出人读摘要与判定（ALERT/WARN/INFO），供自动化任务据此决定是否飞书提醒。
 
 用法：
-  python3 leafmem_observation.py [--mode daily|weekly]
+  python3 observation.py [--mode daily|weekly]
 
   daily  —— 静默采集 + 追加日志；仅当出现 ALERT/WARN 时打印 [NEED_PUSH] 标记
   weekly —— 在 daily 基础上，额外生成周对比摘要（vs 上一次 weekly 记录）并总是打印 [NEED_PUSH]
 
 数据源：直接读 SQLite（~/.leafmem/memory.sqlite，可 LEAFMEM_DB 覆盖），快速且无需服务在线。
+
+scope 解析（2026-09-03 通用化，供任意宿主用户使用）：
+  1. 环境变量 LEAFMEM_SCOPE 显式指定（优先）；
+  2. 否则自动探测主 scope = 记录数最多的 agent scope（与主 scope 模型一致：
+     共用拓扑下所有宿主落同一主 scope；单宿主即其自身 scope）。
 """
 import json
 import os
@@ -24,7 +29,20 @@ from datetime import datetime, timezone
 DB = os.path.expanduser("~/.leafmem/memory.sqlite")
 LOG_DIR = os.environ.get("LEAFMEM_OBSERVATION_LOG") or os.path.join(os.path.expanduser("~"), ".leafmem", "observation")
 LOG = os.path.join(LOG_DIR, "leafmem-observation-log.jsonl")
-SCOPE = "workbuddy"
+# 主 scope：LEAFMEM_SCOPE 覆盖 > 自动探测最大 agent scope；main() 启动时填充
+SCOPE = None
+
+
+def resolve_scope(db):
+    """解析观测目标 scope：环境变量覆盖优先，否则取记录数最多的 agent scope。"""
+    override = os.environ.get("LEAFMEM_SCOPE", "").strip()
+    if override:
+        return override
+    row = db.execute(
+        "SELECT scope_id FROM memory_items WHERE scope_type='agent' "
+        "GROUP BY scope_id ORDER BY COUNT(*) DESC LIMIT 1"
+    ).fetchone()
+    return row[0] if row else "workbuddy"
 
 DAY = 86400_000  # ms
 
@@ -145,6 +163,7 @@ def judge(cur, prev):
 
 
 def main():
+    global SCOPE
     mode = "weekly" if "--mode" in sys.argv and sys.argv[sys.argv.index("--mode") + 1] == "weekly" else "daily"
     os.makedirs(LOG_DIR, exist_ok=True)
 
@@ -159,7 +178,9 @@ def main():
             prev_weekly = same[-1]
 
     db = sqlite3.connect(DB)
+    SCOPE = resolve_scope(db)
     cur = collect(db, int(time.time() * 1000))
+    cur["scope"] = SCOPE
     cur["mode"] = mode
     db.close()
 

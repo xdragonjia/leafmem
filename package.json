@@ -122,6 +122,7 @@
     "ops/skills",
     "ops/hooks",
     "ops/mirror-sync.js",
+    "ops/observation.py",
     "ops/consolidation.js"
   ],
   "scripts": {
