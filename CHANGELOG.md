@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - **周度观察并入每周深度整理**：原开发期「周度观察+飞书提醒」任务到期下线，其持久机制并入每周维护——`ops/automations/weekly-maintenance.md` 新增 B 段周度观察（采集+周环比五项判断）与周报输出；`leafmem-maintenance` 技能升至 1.3.0 新增步骤 10 周度观察 + 步骤 11 周报口径。
 - **observation.py 随包分发**：`ops/observation.py` 加入 npm `files`，其他用户安装后可直接使用周度观察采集脚本。
+- **实体词表巡检机制**：`leafmem-maintenance` 技能升至 1.4.0——周度观察判断清单新增 f 项（entity_count 停滞检测：记忆增长但实体连续 2 周零增长 = 词表陈旧信号），新增步骤 11 实体词表巡检（词表更新方法 + 存量记忆纯增量补链方法）。起因：strict 抽取器下实体增长完全依赖词表人工更新，本机实测 leafmem 本身在 145 条记忆中出现却因不在词表而无实体。
 
 ### Changed
 - **observation.py scope 通用化**：原硬编码 `SCOPE="workbuddy"` 改为自动探测主 scope（记录数最多的 agent scope，与主 scope 模型一致），可用环境变量 `LEAFMEM_SCOPE` 覆盖，确保任意宿主用户可正确采集。

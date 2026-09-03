@@ -35,6 +35,8 @@
    c. 画像：profile_present 且 profile_updated_at 在近 14 天内。
    d. 数据一致性：fts_stale==0 且 fts_rows==memory_rows；principle_supports_missing==0。
    e. 治理时机：decay_candidates>0 → 建议执行 decay（步骤 5 已做则忽略）。
+   f. 实体词表活性：entity_count 周环比——记忆增长但实体连续 2 周零增长 →
+      控制词表陈旧，按技能步骤 11 巡检更新词表并增量补链。
    脚本自身的 ALERT/WARN 判定可直接引用；若指标与已交付能力矛盾
    （如 profile_present 却召回不含画像），标记为疑似缺陷并在报告中提示。
 9. 生成本周观察结论（正常 / 需关注 / 需行动 + 一句话依据），追加记录到

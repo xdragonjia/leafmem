@@ -1,11 +1,11 @@
 ---
 name: leafmem-maintenance
-version: "1.3.0"
+version: "1.4.0"
 agent_created: true
 author: xiaoxia
 description: >
   LeafMem 记忆引擎的周期性维护与深度整理 SOP（宿主模型驱动，免付费 inferencer）。
-  覆盖健康检查、强制存档、真重复合并、碎片整合、原则蒸馏、画像刷新、衰减降权、镜像同步、周度观察与趋势判断。
+  覆盖健康检查、强制存档、真重复合并、碎片整合、原则蒸馏、画像刷新、衰减降权、镜像同步、周度观察与趋势判断、实体词表巡检。
   触发词：leafmem 维护、记忆整理、每周健康检查、深度整理、记忆治理、周度观察。
   排除场景：不做 WeKnora 知识库维护、不替代每日只读观测告警任务、不处理宿主安装配置。
 ---
@@ -14,7 +14,7 @@ description: >
 <skill>
   <metadata>
     <name>leafmem-maintenance</name>
-    <version>1.3.0</version>
+    <version>1.4.0</version>
     <agent_created>true</agent_created>
     <author>xiaoxia</author>
     <date>2026-09-03</date>
@@ -129,6 +129,7 @@ description: >
         c. 画像：profile_present 且 profile_updated_at 在近 14 天内
         d. 数据一致性：fts_stale==0 且 fts_rows==memory_rows；principle_supports_missing==0
         e. 治理时机：decay_candidates>0 → 建议执行/确认步骤 8 已覆盖
+        f. 实体词表活性：entity_count 周环比——记忆在增长但实体连续 2 周零增长 → 词表陈旧信号，转步骤 11 巡检
       </judge>
       <branch>
         <if>脚本输出 ALERT（FTS 回归/行数不一致/证据链断裂）</if>
@@ -137,7 +138,16 @@ description: >
       <note>结论格式：正常 / 需关注 / 需行动 + 一句话依据；追加记录到宿主当日记忆日志（含日期，追加不覆盖）</note>
     </step>
 
-    <step order="11" name="报告与留痕">
+    <step order="11" name="实体词表巡检（2026-09-03 新增）">
+      <description>防止实体词表陈旧导致新领域无法实体化（strict 抽取器只认控制词表+内置词典+@提及）</description>
+      <trigger>步骤 10.f 发现 entity_count 连续 2 周零增长而记忆在增长；或每月例行一次</trigger>
+      <action>扫描近 30 天记忆中高频出现的专名（新项目/新工具/新产品名），与 ~/.leafmem/entity-vocab.json 比对</action>
+      <action>把确有所指的新词追加进词表（kind: project/tool/person/org），备份原文件后再写；词表对新写入即时生效</action>
+      <action>存量记忆补链：用引擎自身类（SqliteEntityStore + RuleBasedEntityExtractor）写纯增量脚本——对每条记忆重新抽取，仅对尚未链接的实体 upsertEntity+link+relate（三者均幂等，只加不删），先 --dry 预估再正式跑，跑前备份 memory.sqlite</action>
+      <note>🔴 只加确有所指的专名，不加通用词； MCP stdio 进程的词表在进程启动时加载，宿主重启后生效，launchd 后台服务可 launchctl kickstart -k 即时生效</note>
+    </step>
+
+    <step order="12" name="报告与留痕">
       <description>每周固定推送周报（含观察结论）；无整理动作且观察全绿时可简化为仅日志</description>
       <branch>
         <if>有删除/整合/蒸馏动作，或周度观察出现需关注/需行动项</if>
@@ -232,6 +242,7 @@ description: >
   </references>
 
   <notes>
+    <note id="2026-09-03-v14">v1.4.0：新增步骤 11 实体词表巡检——实测发现 strict 抽取器下实体增长完全依赖词表人工更新（leafmem 本身在 145 条记忆中出现却因不在词表而无实体）；判断清单加 f 项（entity_count 停滞检测），巡检含词表更新与存量增量补链方法（幂等三接口，只加不删，--dry 先行）。</note>
     <note id="2026-09-03">v1.3.0：并入原「周度观察+飞书提醒」开发期任务的持久机制——新增步骤 10 周度观察（observation.py --mode weekly 确定性采集 + 周环比五项判断），报告步骤升为周报口径（有动作/有观察异常才推送）；observation.py 同期通用化（scope 自动探测、随 npm 包分发）。排除场景措辞同步（每日观测采集→每日健康哨兵）。</note>
     <note id="2026-08-24">蒸馏节流补充（实测）：候选主题按 tags 聚类 ≥3 条 lesson 后，还必须与已有 principle 的 tags/content 比对覆盖——即使 principle 的 reflectTag 为空，只要其内容已覆盖候选主题（如 52567dbb 已覆盖飞书卡片 schema 2.0 note/ud_icon 坑，导致 ai-news-pusher 主题跳过），就不重复蒸馏；08-24 从 4 个候选主题（auto_collect/external-skill-updater/ai-news-pusher/公众号）蒸馏 2 条。</note>
     <note id="2026-08-10-v12">v1.2.0：明确 consolidation.js 已被本技能替代（其硬依赖的 DEEPSEEK_API_KEY 已移除，脚本不可运行）；supports 断链清理由 forget() 内置级联覆盖，无需脚本兜底。</note>
