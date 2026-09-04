@@ -15,9 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **自动化会话 leafmem 工具不可用根因修复（宿主回归免疫层）**：WorkBuddy 5.5.1 对自定义 MCP 的 `--mcp-config` 注入即使包含完整配置且 stdio 连接成功（`doConnect OK`），仍无视 `defer_loading:false`、工具强进 deferred 索引后漏收，致自动化会话零 `mcp__leafmem__*` 工具（2026-09-04 日志实证：`Indexing deferred tools for server: leafmem` + 会话工具列表无 leafmem）。5.5.3 已修复字段尊重，但宿主升级可能回归；本版本提供 HTTP 通道作为不受宿主注册影响的保底链路。
 
 ### Changed
+- **自动化通道定版 CLI-first**：一次性自动化实测（2026-09-04 晚）证明自动化调度会话中 `mcp__leafmem__*` 工具恒 absent（5.5.1/5.5.3 一致，deferred 索引寻址失效），HTTP CLI 由降级备胎升格为**主通道**。SOUL 模板条款、daily-sentinel / weekly-maintenance 两个产品 SOP、README 1.7 全部改为 CLI-first：自动化首选 leafmem-cli；MCP 工具恰在函数表时可顺带直调，缺席属预期、不判异常、不静默重试。
+- **leafmem-cli 字段面补全**：`remember` 新增 `--tags/--confidence/--source/--metadata`（tags 缺失被一次性验证任务实测暴露）；`update` 新增 `--tags/--metadata`；`list` 新增 `--tags/--cursor`；`recall` 新增 `--task-title/--tool-context`。全部字段对齐 HTTP 路由支持面，E2E 验证 tags 写入→读回→list 过滤→更新全链路。修复 macOS 系统 bash 3.2 下 `set -u` 空 `"$@"` 崩溃的兼容问题。
 - `ops/automations/daily-sentinel.md` canary 段同步三级降级链与宿主回归取证命令。
-- `ops/automations/weekly-maintenance.md` canary 段同步（待本轮执行）。
-- README 新增「自动化主动加载通道」章节（待本轮执行）。
 
 ## [0.3.20] - 2026-09-04
 

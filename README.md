@@ -193,26 +193,29 @@ LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个�
 
 > 🔒 **纪律铁律**：写入时 `importance`/`confidence` 必须是数字而非字符串；`tags` 是扁平数组。违反会被拒收。
 
-### 1.7 自动化主动加载通道（0.3.21）
+### 1.7 自动化记忆通道：CLI-first（0.3.21）
 
-**问题背景**：部分宿主版本（WorkBuddy 5.5.1 实测）对自定义 MCP 的 `--mcp-config` 注入即使包含完整配置、stdio 连接成功，仍无视 `defer_loading:false` 并把工具塞进 deferred 索引后漏收——自动化/定时会话中 `mcp__leafmem__*` 工具既不能直连也无法经 ToolSearch 发现。宿主升级可修复（5.5.3 已尊重该字段），但**宿主行为不可控、可能回归**，自动化必须有独立通道。
+**问题背景**：自动化/定时会话中 `mcp__leafmem__*` 工具**恒不可用**——一次性自动化实测（2026-09-04，5.5.1 与 5.5.3 一致）直连调用返回 absent：宿主把自定义 MCP 工具塞进 deferred 索引后寻址失效，既不能直连也无法经 ToolSearch 发现。交互会话直连正常，两条路径的工具注册机制不同。**宿主行为不可控，自动化必须把独立通道作为主通道，而不是降级备胎。**
 
-**leafmem-cli**：安装/升级时自动部署到 `~/.leafmem/leafmem-cli.sh`，封装 launchd 常驻 agent service（127.0.0.1:3377）的 HTTP API，与宿主 MCP 工具注册完全解耦：
+**leafmem-cli**：安装/升级时自动部署到 `~/.leafmem/leafmem-cli.sh`，封装 launchd 常驻 agent service（127.0.0.1:3377）的 HTTP API，与宿主 MCP 工具注册完全解耦。字段面对齐 HTTP 路由全集（tags/confidence/source/metadata/kinds/cursor 均支持）：
 
 ```bash
 ~/.leafmem/leafmem-cli.sh health                       # 探活
-~/.leafmem/leafmem-cli.sh recall "查询内容" [maxChars]  # 召回
-~/.leafmem/leafmem-cli.sh remember "内容" [summary] [kind] [importance]
-~/.leafmem/leafmem-cli.sh get|update|delete <id>       # 单条治理
-~/.leafmem/leafmem-cli.sh list [limit] [kinds]         # 列表
+~/.leafmem/leafmem-cli.sh recall "查询内容" [maxChars] [--task-title t] [--tool-context c]
+~/.leafmem/leafmem-cli.sh remember "内容" [summary] [kind] [importance] \
+    [--tags "a,b"] [--confidence n] [--source s] [--metadata JSON]
+~/.leafmem/leafmem-cli.sh get|delete <id>              # 读 / 删单条
+~/.leafmem/leafmem-cli.sh update <id> [--summary s] [--tags "a,b"] [--metadata JSON] ...
+~/.leafmem/leafmem-cli.sh list [limit] [kinds] [--tags "a,b"] [--cursor c]
 ~/.leafmem/leafmem-cli.sh stats | scopes               # 统计 / scope 分布
 ~/.leafmem/leafmem-cli.sh task-detail <taskId>         # 任务窗口
 ~/.leafmem/leafmem-cli.sh commit-summary "摘要"        # 会话摘要捕获
+~/.leafmem/leafmem-cli.sh inspect-recall "查询"        # 召回调试（分层诊断）
 ```
 
-**自动化降级链纪律**（已写入 SOUL 模板，新安装/升级自动获得）：自动化读写 LeafMem 按 ①直连 MCP 工具 → ②leafmem-cli HTTP → ③宿主会话搜索 三级降级；①失败不得默认"环境差异"静默放过，须记录并在会话日志 grep `Indexing deferred tools for server: leafmem` 取证宿主回归。
+**自动化 CLI-first 纪律**（已写入 SOUL 模板，新安装/升级自动获得）：自动化会话读写 LeafMem **首选 leafmem-cli**；`mcp__leafmem__*` 恰在函数表时可顺带直调，但其缺席是**预期行为**而非故障，不得静默重试或判异常；CLI 不可达时先查 launchd 服务与 `~/.leafmem/agent-service.json`，最后才降级宿主会话搜索（只读）。
 
-> 写/删默认落 `agent:<scopeId>` scope（URL `?scope=` 参数）；`task_append` 无直接 HTTP 路由，用 `remember` + metadata.taskId 近似。
+> 写/删默认落 `agent:<scopeId>` scope（URL `?scope=` 参数）；`task_append` 无直接 HTTP 路由，用 `remember` + metadata.taskId 近似；tags 逗号分隔，metadata 传 JSON 对象字符串。
 
 ---
 
