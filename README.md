@@ -18,7 +18,7 @@
 
 ## 📖 目录
 
-1. [系统介绍](#-一系统介绍) —— 架构、四大 MCP 工具、分层记忆、自动化任务、纪律文件
+1. [系统介绍](#-一系统介绍) —— 架构、四大 MCP 工具、分层记忆、自动化任务、纪律文件、主动加载通道
 2. [安装与升级](#-二安装与升级) —— 引导你的 Agent 完成安装 / 升级
 3. [使用说明](#-三使用说明) —— 用户怎么用、Agent 怎么用
 4. [基准测试](#-基准测试)
@@ -192,6 +192,27 @@ LeafMem 把记忆操作收敛为**四个面向闭环环节**的工具，每个�
 这解决了纯规则模式下 `task_append` 不触发、commit 时机不可控的老问题——**记忆的写入与召回由机制保障，而非依赖模型自觉**。桥脚本零依赖、失败静默、心跳写 `~/.leafmem/hooks.log`；宿主不触发 hook 时自动降级回 SOUL.md 规则路径，两条路互为保险。
 
 > 🔒 **纪律铁律**：写入时 `importance`/`confidence` 必须是数字而非字符串；`tags` 是扁平数组。违反会被拒收。
+
+### 1.7 自动化主动加载通道（0.3.21）
+
+**问题背景**：部分宿主版本（WorkBuddy 5.5.1 实测）对自定义 MCP 的 `--mcp-config` 注入即使包含完整配置、stdio 连接成功，仍无视 `defer_loading:false` 并把工具塞进 deferred 索引后漏收——自动化/定时会话中 `mcp__leafmem__*` 工具既不能直连也无法经 ToolSearch 发现。宿主升级可修复（5.5.3 已尊重该字段），但**宿主行为不可控、可能回归**，自动化必须有独立通道。
+
+**leafmem-cli**：安装/升级时自动部署到 `~/.leafmem/leafmem-cli.sh`，封装 launchd 常驻 agent service（127.0.0.1:3377）的 HTTP API，与宿主 MCP 工具注册完全解耦：
+
+```bash
+~/.leafmem/leafmem-cli.sh health                       # 探活
+~/.leafmem/leafmem-cli.sh recall "查询内容" [maxChars]  # 召回
+~/.leafmem/leafmem-cli.sh remember "内容" [summary] [kind] [importance]
+~/.leafmem/leafmem-cli.sh get|update|delete <id>       # 单条治理
+~/.leafmem/leafmem-cli.sh list [limit] [kinds]         # 列表
+~/.leafmem/leafmem-cli.sh stats | scopes               # 统计 / scope 分布
+~/.leafmem/leafmem-cli.sh task-detail <taskId>         # 任务窗口
+~/.leafmem/leafmem-cli.sh commit-summary "摘要"        # 会话摘要捕获
+```
+
+**自动化降级链纪律**（已写入 SOUL 模板，新安装/升级自动获得）：自动化读写 LeafMem 按 ①直连 MCP 工具 → ②leafmem-cli HTTP → ③宿主会话搜索 三级降级；①失败不得默认"环境差异"静默放过，须记录并在会话日志 grep `Indexing deferred tools for server: leafmem` 取证宿主回归。
+
+> 写/删默认落 `agent:<scopeId>` scope（URL `?scope=` 参数）；`task_append` 无直接 HTTP 路由，用 `remember` + metadata.taskId 近似。
 
 ---
 

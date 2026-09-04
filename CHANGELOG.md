@@ -5,6 +5,20 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.21] - 2026-09-04
+
+### Added
+- **leafmem-cli 主动加载通道**：新增 `ops/leafmem-cli.sh`（12 子命令：health/recall/inspect-recall/remember/get/list/update/delete/stats/scopes/task-detail/commit-summary），封装 launchd 常驻 agent service 的 HTTP API（127.0.0.1:3377），独立于宿主 MCP 工具注册。安装/升级时自动部署到 `~/.leafmem/leafmem-cli.sh`（hooks.ts 新增 `installLeafmemCli`）。
+- **SOUL 模板新增自动化降级链纪律**：`workBuddyInstructionBlock` 增加 "Automation active-loading channel" 条款——自动化会话读写 LeafMem 必须按 ①直连 MCP 工具 → ②leafmem-cli HTTP → ③宿主会话搜索 三级降级；①失败不得默认"环境差异"静默放过，须记录并取证宿主回归。所有用户新安装/`leafmem-agent update` 升级自动获得。
+
+### Fixed
+- **自动化会话 leafmem 工具不可用根因修复（宿主回归免疫层）**：WorkBuddy 5.5.1 对自定义 MCP 的 `--mcp-config` 注入即使包含完整配置且 stdio 连接成功（`doConnect OK`），仍无视 `defer_loading:false`、工具强进 deferred 索引后漏收，致自动化会话零 `mcp__leafmem__*` 工具（2026-09-04 日志实证：`Indexing deferred tools for server: leafmem` + 会话工具列表无 leafmem）。5.5.3 已修复字段尊重，但宿主升级可能回归；本版本提供 HTTP 通道作为不受宿主注册影响的保底链路。
+
+### Changed
+- `ops/automations/daily-sentinel.md` canary 段同步三级降级链与宿主回归取证命令。
+- `ops/automations/weekly-maintenance.md` canary 段同步（待本轮执行）。
+- README 新增「自动化主动加载通道」章节（待本轮执行）。
+
 ## [0.3.20] - 2026-09-04
 
 ### Fixed

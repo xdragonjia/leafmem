@@ -14,6 +14,12 @@
 <task>
 **A. 深度整理**——按 leafmem-maintenance 技能依次执行：
 1. 健康检查：MCP 在线、存储容量、canary 召回验证。
+   🔴 canary 召回降级链（2026-09-04，v0.3.21，与每日哨兵一致）：直连
+   memory_recall 不可用时按序降级：① `bash ~/.leafmem/leafmem-cli.sh recall "<canary 词>" 400`
+   （HTTP 通道，launchd 守护，独立于宿主 MCP 注册，hits>0 即判正常）；
+   ② HTTP 也不可用 → 宿主会话搜索验证并判正常，但必须记录 MCP 进程与 hook 心跳。
+   直连未挂载不得默认"环境差异"静默放过：在当日会话日志 grep
+   "Indexing deferred tools for server: leafmem"，命中即宿主回归证据，随报告附上。
 2. 全量存档（删除类操作的强制前置，不可跳过）。
 3. 真重复检测与合并（内容哈希，禁止前缀聚类）。
 4. 碎片簇整合（同日期+同 context ≥3 条 → 按九规则整合）。

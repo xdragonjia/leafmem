@@ -19,7 +19,7 @@
  * is inert and the MEMORY.md/SOUL.md rules remain the fallback path.
  */
 
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,6 +48,36 @@ function bundledHookSource(): string {
   return join(current, "..", "..", "ops", "hooks", "leafmem-hooks.mjs");
 }
 
+/**
+ * Stable location of the leafmem-cli active-loading channel script.
+ * (2026-09-04, v0.3.21) WorkBuddy 5.5.1 ignored defer_loading:false for custom
+ * MCP servers and dropped the leafmem tools from the deferred index, leaving
+ * automation sessions with no mcp__leafmem__* tools even though the stdio
+ * connection succeeded. leafmem-cli wraps the launchd-managed agent service
+ * HTTP API (127.0.0.1:3377) as a host-independent fallback channel that
+ * automations can invoke directly, immune to host MCP registration regressions.
+ */
+export function leafmemCliPath(home = homedir()): string {
+  return join(home, ".leafmem", "leafmem-cli.sh");
+}
+
+function bundledCliSource(): string {
+  const current = dirname(fileURLToPath(import.meta.url));
+  return join(current, "..", "..", "ops", "leafmem-cli.sh");
+}
+
+/** Copy leafmem-cli.sh to its stable home (idempotent, best-effort). */
+async function installLeafmemCli(home: string): Promise<void> {
+  const dest = leafmemCliPath(home);
+  try {
+    await mkdir(dirname(dest), { recursive: true });
+    await copyFile(bundledCliSource(), dest);
+    await chmod(dest, 0o755);
+  } catch {
+    // Best-effort: if the bundled source is missing, leave any existing copy.
+  }
+}
+
 function hostSettingsPath(agent: AgentId, home = homedir()): string {
   const dir = agent === "workbuddy" ? ".workbuddy" : ".kunlunxiaozhi";
   return join(home, dir, "settings.json");
@@ -74,6 +104,9 @@ export async function installHostHooks(
     // If the bundled source is missing (e.g. running from an unexpected layout),
     // leave any existing script in place and only reconcile the settings entry.
   }
+
+  // 1b. Deploy the leafmem-cli active-loading channel (v0.3.21).
+  await installLeafmemCli(home);
 
   // 2. Build the hooks block for this host.
   // 2026-08-12 (v0.3.12): SessionStart added for task warm-up injection
