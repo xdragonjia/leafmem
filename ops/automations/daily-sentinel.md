@@ -15,6 +15,13 @@
 1. MCP 在线：确认 leafmem-mcp 进程存活，记录 PID。
 2. 存储健康：~/.leafmem/memory.sqlite 存在且可读写，记录容量；统计记忆条数。
 3. canary 召回：memory_recall(action="recall", message="leafmem 健康检查 canary") 应正常返回。
+   🔴 降级链（2026-09-04 新增，宿主回退防御）：直连工具未挂载时，不得默认"环境差异"
+   静默放过，按序降级：① `bash <repo>/ops/leafmem-cli.sh recall "leafmem 健康检查 canary" 400`
+   （LeafMem 常驻 HTTP 通道，launchd 守护，独立于宿主 MCP 注册，hits>0 即判正常）；
+   ② HTTP 也不可用 → conversation_search 验证 + 判正常，但必须记录 MCP 进程与 hook 心跳。
+   根因背景：WorkBuddy 5.5.1 无视 defer_loading:false，--mcp-config 注入且连接成功后
+   工具仍被塞进 deferred 索引且漏收 → 自动化会话完全不可用；5.5.3 修复但升级可能回归。
+   直连不可用时应在当日会话日志 grep "Indexing deferred tools for server: leafmem" 取证。
 4. scope 漂移检测：统计 scope_type != 'agent' 的记忆条数，应为 0。
    双宿主日常使用只有 agent scope；出现 user/task 等其他 scope 说明有错误写入
    （历史上发生过 8 条写错 scope 导致记忆"消失"的事故），需告警并修复。
