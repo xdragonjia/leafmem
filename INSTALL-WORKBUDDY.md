@@ -37,6 +37,15 @@
 node "<包根目录>/dist/bin/leafmem-agent.js" install workbuddy --memory isolated
 ```
 
+> 🔧 **WorkBuddy ≥5.5.1 必读（defer_loading）**：宿主对 mcp.json 中未显式声明
+> `defer_loading` 的 MCP server 默认注入 `true`（app.asar 源码证实，与官方文档
+> "默认 false"矛盾，属 5.5.1 升级回归），会把 leafmem 的 4 个工具转成 deferred
+> 模式、依赖 ToolSearch 检索激活，长会话/自动化会话中易"时有时无"。安装器
+> （v0.3.20+）写入 `mcpServers.leafmem` 时已自动带上 `"defer_loading": false`；
+> 手工维护 mcp.json 时请保留该字段。核对方法：确认 mcp.json 中
+> `mcpServers.leafmem.defer_loading === false`，重启宿主后 4 个 memory_* 工具
+> 应直接出现在会话工具列表（无需 ToolSearch 检索）。
+
 > - 若本机还装了昆仑小智、且两宿主要**共用一套记忆**：把上面命令改为
 >   `node "<包根目录>/dist/bin/leafmem-agent.js" install workbuddy --memory shared`，
 >   安装器会自动把 `LEAFMEM_SCOPE_ID` 解析为主 scope（WorkBuddy 与昆仑小智都配置时，

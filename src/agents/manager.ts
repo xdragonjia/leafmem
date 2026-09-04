@@ -420,7 +420,13 @@ async function writeJsonMcpConfig(
     typeof existing.command === "string" && existing.command.trim() !== ""
       ? existing.command
       : "node";
-  servers.leafmem = { command, args: [options.mcpPath], env };
+  // WorkBuddy/KLXZ ≥5.5.1 inject defer_loading:true for MCP servers lacking an
+  // explicit boolean (verified in the host's app.asar, buildDesiredConfigs),
+  // which defers the 4 leafmem tools behind ToolSearch indexing — flaky in
+  // long sessions and a repeat misjudgment source in automation sessions
+  // (2026-09-04 incident). An explicit false is honored by the host and
+  // registers the tools directly, so always write it here.
+  servers.leafmem = { command, args: [options.mcpPath], env, defer_loading: false };
   config.mcpServers = servers;
   await writeJson(configPath, config);
 }
@@ -669,6 +675,10 @@ export async function setMemoryTopology(
     env.LEAFMEM_SCOPE_TYPE = "agent";
     env.LEAFMEM_SCOPE_ID = shared ? primaryScopeId : AGENTS[agent].scopeId;
     server.env = env;
+    // Self-heal (2026-09-04): guarantee defer_loading:false on every topology
+    // write so hosts that defaulted it to true get corrected even when the
+    // entry predates the installer fix.
+    server.defer_loading = false;
     servers.leafmem = server;
     cfg.mcpServers = servers;
     await writeJson(path, cfg);

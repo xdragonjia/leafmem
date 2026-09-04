@@ -5,6 +5,14 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.20] - 2026-09-04
+
+### Fixed
+- **WorkBuddy/KLXZ ≥5.5.1 defer_loading 回归免疫**：宿主对 mcp.json 中未显式声明 `defer_loading` 的 MCP server 默认注入 `true`（app.asar `buildDesiredConfigs` 源码证实，与官方文档"默认 false"矛盾，属 5.5.1 升级回归），导致 leafmem 4 个工具转 deferred 模式、依赖 ToolSearch 检索激活，长会话/自动化会话中"时有时无"并两次引发"LeafMem 不可用"误判（2026-09-03/04）。安装器 `writeJsonMcpConfig` 现写入 `mcpServers.leafmem` 时固定带 `"defer_loading": false`（显式 boolean 被宿主尊重、工具直连注册），`setMemoryTopology` 同步自愈确保既有条目也被纠正——重装/升级/拓扑切换均不再复发。
+
+### Changed
+- `INSTALL-WORKBUDDY.md` / `INSTALL-KUNLUNXIAOZHI.md` 步骤 1 新增 defer_loading 必读说明（背景、安装器自动写入、手工维护须保留该字段、核对方法）。
+
 ## [0.3.19] - 2026-09-03
 
 ### Added
