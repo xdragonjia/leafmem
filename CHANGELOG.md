@@ -13,10 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - **自动化会话 leafmem 工具不可用根因修复（宿主回归免疫层）**：WorkBuddy 5.5.1 对自定义 MCP 的 `--mcp-config` 注入即使包含完整配置且 stdio 连接成功（`doConnect OK`），仍无视 `defer_loading:false`、工具强进 deferred 索引后漏收，致自动化会话零 `mcp__leafmem__*` 工具（2026-09-04 日志实证：`Indexing deferred tools for server: leafmem` + 会话工具列表无 leafmem）。5.5.3 已修复字段尊重，但宿主升级可能回归；本版本提供 HTTP 通道作为不受宿主注册影响的保底链路。
+- **leafmem-cli 含空格长文本被静默截断（2026-09-06 修复，数据损坏级）**：`ops/leafmem-cli.sh` 中 4 处向 Python 传参写作未加引号的 `${@:-}`（recall 行 67 / remember 行 98 / list 行 122 / update 行 148），shell 词分割会把 `--content "长文本 含空格"` 拆成多个独立参数，Python 侧 `a[i+1]` 只取到第一个词——**所有含空格的长文本字段被静默截断为首 token，无报错、无警告**。实测暴露：`update <id> --content "<699 字符>"` 回读后 content 仅剩 `2026-09-06`（10 字符）。全部改为 `${@+"$@"}`（仅当 `$@` 已设置才展开且保留引号语义，同时兼容 macOS 自带 bash 3.2 在 `set -u` 下的空 `"$@"` 展开）。验证三项：①`health`（空 `$@` 场景）exit=0，`set -u` 兼容性未破坏；②`update --summary "<84 字符含空格>"` 回读长度完整；③被截断的存量记录经 MCP `memory_govern(action=update)` 修复（content 699 字符 / tags 9 项 / kind、importance 完整）。
+  - 影响范围：本缺陷自 0.3.21 引入 `leafmem-cli.sh` 起存在于所有 4 个写/查子命令的**可选参数透传路径**（位置参数 `$1`-`$5` 因带引号不受影响，故 recall/remember 的主文本正常、仅 `--tags`/`--metadata` 等尾部可选项及 update/list 全量参数受害）。0.3.21 未发布 npm（registry latest 仍为 0.3.19）也未打 tag，故本修复并入 0.3.21 而非另起 0.3.22。
+  - 🔴 **升级用户须注意**：`installLeafmemCli()` 每次安装/升级会无条件 `copyFile` 覆盖 `~/.leafmem/leafmem-cli.sh`，因此只手工修本地副本会在下次 `leafmem-agent update` 时被回滚——修复必须落在仓库 `ops/leafmem-cli.sh`（本次已落）。
+  - 泛化纪律：用 CLI 写含空格长文本后必须**回读校验字段长度**，不能只看退出码；CLI 与 MCP 两通道互为备份（本次即由 MCP 修复 CLI 损坏的数据）。
 
 ### Changed
 - **自动化通道定版 CLI-first**：一次性自动化实测（2026-09-04 晚）证明自动化调度会话中 `mcp__leafmem__*` 工具恒 absent（5.5.1/5.5.3 一致，deferred 索引寻址失效），HTTP CLI 由降级备胎升格为**主通道**。SOUL 模板条款、daily-sentinel / weekly-maintenance 两个产品 SOP、README 1.7 全部改为 CLI-first：自动化首选 leafmem-cli；MCP 工具恰在函数表时可顺带直调，缺席属预期、不判异常、不静默重试。
-- **leafmem-cli 字段面补全**：`remember` 新增 `--tags/--confidence/--source/--metadata`（tags 缺失被一次性验证任务实测暴露）；`update` 新增 `--tags/--metadata`；`list` 新增 `--tags/--cursor`；`recall` 新增 `--task-title/--tool-context`。全部字段对齐 HTTP 路由支持面，E2E 验证 tags 写入→读回→list 过滤→更新全链路。修复 macOS 系统 bash 3.2 下 `set -u` 空 `"$@"` 崩溃的兼容问题。
+- **leafmem-cli 字段面补全**：`remember` 新增 `--tags/--confidence/--source/--metadata`（tags 缺失被一次性验证任务实测暴露）；`update` 新增 `--tags/--metadata`；`list` 新增 `--tags/--cursor`；`recall` 新增 `--task-title/--tool-context`。全部字段对齐 HTTP 路由支持面，E2E 验证 tags 写入→读回→list 过滤→更新全链路。规避 macOS 系统 bash 3.2 下 `set -u` 空 `"$@"` 崩溃的兼容问题（当时采用 `${@:-}` 写法；🔴 该写法本身引入词分割缺陷，已于 2026-09-06 改为 `${@+"$@"}`，详见上方 Fixed）。
 - `ops/automations/daily-sentinel.md` canary 段同步三级降级链与宿主回归取证命令。
 
 ## [0.3.20] - 2026-09-04

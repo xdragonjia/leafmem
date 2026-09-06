@@ -64,7 +64,7 @@ while i < len(a):
     else:
         i += 1
 print(json.dumps(d, ensure_ascii=False))
-' "$MSG" "$MAX" ${@:-})
+' "$MSG" "$MAX" ${@+"$@"})
     curl -s -m 30 -X POST "${BASE}/v1/recall" -H "$AUTH" -H "$CT" -d "$P"; echo
     ;;
   inspect-recall)
@@ -95,7 +95,7 @@ while i < len(a):
     else:
         i += 1
 print(json.dumps(d, ensure_ascii=False))
-' "$CONTENT" "$SUMMARY" "$KIND" "$IMP" ${@:-})
+' "$CONTENT" "$SUMMARY" "$KIND" "$IMP" ${@+"$@"})
     curl -s -m 30 -X POST "${BASE}/v1/memories?scope=agent:${AGENT}" -H "$AUTH" -H "$CT" -d "$P"; echo
     ;;
   get)
@@ -119,7 +119,7 @@ while i < len(a):
     else:
         i += 1
 print("&".join(parts))
-' ${@:-})
+' ${@+"$@"})
     Q="scope=agent:${AGENT}&limit=${LIMIT}"
     [ -n "$KINDS" ] && Q="${Q}&kinds=${KINDS}"
     [ -n "$EXTRA" ] && Q="${Q}&${EXTRA}"
@@ -145,7 +145,7 @@ while i < len(a):
     else:
         i += 1
 print(json.dumps(d, ensure_ascii=False))
-' ${@:-})
+' ${@+"$@"})
     curl -s -m 15 -X PATCH "${BASE}/v1/memories/${ID}?scope=agent:${AGENT}" -H "$AUTH" -H "$CT" -d "$P"; echo
     ;;
   delete)
