@@ -5,6 +5,19 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.22] - 2026-09-06
+
+### Added
+- **知识图谱 d3-force 全面升级（三轮用户反馈迭代）**：console 知识图谱从手搓 canvas 力导升级为 d3-force 驱动——vendor `d3.min.js` 随包分发 + 懒加载 + 手搓 canvas 兜底降级；滚轮缩放/拖拽/悬停邻接高亮；点击节点**持久选中**（选中节点+关联高亮锁定，点空白取消）+ 右侧滑出式详情面板（点击才弹出，关联实体可点击跳转定位）；方向箭头（灰/高亮双 marker）；工具按钮：适应屏幕/箭头开关/重新布局。
+- **图谱页全屏响应式**：图谱区占满除左侧菜单与顶栏外的全部空间，窗口缩放时 ResizeObserver 自动"适应屏幕"（zoom transform 适配，不动节点坐标、无重新洗牌）。
+
+### Fixed
+- **箭头"糊成一片"根因链修复（两轮）**：①`markerUnits` 默认 `strokeWidth` 导致箭头尺寸=markerWidth×边宽，hub 粗边箭头放大 4 倍——改 `userSpaceOnUse` 固定尺寸；②再缩小至 9×5.5px 对齐 weknora 小巧感；③边端点按目标节点半径截断让箭头贴边。
+- **布局"中间挤"根因修复**：高权重边 strength 封顶 0.85 把 hub 焊死中心（共现多≠拉更紧）——strength 封顶 0.45、link distance 95-155、charge 增加 `distanceMax(430)`（斥力只作用近邻）；中心区节点数 39→27。
+- **孤立节点过远致适应屏幕整体缩太小**：孤立环原贴容器边缘排布（fit 缩放 ~0.55）——改固定紧凑半径 360（fit ~0.85）。
+- **拖拽松手弹回原位**：drag end 保留 fx/fy（_dragged 标记），节点停留在拖放位置；重进页面或点"重新布局"才整体重排。
+- **console 静态资源路径潜在 bug**：相对路径 `console/x.js` 在 `/console/` 尾斜杠入口下错解析为 `/console/console/`（SPA 兜底把 HTML 当 JS 返回）——改根绝对路径，mermaid 加载器同病同修。
+
 ## [0.3.21] - 2026-09-04
 
 ### Added
