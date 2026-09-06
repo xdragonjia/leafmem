@@ -936,12 +936,15 @@ function startD3Graph(canvas, nodes, edges) {
   // 孤立节点静态排外环（重新布局/尺寸变化时重算；手动拖拽后 fx/fy 保留不再回环）
   function placeIsolated() {
     const { width: w, height: h } = box();
+    // 固定紧凑环：半径不贴容器边（用户反馈：孤立节点太远→适应屏幕整体缩太小）
+    // 半径取主体外围 ~360，且不超过短边一半-40
+    const r = Math.min(360, Math.min(w, h) / 2 - 40);
     isolated.sort((a, b) => (b.link_count || 0) - (a.link_count || 0));
     isolated.forEach((n, i) => {
       if (n._dragged) return;
       const ang = (i / Math.max(isolated.length, 1)) * Math.PI * 2 - Math.PI / 2;
-      n.fx = w / 2 + Math.cos(ang) * (w / 2 - 60);
-      n.fy = h / 2 + Math.sin(ang) * (h / 2 - 60);
+      n.fx = w / 2 + Math.cos(ang) * r;
+      n.fy = h / 2 + Math.sin(ang) * r;
     });
   }
 
@@ -960,7 +963,7 @@ function startD3Graph(canvas, nodes, edges) {
       .attr('id', id).attr('viewBox', '0 0 10 6')
       .attr('refX', 9).attr('refY', 3)
       .attr('markerUnits', 'userSpaceOnUse')
-      .attr('markerWidth', 13).attr('markerHeight', 8)
+      .attr('markerWidth', 9).attr('markerHeight', 5.5)
       .attr('orient', 'auto-start-reverse')
       .append('path').attr('d', 'M0,0 L10,3 L0,6 z').attr('fill', color);
   };
@@ -974,10 +977,11 @@ function startD3Graph(canvas, nodes, edges) {
   const simLinks = edges.map(e => ({ source: e.s, target: e.t, rel: e.rel, w: e.w }));
   const sim = d3.forceSimulation(nodes)
     .force('link', d3.forceLink(simLinks).id(n => n._i)
-      .distance(l => Math.max(80, 138 - (l.w || 1) * 7))
-      .strength(l => Math.min(0.85, 0.18 + (l.w || 1) * 0.07)))
-    // 分级斥力：hub 节点排斥更强，整体摊匀（用户反馈"中间太挤"）
-    .force('charge', d3.forceManyBody().strength(n => n._iso ? 0 : Math.max(-950, -330 - deg[n._i] * 26)))
+      .distance(l => Math.max(95, 155 - (l.w || 1) * 7))
+      // 高权重边降 strength：共现多≠需要拉紧，×89 边把 hub 焊死中心是"中间挤"主因
+      .strength(l => Math.min(0.45, 0.12 + (l.w || 1) * 0.035)))
+    // 分级斥力：hub 节点排斥更强；distanceMax 让斥力只作用近邻，全局不再向心积压
+    .force('charge', d3.forceManyBody().strength(n => n._iso ? 0 : Math.max(-950, -330 - deg[n._i] * 26)).distanceMax(430))
     .force('x', d3.forceX().x(() => box().width / 2).strength(0.045))
     .force('y', d3.forceY().y(() => box().height / 2).strength(0.045))
     .force('collide', d3.forceCollide(n => radius(n) + 13));
