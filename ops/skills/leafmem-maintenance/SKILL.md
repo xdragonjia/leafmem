@@ -1,6 +1,6 @@
 ---
 name: leafmem-maintenance
-version: "1.4.0"
+version: "1.4.1"
 agent_created: true
 author: xiaoxia
 description: >
@@ -14,7 +14,7 @@ description: >
 <skill>
   <metadata>
     <name>leafmem-maintenance</name>
-    <version>1.4.0</version>
+    <version>1.4.1</version>
     <agent_created>true</agent_created>
     <author>xiaoxia</author>
     <date>2026-09-03</date>
@@ -99,6 +99,7 @@ description: >
       <action>memory_recall(action="search", kind="lesson") 拉近 30 天 lesson；按 tags 聚类 ≥3 条同主题</action>
       <action>宿主模型归纳共性规律为 1 条 principle，证据 id 存入 metadata.supports</action>
       <action>memory_write(action="remember", kind="principle", importance=0.85, tags=[主题,principle,reflected], metadata={supports:[证据id列表], reflectedAt:当前ISO时间, reflectTag:主题, lastRefreshedAt:当前ISO时间}) —— 🔴 reflectedAt 必传：引擎据此刷新 active context 的 lastReflectAt 标记（0.3.19+），周度观察才能看到蒸馏时间戳随本通道刷新</action>
+      <must>🔴 supports 数组必须存证据 lesson 的【完整 36 位 UUID】——禁止 8 位短 id 前缀（2026-09-07 实测踩坑：3 条 principle 写短 id 致 observation.py ALERT「12 个 supports 指向不存在记忆」principle_supports_missing=12；观察脚本按完整 id 校验，短 id 全部失配。修复=CLI update 全量 metadata（PATCH 为替换语义，须连 reflectedAt/reflectTag/lastRefreshedAt/projectId 一并回填），复验 supports_missing=0）。从 lesson 取完整 UUID：存档 JSON 或 `leafmem-cli get &lt;短id匹配的完整记录&gt;` 反查</must>
       <throttle>同主题 6 天内已蒸馏（查已有 principle 的 reflectedAt）则跳过</throttle>
     </step>
 
@@ -242,6 +243,7 @@ description: >
   </references>
 
   <notes>
+    <note id="2026-09-07">v1.4.1：步骤 6 新增 🔴 must——principle 的 metadata.supports 必须存完整 36 位 UUID（禁止短 id）。2026-09-07 周度维护实测：3 条新 principle 的 supports 误用 8 位短 id，observation.py 报 ALERT「12 个 supports 指向不存在记忆」（supports_missing=12）；CLI update 全量回填完整 UUID 后复验 supports_missing=0。同时记录 PATCH metadata 为替换语义（需连 reflectedAt/reflectTag/lastRefreshedAt/projectId 一并回填）。</note>
     <note id="2026-09-03-v14">v1.4.0：新增步骤 11 实体词表巡检——实测发现 strict 抽取器下实体增长完全依赖词表人工更新（leafmem 本身在 145 条记忆中出现却因不在词表而无实体）；判断清单加 f 项（entity_count 停滞检测），巡检含词表更新与存量增量补链方法（幂等三接口，只加不删，--dry 先行）。</note>
     <note id="2026-09-03">v1.3.0：并入原「周度观察+飞书提醒」开发期任务的持久机制——新增步骤 10 周度观察（observation.py --mode weekly 确定性采集 + 周环比五项判断），报告步骤升为周报口径（有动作/有观察异常才推送）；observation.py 同期通用化（scope 自动探测、随 npm 包分发）。排除场景措辞同步（每日观测采集→每日健康哨兵）。</note>
     <note id="2026-08-24">蒸馏节流补充（实测）：候选主题按 tags 聚类 ≥3 条 lesson 后，还必须与已有 principle 的 tags/content 比对覆盖——即使 principle 的 reflectTag 为空，只要其内容已覆盖候选主题（如 52567dbb 已覆盖飞书卡片 schema 2.0 note/ud_icon 坑，导致 ai-news-pusher 主题跳过），就不重复蒸馏；08-24 从 4 个候选主题（auto_collect/external-skill-updater/ai-news-pusher/公众号）蒸馏 2 条。</note>
