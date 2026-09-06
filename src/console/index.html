@@ -854,7 +854,7 @@ async function renderGraph(el) {
     const nodes = (d.nodes || []).map((n, i) => ({ ...n, x: 0, y: 0, vx: 0, vy: 0, _i: i }));
     const idx = new Map(nodes.map((n, i) => [n.id, i]));
     const edges = (d.edges || []).filter(e => idx.has(e.source_entity_id) && idx.has(e.target_entity_id))
-      .map(e => ({ s: idx.get(e.source_entity_id), t: idx.get(e.target_entity_id), rel: e.relation }));
+      .map(e => ({ s: idx.get(e.source_entity_id), t: idx.get(e.target_entity_id), rel: e.relation, w: e.weight ?? 1 }));
     if (!nodes.length) { el.innerHTML = '<div class="empty"><div class="glyph">⬡</div><div class="msg">暂无实体数据，写入记忆时会自动抽取实体</div></div>'; return; }
     const kinds = [...new Set(nodes.map(n => n.kind))];
     graphFilter.kind = null;
@@ -869,8 +869,154 @@ async function renderGraph(el) {
       </div>
       <div id="graph-detail"></div>
     </div>`;
-    startForceLayout(document.getElementById('graph-canvas'), nodes, edges);
+    startGraph(document.getElementById('graph-canvas'), nodes, edges);
   } catch (err) { el.innerHTML = `<div class="empty"><div class="glyph">⚠</div><div class="msg">${esc(err.message)}</div></div>`; }
+}
+
+// 图谱入口：优先 d3 力导（缩放/拖拽/成熟物理），vendor d3.min.js 加载失败降级手搓 canvas
+let d3Promise = null;
+function loadD3() {
+  if (window.d3) return Promise.resolve(window.d3);
+  if (d3Promise) return d3Promise;
+  d3Promise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = '/console/d3.min.js'; // 根绝对路径：/console 与 /console/ 两种入口 URL 下都正确
+    s.onload = () => resolve(window.d3);
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  return d3Promise;
+}
+async function startGraph(canvas, nodes, edges) {
+  try {
+    await loadD3();
+    startD3Graph(canvas, nodes, edges);
+  } catch {
+    startForceLayout(canvas, nodes, edges);
+  }
+}
+
+// d3 力导图实现（2026-09-06 升级：替换手搓物理——缩放/拖拽/悬停邻接/共现权重边）
+function startD3Graph(canvas, nodes, edges) {
+  const holder = canvas.parentElement;
+  canvas.remove();
+  const width = holder.clientWidth || 960, height = 640;
+  const maxLink = Math.max(...nodes.map(n => n.link_count || 1), 1);
+  const radius = n => 5 + 9 * Math.sqrt((n.link_count || 1) / maxLink);
+  const deg = new Array(nodes.length).fill(0);
+  edges.forEach(e => { deg[e.s]++; deg[e.t]++; });
+  const isolated = [];
+  nodes.forEach((n, i) => { if (!deg[i]) { n._iso = true; isolated.push(n); } });
+  // 孤立节点静态排外环（保留原布局语义），fx/fy 固定
+  isolated.sort((a, b) => (b.link_count || 0) - (a.link_count || 0));
+  isolated.forEach((n, i) => {
+    const ang = (i / Math.max(isolated.length, 1)) * Math.PI * 2 - Math.PI / 2;
+    n.fx = width / 2 + Math.cos(ang) * (width / 2 - 52);
+    n.fy = height / 2 + Math.sin(ang) * (height / 2 - 52);
+  });
+
+  const svg = d3.select(holder).append('svg')
+    .attr('id', 'graph-canvas')
+    .attr('width', '100%').attr('height', height)
+    .attr('viewBox', [0, 0, width, height])
+    .style('display', 'block').style('cursor', 'grab');
+  const gRoot = svg.append('g');
+  svg.call(d3.zoom().scaleExtent([0.3, 4]).on('zoom', e => gRoot.attr('transform', e.transform)))
+     .on('dblclick.zoom', null);
+
+  const simLinks = edges.map(e => ({ source: e.s, target: e.t, rel: e.rel, w: e.w }));
+  const sim = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(simLinks).id(n => n._i)
+      .distance(l => Math.max(66, 118 - (l.w || 1) * 6))
+      .strength(l => Math.min(0.9, 0.22 + (l.w || 1) * 0.08)))
+    .force('charge', d3.forceManyBody().strength(n => n._iso ? 0 : -430))
+    .force('center', d3.forceCenter(width / 2, height / 2))
+    .force('collide', d3.forceCollide(n => radius(n) + 10));
+  // 预收敛 300 步（与原 260 步预模拟同义，进场不抽搐）
+  sim.stop();
+  for (let i = 0; i < 300; i++) sim.tick();
+
+  const linkSel = gRoot.append('g').selectAll('line').data(simLinks).join('line')
+    .attr('stroke', '#94a3b8')
+    .attr('stroke-width', l => 0.6 + Math.min(3.4, (l.w || 1) * 0.5));
+  const nodeSel = gRoot.append('g').selectAll('circle').data(nodes).join('circle')
+    .attr('r', radius)
+    .attr('fill', n => KIND_COLOR[n.kind] || '#64748b')
+    .attr('stroke', 'rgba(255,255,255,.9)').attr('stroke-width', 1.2)
+    .style('filter', n => `drop-shadow(0 0 5px ${(KIND_COLOR[n.kind] || '#64748b')}59)`)
+    .style('cursor', 'pointer');
+  const labelSel = gRoot.append('g').selectAll('text').data(nodes).join('text')
+    .text(n => n.name)
+    .attr('text-anchor', 'middle')
+    .attr('dy', n => radius(n) + 11)
+    .attr('font-size', 10)
+    .style('pointer-events', 'none')
+    .style('paint-order', 'stroke')
+    .attr('stroke', 'rgba(255,255,255,.78)').attr('stroke-width', 2.5);
+
+  // 悬停浮窗（HTML div，替代原 canvas 手绘浮窗）
+  const tip = document.createElement('div');
+  tip.style.cssText = 'position:absolute;display:none;background:rgba(255,255,255,.94);border:1px solid rgba(99,102,241,.35);border-radius:10px;padding:8px 10px;font-size:12px;pointer-events:none;z-index:3;max-width:270px;box-shadow:0 4px 14px rgba(0,0,0,.08);color:#1a2332;line-height:1.55';
+  holder.appendChild(tip);
+
+  let hovered = null, selected = null, neighbors = null;
+  const visible = n => !graphFilter.kind || n.kind === graphFilter.kind;
+  function neighborSet(n) {
+    const s = new Set([n]);
+    for (const l of simLinks) {
+      if (l.source === n) s.add(l.target);
+      if (l.target === n) s.add(l.source);
+    }
+    return s;
+  }
+  function applyStates() {
+    nodeSel
+      .attr('opacity', n => !visible(n) ? 0.07 : hovered ? (neighbors.has(n) ? 1 : 0.15) : 0.92)
+      .attr('stroke', n => n === hovered || n === selected ? '#1e293b' : (hovered && neighbors.has(n)) ? '#6366f1' : 'rgba(255,255,255,.9)')
+      .attr('stroke-width', n => n === hovered || n === selected ? 2.5 : (hovered && neighbors.has(n)) ? 2 : 1.2);
+    linkSel
+      .attr('stroke', l => (hovered && (l.source === hovered || l.target === hovered)) ? '#16a34a' : '#94a3b8')
+      .attr('stroke-opacity', l => !visible(l.source) || !visible(l.target) ? 0.05 : (hovered && (l.source === hovered || l.target === hovered)) ? 0.95 : hovered ? 0.08 : 0.35);
+    labelSel
+      .attr('fill', n => (n === hovered || n === selected || (hovered && neighbors.has(n))) ? '#1a2332' : hovered ? 'rgba(26,35,50,.2)' : 'rgba(26,35,50,.62)')
+      .attr('opacity', n => visible(n) ? 1 : 0);
+  }
+  window.__graphRedraw = applyStates;
+
+  nodeSel.call(d3.drag()
+    .on('start', (e, n) => { if (!e.active) sim.alphaTarget(0.25).restart(); n.fx = n.x; n.fy = n.y; })
+    .on('drag', (e, n) => { n.fx = e.x; n.fy = e.y; })
+    .on('end', (e, n) => { if (!e.active) sim.alphaTarget(0); if (!n._iso) { n.fx = null; n.fy = null; } }));
+
+  nodeSel
+    .on('mouseover', (e, n) => {
+      hovered = n; neighbors = neighborSet(n); applyStates();
+      const rel = simLinks.filter(l => l.source === n || l.target === n).slice(0, 5);
+      tip.innerHTML = `<b>${esc(n.name)}</b>（${esc(n.kind)} · ${n.link_count} 条记忆链接）` +
+        rel.map(l => {
+          const other = l.source === n ? l.target : l.source;
+          return `<br><span style="color:#5b6675">— ${esc(l.rel)} → ${esc(other.name)}${(l.w || 1) > 1 ? ` <span style="color:#16a34a">×${l.w}</span>` : ''}</span>`;
+        }).join('');
+      tip.style.display = 'block';
+    })
+    .on('mousemove', (e) => {
+      const r = holder.getBoundingClientRect();
+      tip.style.left = Math.min(e.clientX - r.left + 14, r.width - 280) + 'px';
+      tip.style.top = Math.min(e.clientY - r.top + 12, r.height - 90) + 'px';
+    })
+    .on('mouseout', () => { hovered = null; applyStates(); tip.style.display = 'none'; })
+    .on('click', (e, n) => { selected = n; applyStates(); showEntityDetail(n); e.stopPropagation(); });
+
+  svg.on('click', e => { if (e.target === svg.node()) { selected = null; applyStates(); showEntityDetail(null); } });
+
+  sim.on('tick', () => {
+    linkSel.attr('x1', l => l.source.x).attr('y1', l => l.source.y)
+           .attr('x2', l => l.target.x).attr('y2', l => l.target.y);
+    nodeSel.attr('cx', n => n.x).attr('cy', n => n.y);
+    labelSel.attr('x', n => n.x).attr('y', n => n.y);
+  });
+  applyStates();
+  sim.alpha(0.18).restart();
 }
 
 function startForceLayout(canvas, nodes, edges) {
@@ -1440,7 +1586,7 @@ function loadMermaid() {
   if (mermaidPromise) return mermaidPromise;
   mermaidPromise = new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = 'console/mermaid.min.js'; // 静态资源挂在 /console/ 前缀下
+    s.src = '/console/mermaid.min.js'; // 根绝对路径：/console/ 尾斜杠入口下相对路径会错解析为 /console/console/（SPA 兜底返回 HTML），2026-09-06 随 d3 引入一并修
     s.onload = () => resolve(window.mermaid);
     s.onerror = reject;
     document.head.appendChild(s);
