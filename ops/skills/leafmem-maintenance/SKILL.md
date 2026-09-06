@@ -58,7 +58,7 @@ description: >
       <action>mcp__leafmem__memory_recall(action="recall", message="leafmem 维护 整理 误删 教训")</action>
       <branch>
         <if>MCP 不可用</if>
-        <then>按三级降级链（2026-09-04 v0.3.21）：② bash ~/.leafmem/leafmem-cli.sh recall "..."（HTTP 通道，launchd 守护）→ ③ conversation_search；召回失败仍不阻塞，但删除动作必须更保守。①失败不得默认"环境差异"静默放过：在当日会话日志 grep "Indexing deferred tools for server: leafmem" 取证宿主回归</then>
+        <then>按 CLI-first（2026-09-04 v0.3.21）：首选 `bash ~/.leafmem/leafmem-cli.sh recall "..."`（HTTP 通道，launchd 守护，自动化会话 mcp__leafmem__* 恒 absent 属预期）→ CLI 也不可达先查 `launchctl list | grep leafmem` → 最后 conversation_search；召回失败仍不阻塞，但删除动作必须更保守</then>
       </branch>
     </step>
 

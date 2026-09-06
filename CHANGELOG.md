@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - 泛化纪律：用 CLI 写含空格长文本后必须**回读校验字段长度**，不能只看退出码；CLI 与 MCP 两通道互为备份（本次即由 MCP 修复 CLI 损坏的数据）。
 
 ### Changed
-- **自动化通道定版 CLI-first**：一次性自动化实测（2026-09-04 晚）证明自动化调度会话中 `mcp__leafmem__*` 工具恒 absent（5.5.1/5.5.3 一致，deferred 索引寻址失效），HTTP CLI 由降级备胎升格为**主通道**。SOUL 模板条款、daily-sentinel / weekly-maintenance 两个产品 SOP、README 1.7 全部改为 CLI-first：自动化首选 leafmem-cli；MCP 工具恰在函数表时可顺带直调，缺席属预期、不判异常、不静默重试。
+- **自动化通道定版 CLI-first**：一次性自动化实测（2026-09-04 晚）证明自动化调度会话中 `mcp__leafmem__*` 工具恒 absent（5.5.1/5.5.3 一致，deferred 索引寻址失效），HTTP CLI 由降级备胎升格为**主通道**。SOUL 模板条款、daily-sentinel / weekly-maintenance 两个产品 SOP、README 1.7、leafmem-maintenance 技能（维护 SOP canary 召回分支）全部改为 CLI-first：自动化首选 leafmem-cli；MCP 工具恰在函数表时可顺带直调，缺席属预期、不判异常、不静默重试。
 - **leafmem-cli 字段面补全**：`remember` 新增 `--tags/--confidence/--source/--metadata`（tags 缺失被一次性验证任务实测暴露）；`update` 新增 `--tags/--metadata`；`list` 新增 `--tags/--cursor`；`recall` 新增 `--task-title/--tool-context`。全部字段对齐 HTTP 路由支持面，E2E 验证 tags 写入→读回→list 过滤→更新全链路。规避 macOS 系统 bash 3.2 下 `set -u` 空 `"$@"` 崩溃的兼容问题（当时采用 `${@:-}` 写法；🔴 该写法本身引入词分割缺陷，已于 2026-09-06 改为 `${@+"$@"}`，详见上方 Fixed）。
 - `ops/automations/daily-sentinel.md` canary 段同步三级降级链与宿主回归取证命令。
 
