@@ -5,6 +5,16 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **四层写入侧闸门：自动化任务书整段入库致全库召回 400 根治（2026-09-11，09-10/09-11 两日连续复发）**。根因链（备份库取证实证）：自动化会话的 `<user_query>` 内文就是系统生成的任务书全文（7951 字符），`sanitizeCapturedText` 的 user_query 提取将其当人类原话放行 → 规则提取器 decision cue「改用」在任务书正文命中（@6020）→ `normalizeMemoryCandidate` 无长度上限 → 整段任务书以 `content==summary`、`kind=decision`、`source=turn_inference` 入库 → recall 批量 embedding 超 bge-m3 单条上限 → **全库** recall 400。四层设防：
+  - L1 `sanitize.ts` + hooks 桥客户端副本：自动化任务书拦截——骨架标志（`automation_system_reminder` / `<automations>` / `<user-prompt-submit-hook>`）直接拒；长文（>1500 字符）+ 宿主任务书句式（`You MUST follow these steps` / `Execute the task as specified in the user query`）组合拒。hook 对净化为空的行为为静默跳过（不发请求不报错），自动化会话 Stop 自动捕获（垃圾主要来源）随之停用，合法记忆走 CLI 显式写入不受影响。
+  - L2 `runtime.ts` 规则提取器：推断候选（turn_inference）>500 字符丢弃——规则 cue 只该抓一句话声明；`explicit_remember`（用户说"记住：…"）豁免、上限 6000 与核心层一致（避免误杀显式长内容）。
+  - L3 `service.ts` captureTurn：自动推断候选（turn_inference/llm_extraction）>2000 字符丢弃；显式 remember 豁免。
+  - L4 `core/memory.ts`：`MAX_MEMORY_CONTENT_CHARS = 6000` 全通道硬上限（remember + update 双入口，`update()` 此前可绕过——变更推演发现的 G2 缺口同轮修复），超过即拒绝并提示拆分；6000 位于实测安全区（现有最长合法记录 5318 OK / 事故记录 7951 爆 400）。
+  - 验证：真实 HTTP 端到端——任务书 capture 0 入库；2122 字符含 cue 长文 0 入库；显式记住 2292 字符正常入库；合法 3257/5500 字符 lesson 字节级完整；8400 字符 remember 与 7000 字符 update content 均拒绝且报错明确；recall 健康（CLI hits=8 命中旧记忆）。全量测试 286/286。
+
 ## [0.3.22] - 2026-09-06
 
 ### Added

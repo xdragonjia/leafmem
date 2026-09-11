@@ -116,6 +116,12 @@ export type LeafMemOptions = {
   searchWeights?: Partial<SearchWeights>;
 };
 
+// 2026-09-11: single source of truth for the content length ceiling, shared by
+// remember() and update() (update previously bypassed the gate). Chosen below
+// the observed bge-m3 per-item embedding failure point (5318 chars OK, 7951
+// chars -> recall 400) and above the longest legitimate record (5318).
+export const MAX_MEMORY_CONTENT_CHARS = 6000;
+
 export class LeafMem {
   private readonly store: MemoryStore;
   private readonly idFactory: () => string;
@@ -201,7 +207,7 @@ export class LeafMem {
     // fail with 400 for the whole store). 6000 chars sits safely below the
     // observed bge-m3 per-item failure point (5318 chars OK, 7951 chars 400)
     // while above the longest legitimate record in the store (5318).
-    const MAX_CONTENT_CHARS = 6000;
+    const MAX_CONTENT_CHARS = MAX_MEMORY_CONTENT_CHARS;
     if (typeof input.content === "string" && input.content.length > MAX_CONTENT_CHARS) {
       throw new Error(
         `memory content too long: ${input.content.length} chars (max ${MAX_CONTENT_CHARS}). ` +
@@ -387,6 +393,17 @@ export class LeafMem {
   }
 
   async update(id: string, patch: Partial<MemoryInput>): Promise<MemoryRecord | null> {
+    // 2026-09-11: same ceiling as remember() — update() previously allowed
+    // patching content past every length gate (G2 gap found in change review).
+    if (
+      typeof patch.content === "string" &&
+      patch.content.length > MAX_MEMORY_CONTENT_CHARS
+    ) {
+      throw new Error(
+        `memory content too long: ${patch.content.length} chars (max ${MAX_MEMORY_CONTENT_CHARS}). ` +
+          "Split the memory into smaller atomic records instead of storing an oversized blob.",
+      );
+    }
     return this.enqueue(async () => {
       const records = await this.store.load();
       const record = records.find((r) => r.id === id);

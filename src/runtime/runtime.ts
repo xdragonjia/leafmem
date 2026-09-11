@@ -303,11 +303,20 @@ export function inferMemoryProposals(turn: MemoryTurnInput): CapturedMemoryPropo
   // 2026-09-11 length gate (real incidents 09-10 + 09-11: a 7951-char
   // automation task book matched the "改用" decision cue mid-text and was
   // stored WHOLE as content==summary -> recall 400). Rule cues are meant to
-  // catch short one-line declarations; any candidate longer than this is a
-  // transcript remainder, never a human statement.
+  // catch short one-line declarations; any inferred candidate longer than
+  // this is a transcript remainder, never a human statement. Explicit
+  // remembers (user said "记住: ...") may legitimately carry long content —
+  // they are exempt here and bounded by the 6000-char ceiling in core.
   const MAX_RULE_PROPOSAL_CHARS = 500;
+  const MAX_EXPLICIT_PROPOSAL_CHARS = 6000;
   return dedupeProposals(proposals)
-    .filter((proposal) => proposal.content.length <= MAX_RULE_PROPOSAL_CHARS)
+    .filter(
+      (proposal) =>
+        proposal.content.length <=
+        (proposal.source === "explicit_remember"
+          ? MAX_EXPLICIT_PROPOSAL_CHARS
+          : MAX_RULE_PROPOSAL_CHARS),
+    )
     .filter((proposal) => isSubstantiveMemoryContent(proposal.content));
 }
 
