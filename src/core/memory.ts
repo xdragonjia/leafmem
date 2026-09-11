@@ -196,6 +196,18 @@ export class LeafMem {
   }
 
   async remember(input: MemoryInput): Promise<MemoryRecord> {
+    // 2026-09-11 hard ceiling (all channels, real incidents 09-10 + 09-11:
+    // 7951-char records passed every upstream gate and made recall embedding
+    // fail with 400 for the whole store). 6000 chars sits safely below the
+    // observed bge-m3 per-item failure point (5318 chars OK, 7951 chars 400)
+    // while above the longest legitimate record in the store (5318).
+    const MAX_CONTENT_CHARS = 6000;
+    if (typeof input.content === "string" && input.content.length > MAX_CONTENT_CHARS) {
+      throw new Error(
+        `memory content too long: ${input.content.length} chars (max ${MAX_CONTENT_CHARS}). ` +
+          "Split the memory into smaller atomic records instead of storing an oversized blob.",
+      );
+    }
     const record = await this.enqueue(async () => {
       const nowIso = this.now().toISOString();
       const records = await this.store.load();

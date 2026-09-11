@@ -141,7 +141,14 @@ export class LeafMemPlatformService implements PlatformMemoryService {
           userScope,
         }),
       ],
-    }));
+    })).filter((proposal) => {
+      // 2026-09-11 length gate (real incidents 09-10 + 09-11: automation task
+      // books stored whole as turn_inference records -> recall 400). Inferred
+      // proposals must be compact; only explicit remembers may carry long
+      // human-authored content (hard ceiling enforced in core remember).
+      const isAuto = proposal.source === "turn_inference" || proposal.source === "llm_extraction";
+      return !isAuto || proposal.content.length <= 2000;
+    });
 
     const runtime = this.buildRuntime(lifecycleScopes);
     const result = await runtime.captureTurn({

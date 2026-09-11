@@ -300,9 +300,15 @@ export function inferMemoryProposals(turn: MemoryTurnInput): CapturedMemoryPropo
     });
   }
 
-  return dedupeProposals(proposals).filter((proposal) =>
-    isSubstantiveMemoryContent(proposal.content),
-  );
+  // 2026-09-11 length gate (real incidents 09-10 + 09-11: a 7951-char
+  // automation task book matched the "改用" decision cue mid-text and was
+  // stored WHOLE as content==summary -> recall 400). Rule cues are meant to
+  // catch short one-line declarations; any candidate longer than this is a
+  // transcript remainder, never a human statement.
+  const MAX_RULE_PROPOSAL_CHARS = 500;
+  return dedupeProposals(proposals)
+    .filter((proposal) => proposal.content.length <= MAX_RULE_PROPOSAL_CHARS)
+    .filter((proposal) => isSubstantiveMemoryContent(proposal.content));
 }
 
 const MEMORY_EXTRACTION_SYSTEM_PROMPT =

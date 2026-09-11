@@ -45,5 +45,22 @@ export function sanitizeCapturedText(text: string | undefined | null): string {
   // Guard: if the remainder still smells like injection scaffolding, skip.
   if (/^(#|##)\s*(SOUL\.md|IDENTITY\.md|USER\.md)/i.test(trimmed)) return "";
   if (/<(hook|user-context|memory\b)/i.test(trimmed.slice(0, 60))) return "";
+
+  // 2026-09-11 guard (real incidents 09-10 + 09-11: 7951-char automation
+  // task-book stored whole as a turn_inference "decision" -> recall 400).
+  // For automation sessions the <user_query> body IS a system-generated task
+  // book, not human speech — the extraction above therefore cannot save us.
+  // Strong markers (XML scaffolding / host automation phrases) never appear in
+  // normal human messages; weaker phrasing markers only reject when the text is
+  // also long, so a short human quote mentioning them is not affected.
+  if (/automation_system_reminder|<automations>|<user-prompt-submit-hook>/i.test(trimmed)) {
+    return "";
+  }
+  if (
+    trimmed.length > 1500 &&
+    /You MUST follow these steps|Execute the task as specified in the user query/i.test(trimmed)
+  ) {
+    return "";
+  }
   return trimmed;
 }
