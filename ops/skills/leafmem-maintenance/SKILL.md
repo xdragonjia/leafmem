@@ -1,6 +1,6 @@
 ---
 name: leafmem-maintenance
-version: "1.4.1"
+version: "1.4.2"
 agent_created: true
 author: xiaoxia
 description: >
@@ -14,7 +14,7 @@ description: >
 <skill>
   <metadata>
     <name>leafmem-maintenance</name>
-    <version>1.4.1</version>
+    <version>1.4.2</version>
     <agent_created>true</agent_created>
     <author>xiaoxia</author>
     <date>2026-09-03</date>
@@ -107,6 +107,8 @@ description: >
       <description>基于 preference delta 更新用户画像，替代付费 inferencer 的 profile</description>
       <action>memory_recall(action="search", kind="preference") 拉全部 preference；memory_recall(action="active_get", kind="profile") 读当前画像</action>
       <action>宿主模型比对差异，**只输出需要更新的分节**（"## 分节标题\n新内容" markdown）；memory_write(action="active_distill", kind="profile", content=更新分节)</action>
+      <action>🔴 通道（2026-09-14 实测打通）：active_distill 仅实现在 src/mcp/handler.ts，HTTP 面（routes-memory / routes-console）不暴露 → 自动化会话（mcp__leafmem__* 恒 absent）可用 `scripts/leafmem_mcp_call.py memory_write '{"action":"active_distill","kind":"profile","content":"..."}'`：该脚本按 ~/.workbuddy/mcp.json 的 leafmem 配置启动临时 stdio 进程，initialize 后发 tools/call，与常驻服务共享同一 sqlite。写完用 HTTP GET /v1/governance 复验 sections 数与 profile.updatedAt（本法 2026-09-14 实测：18→21 分节、merged=3、updatedAt 刷新为当日）。</action>
+      <action>🔴 节奏：周度观察的 [WARN]「画像超过 14 天未刷新」即本步骤的触发信号（2026-09-14 实测命中：08-30 最后一次刷新，09-14 已 15 天）。周维护时先跑 observation，再据此决定是否刷新画像。</action>
       <note>🔴 分节合并语义：引擎按分节标题合并——同名分节被替换、新分节追加、**未提到的分节原样保留**。宿主永远不要输出全文覆写，避免误删其他分节。</note>
       <note id="2026-08-19">🔴 console 洞察页"用户画像"卡片=profile 快照（active_distill kind=profile 的产物），**memory_govern update 修改 preference 记录不会自动反映到画像卡片**；mcp__leafmem__memory_organize(action=profile) 需付费 inferencer（本机返回 no_inferencer）。用户反馈"画像没更新"时走本步骤宿主版 active_distill（2026-08-19 实测成功：sectionsBefore/After 13、merged 1，卡片内容即时含新规则）。</note>
     </step>
@@ -114,11 +116,12 @@ description: >
     <step order="8" name="衰减降权">
       <description>陈旧且未被召回的低重要性记忆降权（不删除，pinned 豁免）</description>
       <action>mcp__leafmem__memory_organize(action="decay", scopeType="agent", scopeId="workbuddy", dryRun=false) —— 纯规则，不需要 LLM</action>
+      <action>🔴 通道（2026-09-14 实测打通）：decay 同样不在 HTTP 暴露面 → 自动化会话用 `scripts/leafmem_mcp_call.py memory_organize '{"action":"decay","dryRun":false}'`；返回 {scanned, decayed[]}，scanned 应等于库内总条数（2026-09-14 实测 scanned=1601 / decayed=0，与 observation 的 decay_candidates=0 互相印证）。可先 --dryRun:true 预演。</action>
     </step>
 
     <step order="9" name="镜像同步">
       <description>导出全量记忆到本地镜像，供 MCP 降级兜底</description>
-      <action>node <LeafMem 安装目录>/ops/mirror-sync.js（默认写 ~/.leafmem/mirror，可 --mirror-dir 覆盖）</action>
+      <action>node &lt;LeafMem 安装目录&gt;/ops/mirror-sync.js（默认写 ~/.leafmem/mirror，可 --mirror-dir 覆盖）</action>
     </step>
 
     <step order="10" name="周度观察（只读，2026-09-03 并入）">
@@ -237,12 +240,14 @@ description: >
   </checkpoints>
 
   <references>
-    <file path="<LeafMem 安装目录>/ops/mirror-sync.js">镜像同步脚本（安装目录=`npm root -g`/@xdragonjia/leafmem）</file>
-    <file path="<LeafMem 安装目录>/ops/observation.py">周度观察采集脚本（零 LLM 依赖，约 20 项治理指标 + ALERT/WARN/INFO 判定；--mode weekly；日志 ~/.leafmem/observation/leafmem-observation-log.jsonl）</file>
-    <file path="<LeafMem 安装目录>/ops/consolidation.js">⚠️ 历史脚本（硬依赖已移除的 DEEPSEEK_API_KEY，不可运行；仅作存档参考，去重职责已由本技能步骤 3 承担）</file>
+    <file path="scripts/leafmem_mcp_call.py">🔴 MCP stdio 通道调用器（2026-09-14 新增）：用于调用 HTTP 面未暴露的 MCP 动作（active_distill / organize 类）。按 ~/.workbuddy/mcp.json 的 leafmem 条目启动临时 stdio 进程，initialize 后发 tools/call，与常驻服务共享同一 sqlite。用法：python3 scripts/leafmem_mcp_call.py &lt;tool&gt; '&lt;args JSON&gt;'（例：memory_organize '{"action":"decay","dryRun":false}'）。</file>
+    <file path="&lt;LeafMem 安装目录&gt;/ops/mirror-sync.js">镜像同步脚本（安装目录=`npm root -g`/@xdragonjia/leafmem）</file>
+    <file path="&lt;LeafMem 安装目录&gt;/ops/observation.py">周度观察采集脚本（零 LLM 依赖，约 20 项治理指标 + ALERT/WARN/INFO 判定；--mode weekly；日志 ~/.leafmem/observation/leafmem-observation-log.jsonl）</file>
+    <file path="&lt;LeafMem 安装目录&gt;/ops/consolidation.js">⚠️ 历史脚本（硬依赖已移除的 DEEPSEEK_API_KEY，不可运行；仅作存档参考，去重职责已由本技能步骤 3 承担）</file>
   </references>
 
   <notes>
+    <note id="2026-09-14">v1.4.2：打通自动化会话的 MCP stdio 通道（步骤 7 画像刷新 / 步骤 8 decay）——active_distill 与 organize 类动作仅实现在 src/mcp/handler.ts，HTTP 面（routes-memory / routes-console）不暴露，此前周维护只能"跳过"；现以新增的 scripts/leafmem_mcp_call.py 按 mcp.json 配置启动临时 stdio 进程调用（initialize + tools/call），与常驻服务共享同一 sqlite、不冲突。2026-09-14 实测：画像 18→21 分节（merged=3，updatedAt 刷新为当日）、decay scanned=1601 / decayed=0（与 observation 的 decay_candidates=0 互相印证）、用 HTTP /v1/governance 复验通过。同时把「画像 14 天新鲜度」与 observation 的 [WARN] 显式挂钩为步骤 7 的触发信号。</note>
     <note id="2026-09-07">v1.4.1：步骤 6 新增 🔴 must——principle 的 metadata.supports 必须存完整 36 位 UUID（禁止短 id）。2026-09-07 周度维护实测：3 条新 principle 的 supports 误用 8 位短 id，observation.py 报 ALERT「12 个 supports 指向不存在记忆」（supports_missing=12）；CLI update 全量回填完整 UUID 后复验 supports_missing=0。同时记录 PATCH metadata 为替换语义（需连 reflectedAt/reflectTag/lastRefreshedAt/projectId 一并回填）。</note>
     <note id="2026-09-03-v14">v1.4.0：新增步骤 11 实体词表巡检——实测发现 strict 抽取器下实体增长完全依赖词表人工更新（leafmem 本身在 145 条记忆中出现却因不在词表而无实体）；判断清单加 f 项（entity_count 停滞检测），巡检含词表更新与存量增量补链方法（幂等三接口，只加不删，--dry 先行）。</note>
     <note id="2026-09-03">v1.3.0：并入原「周度观察+飞书提醒」开发期任务的持久机制——新增步骤 10 周度观察（observation.py --mode weekly 确定性采集 + 周环比五项判断），报告步骤升为周报口径（有动作/有观察异常才推送）；observation.py 同期通用化（scope 自动探测、随 npm 包分发）。排除场景措辞同步（每日观测采集→每日健康哨兵）。</note>
