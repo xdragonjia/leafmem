@@ -1,6 +1,6 @@
 ---
 name: leafmem-maintenance
-version: "1.4.2"
+version: "1.4.3"
 agent_created: true
 author: xiaoxia
 description: >
@@ -14,7 +14,7 @@ description: >
 <skill>
   <metadata>
     <name>leafmem-maintenance</name>
-    <version>1.4.2</version>
+    <version>1.4.3</version>
     <agent_created>true</agent_created>
     <author>xiaoxia</author>
     <date>2026-09-03</date>
@@ -60,6 +60,7 @@ description: >
         <if>MCP 不可用</if>
         <then>按 CLI-first（2026-09-04 v0.3.21）：首选 `bash ~/.leafmem/leafmem-cli.sh recall "..."`（HTTP 通道，launchd 守护，自动化会话 mcp__leafmem__* 恒 absent 属预期）→ CLI 也不可达先查 `launchctl list | grep leafmem` → 最后 conversation_search；召回失败仍不阻塞，但删除动作必须更保守</then>
       </branch>
+      <note>写入通道（2026-09-15 补齐，缺口已关闭）：主通道 `bash ~/.leafmem/leafmem-cli.sh`（remember / update / delete / get / list / stats / scopes / task-detail）。🔴 HTTP 服务**无 task_append 路由** —— 任务登记与关闭必须用 `task-append &lt;taskId&gt; &lt;content&gt; [rollingSummary] [status] [title] [role]` 子命令，底层由 `~/.leafmem/leafmem-mcp-write.mjs` 按 mcp.json 的 leafmem 服务配置原样拉起 MCP 做 stdio 握手（不复制密钥）；创建即关闭时须同传 rollingSummary 且写成闭环版表述（清除「待办」类措辞）。`task-detail` 已修 URL 编码，含中文/冒号的 taskId 方可正常回读。</note>
     </step>
 
     <step order="2" name="健康检查（只读）">
@@ -80,6 +81,7 @@ description: >
 
     <step order="4" name="真重复检测与删除">
       <description>合并完全重复的记忆</description>
+      <action>🔴 先跑 `python3 scripts/weekly_scan.py` 取「1. 真重复」段与「3. 跨日近重复」段清单——量化、可复核、秒级，替代人工通读全库；脚本只读，删除动作仍在本步骤经 MCP 执行</action>
       <rule>用全文规范化后的 SHA256 哈希判定重复（re.sub 空白后取 16 位）</rule>
       <rule>🔴 NEVER 用前缀聚类判定重复 — 因为同一 YAML 头部的不同内容会被误判为重复导致误删；替代做法是全文规范化哈希</rule>
       <action>每组保留 importance 最高 + updated_at 最新一条；其余 memory_govern(action=delete, scopeType=agent, scopeId=workbuddy)</action>
@@ -87,7 +89,9 @@ description: >
 
     <step order="5" name="碎片簇整合">
       <description>把同日期+同 context 的 ≥3 条碎片整合为 1-2 条高质量记忆</description>
-      <detect>按 (date, context) 聚类，≥3 条成簇</detect>
+      <detect>用 `python3 scripts/weekly_scan.py` 的「2. 碎片簇」段：按 (日期, 主tag) 聚类 ≥3 条成候选簇，并同时给出**簇内 3-gram 凝聚度 maxJac**</detect>
+      <rule>🔴 只有 maxJac ≥ 0.55 的候选簇才算「真碎片簇」值得整合。同日同 tag 但主题各异的独立记忆会被机械聚类误并成一簇——2026-09-21 实证：98 个候选簇中 97 簇 maxJac &lt; 0.55（多为时序流水与独立事件），仅 1 簇 0.610，且经内容审查属「版本演进链」而非碎片。禁止凭「同日期同 tag」直接整合</rule>
+      <rule>版本演进链（同一决策的旧版与纠正版、同一会话的多次 commit 且 taskId 不同）不属碎片：按 PRESERVE HISTORY 保留全部，仅确认旧条已自带「已被替代 / 已纠正」标记（保留替代链本身即历史证据）</rule>
       <merge>宿主模型按「整合九规则」整合（见 constraints）</merge>
       <write>memory_write(action="remember", kind="lesson", importance=0.7, tags=[主题], content=模板文本)</write>
       <delete>写入成功后才逐条删除原碎片</delete>
@@ -122,6 +126,8 @@ description: >
     <step order="9" name="镜像同步">
       <description>导出全量记忆到本地镜像，供 MCP 降级兜底</description>
       <action>node &lt;LeafMem 安装目录&gt;/ops/mirror-sync.js（默认写 ~/.leafmem/mirror，可 --mirror-dir 覆盖）</action>
+      <rule>🔴 执行顺序：镜像必须是**全部写入动作完成之后**的收尾步骤。LeafMem commit（收尾留痕）本身会写入 1 条 session 记录，先跑镜像会留下 1 条差——2026-09-21 实测 1832→1833，重跑后三方一致。凡镜像之后再有任何写入（含 commit / task_append / remember），必须重跑本步骤</rule>
+      <check>收尾核对须三源同数：`DB = FTS = Mirror 记录数`，并由 `memory_items_fts - memory_items = 0` 佐证 FTS 无滞</check>
     </step>
 
     <step order="10" name="周度观察（只读，2026-09-03 并入）">
@@ -240,6 +246,7 @@ description: >
   </checkpoints>
 
   <references>
+    <file path="scripts/weekly_scan.py">🔴 周维护量化扫描器（2026-09-21 新增，只读、零 LLM 依赖）：一次输出五类信号——①真重复（全文规范化 SHA256；技能 NEVER 规则禁用前缀聚类）②碎片簇候选 + **簇内 3-gram 凝聚度 maxJac**（仅 ≥0.55 判真碎片簇）③跨日近重复（3-gram 倒排索引，1800+ 条秒级；朴素 O(n^2) 全量集合交集会跑不动）④content&gt;4000 字符的超长/畸形条目（content==summary 记号畸形体）⑤蒸馏候选（近 30 天 lesson 按 tag 聚类 ≥3）+ 现有 principle 覆盖清单 + supports 断链检查。用法：`python3 scripts/weekly_scan.py [--json] [--days 30]`。只读，绝不写删。</file>
     <file path="scripts/leafmem_mcp_call.py">🔴 MCP stdio 通道调用器（2026-09-14 新增）：用于调用 HTTP 面未暴露的 MCP 动作（active_distill / organize 类）。按 ~/.workbuddy/mcp.json 的 leafmem 条目启动临时 stdio 进程，initialize 后发 tools/call，与常驻服务共享同一 sqlite。用法：python3 scripts/leafmem_mcp_call.py &lt;tool&gt; '&lt;args JSON&gt;'（例：memory_organize '{"action":"decay","dryRun":false}'）。</file>
     <file path="&lt;LeafMem 安装目录&gt;/ops/mirror-sync.js">镜像同步脚本（安装目录=`npm root -g`/@xdragonjia/leafmem）</file>
     <file path="&lt;LeafMem 安装目录&gt;/ops/observation.py">周度观察采集脚本（零 LLM 依赖，约 20 项治理指标 + ALERT/WARN/INFO 判定；--mode weekly；日志 ~/.leafmem/observation/leafmem-observation-log.jsonl）</file>
@@ -247,6 +254,7 @@ description: >
   </references>
 
   <notes>
+    <note id="2026-09-21">v1.4.3：把步骤 4/5 的判定从「人工抽样目视」升级为**量化判据**——新增 `scripts/weekly_scan.py`（只读，一次输出真重复 / 碎片簇+簇内 3-gram 凝聚度 / 跨日近重复 / 超长畸形 / 蒸馏候选+supports 断链五类信号）。步骤 5 立规：仅 maxJac ≥ 0.55 的候选簇才算真碎片簇（2026-09-21 实证 98 簇中 97 簇 &lt;0.55，唯一 0.610 者经内容审查为版本演进链应按 PRESERVE HISTORY 保留）。此前周维护结论形如「44 簇经人工审查全为独立记忆」，不可复核也无法跨周比较；改为脚本量化后结论可复现、可对账。同类判据纪律：近重复检测用 3-gram 倒排索引（1800+ 条秒级），朴素 O(n^2) 全量集合交集在本机跑不动。步骤 9 同步补执行顺序规则：镜像须在含 commit 在内的全部写入之后跑，否则留 1 条差（本轮实测 1832→1833）。</note>
     <note id="2026-09-14">v1.4.2：打通自动化会话的 MCP stdio 通道（步骤 7 画像刷新 / 步骤 8 decay）——active_distill 与 organize 类动作仅实现在 src/mcp/handler.ts，HTTP 面（routes-memory / routes-console）不暴露，此前周维护只能"跳过"；现以新增的 scripts/leafmem_mcp_call.py 按 mcp.json 配置启动临时 stdio 进程调用（initialize + tools/call），与常驻服务共享同一 sqlite、不冲突。2026-09-14 实测：画像 18→21 分节（merged=3，updatedAt 刷新为当日）、decay scanned=1601 / decayed=0（与 observation 的 decay_candidates=0 互相印证）、用 HTTP /v1/governance 复验通过。同时把「画像 14 天新鲜度」与 observation 的 [WARN] 显式挂钩为步骤 7 的触发信号。</note>
     <note id="2026-09-07">v1.4.1：步骤 6 新增 🔴 must——principle 的 metadata.supports 必须存完整 36 位 UUID（禁止短 id）。2026-09-07 周度维护实测：3 条新 principle 的 supports 误用 8 位短 id，observation.py 报 ALERT「12 个 supports 指向不存在记忆」（supports_missing=12）；CLI update 全量回填完整 UUID 后复验 supports_missing=0。同时记录 PATCH metadata 为替换语义（需连 reflectedAt/reflectTag/lastRefreshedAt/projectId 一并回填）。</note>
     <note id="2026-09-03-v14">v1.4.0：新增步骤 11 实体词表巡检——实测发现 strict 抽取器下实体增长完全依赖词表人工更新（leafmem 本身在 145 条记忆中出现却因不在词表而无实体）；判断清单加 f 项（entity_count 停滞检测），巡检含词表更新与存量增量补链方法（幂等三接口，只加不删，--dry 先行）。</note>
