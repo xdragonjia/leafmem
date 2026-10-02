@@ -134,6 +134,28 @@ test("task_append without status keeps existing task active (back-compat)", asyn
   assert.equal(task?.status, "active");
 });
 
+// 2026-10-02 regression (real incident): the status parameter was a bare type
+// assertion with no runtime validation, so an invalid value ("done" observed
+// in production) was written verbatim into task_context and the console showed
+// a permanently non-completed task. task_append now rejects unknown statuses.
+test("task_append rejects an invalid status value", async () => {
+  const memory = createLeafMem({ store: new InMemoryStore() });
+  const result = await callTool(memory, {
+    action: "task_append",
+    taskId: "t6",
+    role: "assistant",
+    content: "attempt close with wrong word",
+    status: "done",
+    scopeType: "agent",
+    scopeId: "workbuddy",
+  });
+  // handler throws -> JSON-RPC error response (see stdio.ts error wrapping)
+  const errText = JSON.stringify(result.error ?? result.result ?? result);
+  assert.match(errText, /status must be one of active, paused, completed, archived/);
+  const task = await memory.task.get("t6");
+  assert.equal(task, null);
+});
+
 // 2026-08-12 storage unification: legacy epoch-ms task rows must read back as
 // ISO 8601 UTC strings (and new writes must be ISO), so the API contract is
 // uniformly UTC ISO regardless of which vintage of row is stored.

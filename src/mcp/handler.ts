@@ -419,7 +419,23 @@ export function createMemoryToolSet(params: {
           // 2026-08-11 lifecycle: optional status transition ("active" |
           // "paused" | "completed" | "archived") so tasks can be closed
           // instead of staying "active" forever.
-          const taskStatus = optionalString(args.status) as
+          // 2026-10-02: runtime-validate the status — this used to be a bare
+          // type assertion, so an invalid value (observed in prod: "done")
+          // was written verbatim into task_context and surfaced on the
+          // console as a permanently non-completed task.
+          const rawTaskStatus = optionalString(args.status);
+          if (
+            rawTaskStatus !== undefined &&
+            rawTaskStatus !== "active" &&
+            rawTaskStatus !== "paused" &&
+            rawTaskStatus !== "completed" &&
+            rawTaskStatus !== "archived"
+          ) {
+            throw new Error(
+              `status must be one of active, paused, completed, archived (got: ${JSON.stringify(rawTaskStatus)})`,
+            );
+          }
+          const taskStatus = rawTaskStatus as
             | "active"
             | "paused"
             | "completed"
