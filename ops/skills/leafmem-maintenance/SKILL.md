@@ -1,6 +1,6 @@
 ---
 name: leafmem-maintenance
-version: "1.4.5"
+version: "1.5.0"
 agent_created: true
 author: xiaoxia
 description: >
@@ -14,7 +14,7 @@ description: >
 <skill>
   <metadata>
     <name>leafmem-maintenance</name>
-    <version>1.4.5</version>
+    <version>1.5.0</version>
     <agent_created>true</agent_created>
     <author>xiaoxia</author>
     <date>2026-09-03</date>
@@ -84,6 +84,15 @@ description: >
         <check>sqlite3 统计 scope=agent:workbuddy 的 memory_items 总数与 FTS 行数，二者应一致</check>
         <check>memory_recall(action="recall", message="leafmem scope 纪律") canary 验证应命中已知条目</check>
       </checks>
+    </step>
+
+    <step order="2b" name="残留任务闭环清扫（2026-10-02 新增）">
+      <description>检出并闭环滞留在非 completed 状态的任务上下文——闭环依赖会话收尾显式 task_append(status=completed)，会话中断/超时/收尾被跳过会让任务永久滞留 active</description>
+      <detect>python3 scripts/stale_task_sweep.py（只读；exit 2 = 有超龄未闭环或非法状态值；默认阈值 24h，--hours 可调）</detect>
+      <rule>🔴 闭环判据（逐条人工/宿主判定，禁止无脑批量关）：末条 entry 表明主流程已完成 且 超阈值无更新 → 用 `leafmem-cli task-append &lt;taskId&gt; &lt;闭环说明&gt; &lt;闭环版 rollingSummary&gt; completed` 补标；rollingSummary 必须写成闭环版表述（清除「待办/待回写」类措辞，尾项未回写的如实标注「按主流程完成闭环归档」）</rule>
+      <rule>🔴 主流程证据不足的任务不得强关——列入报告标注待复核，宁可滞留不可误判完成</rule>
+      <rule>🔴 状态合法枚举仅 active/paused/completed/archived（0.3.22+ handler 已运行时校验，非法值直接报错 -32602）；脚本检出非法值（如历史遗留 "done"）→ 按闭环判据修正为 completed 或归档</rule>
+      <note>根因修复（2026-10-02，leafmem commit aba363b）：handler.ts 的 status 原为裸类型断言无运行时校验，"done" 被原样写库；已加枚举校验 + 回归测试（8/8）。残留 active 属流程性问题（收尾步骤被跳过），本步骤是其常态化兜底</note>
     </step>
 
     <step order="3" name="全量存档（强制，不可跳过）">
@@ -259,6 +268,7 @@ description: >
   </checkpoints>
 
   <references>
+    <file path="scripts/stale_task_sweep.py">🔴 残留任务闭环清扫扫描器（2026-10-02 新增，只读、零 LLM 依赖）：列出超龄（默认 ≥24h，--hours 可调）未闭环任务 + 末条 entry 摘要 + 非法状态值检测（合法枚举 active/paused/completed/archived）。退出码 0=无残留、2=有残留需闭环、1=错误。闭环动作不走本脚本，由宿主判读后经 `leafmem-cli task-append` 执行。用法：`python3 scripts/stale_task_sweep.py [--hours 24] [--json]`。</file>
     <file path="scripts/weekly_scan.py">🔴 周维护量化扫描器（2026-09-21 新增，只读、零 LLM 依赖）：一次输出五类信号——①真重复（全文规范化 SHA256；技能 NEVER 规则禁用前缀聚类）②碎片簇候选 + **簇内 3-gram 凝聚度 maxJac**（仅 ≥0.55 判真碎片簇）③跨日近重复（3-gram 倒排索引，1800+ 条秒级；朴素 O(n^2) 全量集合交集会跑不动）④content&gt;4000 字符的超长/畸形条目（content==summary 记号畸形体）⑤蒸馏候选（近 30 天 lesson 按 tag 聚类 ≥3）+ 现有 principle 覆盖清单 + supports 断链检查。用法：`python3 scripts/weekly_scan.py [--json] [--days 30]`。只读，绝不写删。</file>
     <file path="scripts/leafmem_mcp_call.py">🔴 MCP stdio 通道调用器（2026-09-14 新增）：用于调用 HTTP 面未暴露的 MCP 动作（active_distill / organize 类）。按 ~/.workbuddy/mcp.json 的 leafmem 条目启动临时 stdio 进程，initialize 后发 tools/call，与常驻服务共享同一 sqlite。用法：python3 scripts/leafmem_mcp_call.py &lt;tool&gt; '&lt;args JSON&gt;'（例：memory_organize '{"action":"decay","dryRun":false}'）。</file>
     <file path="&lt;LeafMem 安装目录&gt;/ops/mirror-sync.js">镜像同步脚本（安装目录=`npm root -g`/@xdragonjia/leafmem）</file>
@@ -267,6 +277,7 @@ description: >
   </references>
 
   <notes>
+    <note id="2026-10-02">v1.5.0：新增步骤 2b「残留任务闭环清扫」+ scripts/stale_task_sweep.py。实证：控制台任务上下文滞留 9 条 active + 1 条非法 "done"（均为 09-15~10-02 期间自动化会话收尾未补 status 所致，主流程实际均已完成）。双根因：① 流程性——闭环靠收尾显式 task_append，中断/超时即滞留，本步骤为常态化兜底；② 产品性——handler.ts status 裸类型断言无运行时校验，已修（leafmem commit aba363b：枚举校验 + 回归测试，非法值报 -32602）。当日 10 条已全部闭环，复验 475/475 completed。</note>
     <note id="2026-09-28">v1.4.5：补齐两处实测细节。① 步骤 7 复验通道的**鉴权口径**——`GET /v1/governance` 只认 `Authorization: Bearer &lt;apiKey&gt;`，`X-API-Key` 头会被拒（返回 `Missing or invalid API key`，此前未记录，本周实测 4 次调用才定位，属可复用的操作性缺口；apiKey 在 `~/.leafmem/agent-service.json`）。② 收尾留痕的机械事实——`memory_write action=commit`（agent + sessionId + rollingSummary）会写入**恰好 1 条 session note**（本周实测 1955→1956），故镜像必须排在 commit **之后**，否则留 1 条差（与步骤 9 既有规则互相印证）。另：`scripts/leafmem_mcp_call.py` 是 Python 脚本，**必须用 python3 调起**（误用 bash 会报 `import: command not found`，症状酷似脚本损坏）。</note>
     <note id="2026-09-21">v1.4.3：把步骤 4/5 的判定从「人工抽样目视」升级为**量化判据**——新增 `scripts/weekly_scan.py`（只读，一次输出真重复 / 碎片簇+簇内 3-gram 凝聚度 / 跨日近重复 / 超长畸形 / 蒸馏候选+supports 断链五类信号）。步骤 5 立规：仅 maxJac ≥ 0.55 的候选簇才算真碎片簇（2026-09-21 实证 98 簇中 97 簇 &lt;0.55，唯一 0.610 者经内容审查为版本演进链应按 PRESERVE HISTORY 保留）。此前周维护结论形如「44 簇经人工审查全为独立记忆」，不可复核也无法跨周比较；改为脚本量化后结论可复现、可对账。同类判据纪律：近重复检测用 3-gram 倒排索引（1800+ 条秒级），朴素 O(n^2) 全量集合交集在本机跑不动。步骤 9 同步补执行顺序规则：镜像须在含 commit 在内的全部写入之后跑，否则留 1 条差（本轮实测 1832→1833）。</note>
     <note id="2026-09-14">v1.4.2：打通自动化会话的 MCP stdio 通道（步骤 7 画像刷新 / 步骤 8 decay）——active_distill 与 organize 类动作仅实现在 src/mcp/handler.ts，HTTP 面（routes-memory / routes-console）不暴露，此前周维护只能"跳过"；现以新增的 scripts/leafmem_mcp_call.py 按 mcp.json 配置启动临时 stdio 进程调用（initialize + tools/call），与常驻服务共享同一 sqlite、不冲突。2026-09-14 实测：画像 18→21 分节（merged=3，updatedAt 刷新为当日）、decay scanned=1601 / decayed=0（与 observation 的 decay_candidates=0 互相印证）、用 HTTP /v1/governance 复验通过。同时把「画像 14 天新鲜度」与 observation 的 [WARN] 显式挂钩为步骤 7 的触发信号。</note>
