@@ -1,6 +1,6 @@
 ---
 name: leafmem-maintenance
-version: "1.6.1"
+version: "1.6.2"
 agent_created: true
 author: xiaoxia
 description: >
@@ -88,8 +88,8 @@ description: >
 
 删除任何记忆前必须先导出全量 JSON 存档，作为误删回滚锚点
 
-- **动作**：Python 读 ~/.leafmem/memory.sqlite 全量 memory_items，导出到 ~/WorkBuddy/backups/02mem/leafmem-archive/leafmem-archive-YYYYMMDD.json
-- **检查点**：🔴 STOP：存档文件写入并验证行数后，才允许进入删除类步骤
+- **动作**：`python3 scripts/archive_dump.py [输出路径]`（只读 `~/.leafmem/memory.sqlite`，默认写 `~/WorkBuddy/backups/02mem/leafmem-archive/leafmem-archive-YYYYMMDD.json`；脚本内置**回读校验**，输出 `ITEMS / ALL / FTS / SIZE / VERIFY` 五项，VERIFY=OK 即存档可用）。等价的最小实现＝Python 读全量 `memory_items`（scope=agent:workbuddy）导出 JSON。
+- **检查点**：🔴 STOP：存档文件写入且 `VERIFY=OK`（条数与库内一致）后，才允许进入删除类步骤。🔴 若 `ITEMS != ALL` 或 `VERIFY=FAIL` → 中止全部删除类步骤，只留健康检查报告（见 fallback_strategy）。
 
 ### 步骤 4：真重复检测与删除
 
@@ -255,6 +255,7 @@ description: >
 ## 参考文件（references）
 
 - `scripts/stale_task_sweep.py` — 🔴 残留任务闭环清扫扫描器（2026-10-02 新增，只读、零 LLM 依赖）：列出超龄（默认 ≥24h，--hours 可调）未闭环任务 + 末条 entry 摘要 + 非法状态值检测（合法枚举 active/paused/completed/archived）。退出码 0=无残留、2=有残留需闭环、1=错误。闭环动作不走本脚本，由宿主判读后经 `leafmem-cli task-append` 执行。用法：`python3 scripts/stale_task_sweep.py [--hours 24] [--json]`。
+- `scripts/archive_dump.py` — 🔴 全量存档导出器（2026-10-05 新增，**步骤 3 强制检查点的标准实现**，只读 sqlite 绝不写入）：以 `file:...?mode=ro` 只读打开 `~/.leafmem/memory.sqlite`，导出 scope=agent:workbuddy 全量 `memory_items`（tags_json/metadata_json 自动解回为 tags/metadata 对象）并**回读校验**条数。输出五项 `ITEMS / ALL / FTS / SIZE / VERIFY`。用法：`python3 scripts/archive_dump.py [输出路径]`。
 - `scripts/weekly_scan.py` — 🔴 周维护量化扫描器（2026-09-21 新增，只读、零 LLM 依赖）：一次输出五类信号——①真重复（全文规范化 SHA256；技能 NEVER 规则禁用前缀聚类）②碎片簇候选 + **簇内 3-gram 凝聚度 maxJac**（仅 ≥0.55 判真碎片簇）③跨日近重复（3-gram 倒排索引，1800+ 条秒级；朴素 O(n^2) 全量集合交集会跑不动）④content>4000 字符的超长/畸形条目（content==summary 记号畸形体）⑤蒸馏候选（近 30 天 lesson 按 tag 聚类 ≥3）+ 现有 principle 覆盖清单 + supports 断链检查。用法：`python3 scripts/weekly_scan.py [--json] [--days 30]`。只读，绝不写删。
 - `scripts/leafmem_mcp_call.py` — 🔴 MCP stdio 通道调用器（2026-09-14 新增）：用于调用 HTTP 面未暴露的 MCP 动作（active_distill / organize 类）。按 ~/.workbuddy/mcp.json 的 leafmem 条目启动临时 stdio 进程，initialize 后发 tools/call，与常驻服务共享同一 sqlite。用法：`python3 scripts/leafmem_mcp_call.py <tool> '<args JSON>'`（例：`memory_organize '{"action":"decay","dryRun":false}'`）。
 - `<LeafMem 安装目录>/ops/mirror-sync.js` — 镜像同步脚本（安装目录=`npm root -g`/@xdragonjia/leafmem）
