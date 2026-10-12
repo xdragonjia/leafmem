@@ -1,12 +1,12 @@
 ---
 name: leafmem-maintenance
-version: "1.6.2"
+version: "1.7.1"
 agent_created: true
 author: xiaoxia
 description: >
   LeafMem 记忆引擎的周期性维护与深度整理 SOP（宿主模型驱动，免付费 inferencer）。
-  覆盖健康检查、强制存档、真重复合并、碎片整合、原则蒸馏、画像刷新、衰减降权、镜像同步、周度观察与趋势判断、实体词表巡检。
-  触发词：leafmem 维护、记忆整理、每周健康检查、深度整理、记忆治理、周度观察。
+  覆盖健康检查、强制存档、真重复合并、碎片整合、长谱系条目拆分（content 近 6,000 上限）、原则蒸馏、画像刷新、衰减降权、镜像同步、周度观察与趋势判断、实体词表巡检。
+  触发词：leafmem 维护、记忆整理、每周健康检查、深度整理、记忆治理、周度观察、长条目拆分。
   排除场景：不做 WeKnora 知识库维护、不替代每日只读观测告警任务、不处理宿主安装配置。
 ---
 
@@ -112,6 +112,21 @@ description: >
 - **删除**：写入成功后才逐条删除原碎片
 - **验证**：用 2-3 个主题查询 recall，新记忆 score ≥ 0.6；抽查无 LLM 自造数字、无近重复、无悬空代词，不达标该簇重做
 
+### 步骤 5b：长谱系条目拆分（content 逼近单条 6,000 上限）
+
+把 content 逼近单条 6,000 上限的「合并磁石」条目做**无损拆分**：核心留在本条，谱系/案例外置为 kind=lesson 原子条目，两向互引 id。
+
+- **触发**：`scripts/weekly_scan.py` 报 content>4000；其中 ≥5,500 者为高危（余量 <10%，任何一次追加都可能撞上限）。2026-10-11 首跑一次处置 3 条磁石（5,996／5,905／5,857 字符），外置 8 条原子条目，父条目降至 2,294／2,744／1,671 字符。
+- **动作（前置）**：🔴 先做**覆盖度扫描**，判定"每个语义段是否已被兄弟条目承载"，再决定"外置"还是"索引指向"。方法：为原文每个语义段取 1-2 个**特征串**，全库 `SELECT id FROM memory_items WHERE content LIKE '%串%'`。命中集合**只含本条** ⇒ 磁石独有，**必须外置**；命中**含他人** ⇒ 索引指向既有 id，**不复制**（复制＝制造重复）。
+- **动作**：外置条目用 `remember` 新建，`--metadata` 带 `{"projectId":"proj_local_mql2p6a1","family":"<族名>","parentId":"<父完整UUID>"}`，标题含族名 + 证据日期；父条目保留「本族新教训一律 kind=lesson 另立原子条目互引 id」的族规。
+- **规则**：🔴 `parentId` 必须取**完整 36 位 UUID**（`leafmem-cli get` 或只读 sqlite 查得），**禁用 8 位短前缀** —— 2026-10-11 首跑写错一组（记成 `62d1`，真值 `c6d1`，仅一字之差），与步骤 6 的 supports 短 id 事故同源。
+- **MUST**：`remember` 之后**立刻** `get` 核 `createdAt` 为**当日**。早于今日 ⇒ 命中并覆盖了既有条目，须立即按步骤 3 存档恢复原文。
+- **动作**：父条目回写 ＝ 用 `leafmem-cli update` 传「完整父 UUID」并指定 `--content`（核心 + 谱系索引）与 `--summary`（新摘要）。🔴 **不传 `--metadata`**（PATCH 为替换语义，传了会波及 `recallCount`/`lastRecalledAt`）；`--tags` 传**原 tags 的并集**。
+- **MUST（零丢失硬门禁）**：🔴 回写后必须对原文每个语义段的特征串做**全库** `LIKE` 复扫，`ORPHANS` 必须 **= 0**；出现孤儿 ⇒ 把该细节**回补进对应子条目**后再复验，不得放过、不得只改父条目。
+- **反例**：2026-10-11 首跑，我第一版只比对"索引池"（父+子+兄弟条目）就宣布完成，4 个特征串被判为孤儿；全库扫描确认是**真丢失**（`史/理/硬/路`、`歷/處/網`、`is ambiguous`、`29/29` 全库 0 命中）⇒ 回补进子条目后才归零。**判据：只查索引池不算取证，必须全库扫描。**
+- **验证**：以族关键词 recall，新原子条目 score ≥ 0.6（首跑实测 0.82～1.06）。
+- **收尾**：拆分属写入动作 ⇒ 完成后必须重跑步骤 9 镜像同步，并核三源一致（DB = FTS = Mirror）。
+
 ### 步骤 6：宿主模型蒸馏（reflect 宿主版）
 
 把同主题 lesson 聚类蒸馏为 principle，替代付费 inferencer 的 reflect
@@ -148,7 +163,7 @@ description: >
 
 导出全量记忆到本地镜像，供 MCP 降级兜底
 
-- **动作**：node <LeafMem 安装目录>/ops/mirror-sync.js（默认写 ~/.leafmem/mirror，可 --mirror-dir 覆盖）
+- **动作**：node `~/projects/leafmem/ops/mirror-sync.js`（默认写 ~/.leafmem/mirror，可 --mirror-dir 覆盖）。🔴 **安装目录口径 ＝ `~/projects/leafmem`**；旧文所记 `npm root -g`/@xdragonjia/leafmem 下**无 ops/ 与任何脚本**（2026-10-11 实测，按旧路径执行会报"脚本缺失"）。
 - **规则**：🔴 执行顺序：镜像必须是**全部写入动作完成之后**的收尾步骤。LeafMem commit（收尾留痕）本身会写入 1 条 session 记录，先跑镜像会留下 1 条差——2026-09-21 实测 1832→1833，重跑后三方一致。凡镜像之后再有任何写入（含 commit / task_append / remember），必须重跑本步骤
 - **检查**：收尾核对须三源同数：`DB = FTS = Mirror 记录数`，并由 `memory_items_fts - memory_items = 0` 佐证 FTS 无滞
 
@@ -156,7 +171,7 @@ description: >
 
 确定性采集治理指标 + 周环比趋势判断，本步骤不修改任何记忆
 
-- **动作**：python3 <LeafMem 安装目录>/ops/observation.py --mode weekly（零 LLM 依赖；自动追加到 ~/.leafmem/observation/leafmem-observation-log.jsonl；scope 自动探测主 scope，可环境变量 LEAFMEM_SCOPE 覆盖）
+- **动作**：python3 ~/projects/leafmem/ops/observation.py --mode weekly（零 LLM 依赖；自动追加到 ~/.leafmem/observation/leafmem-observation-log.jsonl；scope 自动探测主 scope，可环境变量 LEAFMEM_SCOPE 覆盖）
 - **判断**：取最近 2 条 weekly 记录做周环比五项判断（引用脚本输出数字，不心算——NO COMPUTATION）：
   - a. 反馈回路：recall_total 周环比上升（用进废退生效）
   - b. 反思蒸馏：principle_count 增长；last_reflect_at 每周刷新（超 10 天未刷新 → 检查步骤 6 蒸馏是否执行）
@@ -176,7 +191,7 @@ description: >
 - **触发**：步骤 10.f 发现 entity_count 连续 2 周零增长而记忆在增长；或每月例行一次
 - **动作**：扫描近 30 天记忆中高频出现的专名（新项目/新工具/新产品名），与 ~/.leafmem/entity-vocab.json 比对
 - **动作**：把确有所指的新词追加进词表（kind: project/tool/person/org），备份原文件后再写；词表对新写入即时生效
-- **动作**：存量记忆补链：node <LeafMem 安装目录>/ops/entity-relink.mjs --dry 预估后再正式跑（纯增量幂等三接口，只加不删；跑前备份 memory.sqlite）
+- **动作**：存量记忆补链：node ~/projects/leafmem/ops/entity-relink.mjs --dry 预估后再正式跑（纯增量幂等三接口，只加不删；跑前备份 memory.sqlite）
 
 **备注**：🔴 只加确有所指的专名，不加通用词； MCP stdio 进程的词表在进程启动时加载，宿主重启后生效，launchd 后台服务可 launchctl kickstart -k 即时生效
 
@@ -187,6 +202,8 @@ description: >
 - **分支**：
   - 若有删除/整合/蒸馏动作，或周度观察出现需关注/需行动项 → 通过宿主可用的消息渠道发送周报：规模变化/真重复删除数/碎片整合数/新 principle 数/画像 section 数/decay 降权数 + 本周观察结论与关键环比（memories/principle/recall/profile/一致性）
   - 否则 → 仅写宿主当日记忆日志，不推送
+
+- **产物落点（2026-10-12 立）**：🔴 写 `outputs/` 前**必读**其唯一权威分类入口 `~/WorkBuddy/outputs/CLASSIFICATION_RULES.md`。周报属「状态报告／日周报」类 ⇒ 固定落 **`~/WorkBuddy/outputs/报告/leafmem-weekly-report-{YYYYMMDD}.md`**（先例＝周期健康报告 `报告/weknora-health/`）。**反例·禁写两处**：① `outputs/` **根目录**（只容 `CLASSIFICATION_RULES.md`）② `outputs/项目/leafmem-productization/runs/observation/`（2026-09 起失效，观测数据已落 `~/.leafmem/observation/`）。**判据**：写后 `find ~/WorkBuddy/outputs -maxdepth 1 -type f` 只应见 `CLASSIFICATION_RULES.md`。无整理动作且观察全绿 → **不落盘文件**。
 
 **备注**：推送渠道由宿主环境决定；无配置渠道时退化为仅日志，不报错
 
@@ -258,8 +275,8 @@ description: >
 - `scripts/archive_dump.py` — 🔴 全量存档导出器（2026-10-05 新增，**步骤 3 强制检查点的标准实现**，只读 sqlite 绝不写入）：以 `file:...?mode=ro` 只读打开 `~/.leafmem/memory.sqlite`，导出 scope=agent:workbuddy 全量 `memory_items`（tags_json/metadata_json 自动解回为 tags/metadata 对象）并**回读校验**条数。输出五项 `ITEMS / ALL / FTS / SIZE / VERIFY`。用法：`python3 scripts/archive_dump.py [输出路径]`。
 - `scripts/weekly_scan.py` — 🔴 周维护量化扫描器（2026-09-21 新增，只读、零 LLM 依赖）：一次输出五类信号——①真重复（全文规范化 SHA256；技能 NEVER 规则禁用前缀聚类）②碎片簇候选 + **簇内 3-gram 凝聚度 maxJac**（仅 ≥0.55 判真碎片簇）③跨日近重复（3-gram 倒排索引，1800+ 条秒级；朴素 O(n^2) 全量集合交集会跑不动）④content>4000 字符的超长/畸形条目（content==summary 记号畸形体）⑤蒸馏候选（近 30 天 lesson 按 tag 聚类 ≥3）+ 现有 principle 覆盖清单 + supports 断链检查。用法：`python3 scripts/weekly_scan.py [--json] [--days 30]`。只读，绝不写删。
 - `scripts/leafmem_mcp_call.py` — 🔴 MCP stdio 通道调用器（2026-09-14 新增）：用于调用 HTTP 面未暴露的 MCP 动作（active_distill / organize 类）。按 ~/.workbuddy/mcp.json 的 leafmem 条目启动临时 stdio 进程，initialize 后发 tools/call，与常驻服务共享同一 sqlite。用法：`python3 scripts/leafmem_mcp_call.py <tool> '<args JSON>'`（例：`memory_organize '{"action":"decay","dryRun":false}'`）。
-- `<LeafMem 安装目录>/ops/mirror-sync.js` — 镜像同步脚本（安装目录=`npm root -g`/@xdragonjia/leafmem）
-- `<LeafMem 安装目录>/ops/observation.py` — 周度观察采集脚本（零 LLM 依赖，约 20 项治理指标 + ALERT/WARN/INFO 判定；--mode weekly；日志 ~/.leafmem/observation/leafmem-observation-log.jsonl）
-- `<LeafMem 安装目录>/ops/consolidation.js` — ⚠️ 历史脚本（硬依赖已移除的 DEEPSEEK_API_KEY，不可运行；仅作存档参考，去重职责已由本技能步骤 3 承担）
+- `~/projects/leafmem/ops/mirror-sync.js` — 镜像同步脚本（**安装目录 ＝ `~/projects/leafmem`**；旧文所记 `npm root -g/@xdragonjia/leafmem` 实测为空目录、无脚本）。🔴 2026-10-11 实测：该镜像**未被任何周期性任务覆盖**，本轮前已 6 天未刷新（2,069 vs 库内 2,171，差 102 条）——降级兜底会失真，需评估并入周维护常态化触发。
+- `~/projects/leafmem/ops/observation.py` — 周度观察采集脚本（零 LLM 依赖，约 20 项治理指标 + ALERT/WARN/INFO 判定；--mode weekly；日志 ~/.leafmem/observation/leafmem-observation-log.jsonl）
+- `~/projects/leafmem/ops/consolidation.js` — ⚠️ 历史脚本（硬依赖已移除的 DEEPSEEK_API_KEY，不可运行；仅作存档参考，去重职责已由本技能步骤 3 承担）
 
 > 📜 版本演进记录已外置 → **CHANGELOG.md 末尾**。
