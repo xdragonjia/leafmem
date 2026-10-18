@@ -1,6 +1,6 @@
 ---
 name: leafmem-maintenance
-version: "1.7.1"
+version: "1.8.1"
 agent_created: true
 author: xiaoxia
 description: >
@@ -45,22 +45,17 @@ description: >
 - **动作**：mcp__leafmem__memory_recall(action="recall", message="leafmem 维护 整理 误删 教训")
 - **分支**：若 MCP 不可用 → 按 CLI-first（2026-09-04 v0.3.21）：首选 `bash ~/.leafmem/leafmem-cli.sh recall "..."`（HTTP 通道，launchd 守护，自动化会话 mcp__leafmem__* 恒 absent 属预期）→ CLI 也不可达先查 `launchctl list | grep leafmem` → 最后 conversation_search；召回失败仍不阻塞，但删除动作必须更保守
 
-**备注（写入通道，2026-09-15 补齐，缺口已关闭）**：主通道 `bash ~/.leafmem/leafmem-cli.sh`（remember / update / delete / get / list / stats / scopes / task-detail）。🔴 HTTP 服务**无 task_append 路由** —— 任务登记与关闭必须用 `task-append <taskId> <content> [rollingSummary] [status] [title] [role]` 子命令，底层由 `~/.leafmem/leafmem-mcp-write.mjs` 按 mcp.json 的 leafmem 服务配置原样拉起 MCP 做 stdio 握手（不复制密钥）；创建即关闭时须同传 rollingSummary 且写成闭环版表述（清除「待办」类措辞）。`task-detail` 已修 URL 编码，含中文/冒号的 taskId 方可正常回读。🔴 **本 CLI 无参数自省能力**：`remember --help` 会把 `--help` 当【内容】真实写库（2026-09-25 实测：误建一条 content="--help" 的 note，已 delete）；查用法请读脚本 1–50 行注释，**禁止用 `--help` 试探任何子命令**。该误写入路径已于 2026-09-25 就地加固（`remember` 的 CONTENT 呈标志形态即拦截 `exit 2`，含空格的短横开头如 Markdown 项目符号不拦），回归四例 + 正向对照已过。
+**📖 按需读** `references/cli-write-channel.md`（写入通道 task-append 子命令 / CLI-first 降级链 / recall 返回契约与 remember 覆盖事故全记录）——**要写记忆或 recall 结果异常时必读**，只做只读观测不必读。
 
-**备注（name=recall_return_contract，severity=P0，added=2026-09-24）**：🔴 **`recall` 返回结构契约（两次踩坑，必须照抄）**：返回顶层 keys = `query / hits / injectedContext / dynamicContext / navigationContext / evidence / layers / stableContext`。**记忆条目在 `hits[].record`**（`record` 内含 `id/kind/content/summary/tags/scope/createdAt/importance/confidence`）。
-❌ **禁用口径**：`d.get('memories') or d.get('results') or d.get('items')` —— 这三个键**都不存在**，会静默落空并打印「命中 0」。
-🔴 **后果等级 = 破坏性**：09-24 实证，因误读为「无同主题记忆」而执行 `remember`，服务端按同构语义 **UPDATE 覆盖了既有 principle `9c2cd747` 的 4,499 字符六代谱系**（连带覆盖 summary/tags/kind/importance）。**「查过了」不等于「查对了」——读通道口径错会直接驱动一次破坏性写入。**
-✅ **自检动作**：解析 recall 结果时**先打印 `list(d.keys())` 并断言含 `hits`**；命中数为 0 时按「空结果三查」判定（见 weknora-rag v3.7.2）——**stderr 是否为空 / 判据能否命中已知正例 / key 口径是否与数据一致**，三查未过**不得**判为「无相关记忆」。
-
-**备注（name=remember_overwrite_hazard，severity=P0，added=2026-09-24）**：🔴 **`remember` 是「写入即可能覆盖」的非幂等操作**，危险性与 `rm`/SQL `UPDATE` 同级（09-07 首次实证，09-24 第二次重犯且覆盖范围更广）：
-① **触发条件**：服务端对**同 kind + 同 tags + 同模板**的高相似内容执行「更新最相似既有条目」语义 —— 逐日/周期性观测类记录（模板高度同构）是高危场景；**与"我认为主题不同"的主观判断无关**。
-② **覆盖范围（09-24 实证升级）**：不只 `content`，**`summary` / `tags` / `kind` / `importance` / `confidence` 全部被本次调用的入参覆盖**（tags 为并集，但其余为替换）⇒ 既有条目若原本元数据更精确（如 kind=principle、importance 0.9），会**静默降级**为本次参数值。
-③ **硬上限**：单条 `content` **6000 字符**，超限报 `memory content too long: N chars (max 6000)`；长谱系条目接近上限时应**拆分为原子条目 + 互相引用 id**，不要继续追加。
-🔴 **四条机械纪律**：
-(a) **追加型教训一律用 `update --content <old + 新增>`**（先 `get` 取原文，拼接后整段回写），**不要**用 `remember` 期望它"新建一条相近记录"；
-(b) **`remember` 之后必须立刻 `get` 返回的 id 并核对 `createdAt`** —— 若早于今天即说明命中并覆盖了既有条目，须立即恢复原文再决定是否拆分另建；
-(c) `remember` 仅在**已用正确口径 recall 确认无同主题条目**时使用（见 `recall_return_contract`）；
+**🔴 四条写入硬纪律（name=remember_overwrite_hazard，severity=P0；完整事故记录见 `references/cli-write-channel.md`，纪律本体在此）**：
+(a) **追加型教训一律用 `update --content <old + 新增>`**（先 `get` 取原文，拼接后整段回写），**不要**用 `remember` 期望它「新建一条相近记录」；
+(b) **`remember` 之后必须立刻 `get` 返回的 id 并核对 `createdAt`** —— 若早于今天即说明命中并覆盖了既有条目（`remember` 是「写入即可能覆盖」的非幂等操作，**同 kind+同 tags+同模板**即触发，与「我认为主题不同」的主观判断无关；且 `summary`/`tags`/`kind`/`importance`/`confidence` **一并被覆盖**），须立即恢复原文再决定是否拆分另建；
+(c) `remember` 仅在**已用正确口径 recall 确认无同主题条目**时使用；
 (d) 恢复原文的前提是**手上有原文**：写记忆前先 `get` 留存，或确认该条目内容已在当前上下文中。
+
+**🔴 读通道口径（name=recall_return_contract，severity=P0，两次踩坑）**：recall 结果的记忆条目在 **`hits[].record`**；❌ 禁用 `d.get('memories')/d.get('results')/d.get('items')` —— 这三个键都不存在，会静默落空打印「命中 0」，**进而驱动一次破坏性 `remember` 覆盖**（09-24 实证：覆盖了 principle `9c2cd747` 的 4,499 字符六代谱系）。**自检：先 `list(d.keys())` 断言含 `hits`；命中 0 走「空结果三查」，三查未过不得判为「无相关记忆」。**
+
+**🔴 单条 content 硬上限 6,000 字符**，超限报 `memory content too long`；接近上限走**步骤 5b 拆分**，不要继续追加。
 
 ### 步骤 2：健康检查（只读）
 
@@ -116,15 +111,15 @@ description: >
 
 把 content 逼近单条 6,000 上限的「合并磁石」条目做**无损拆分**：核心留在本条，谱系/案例外置为 kind=lesson 原子条目，两向互引 id。
 
-- **触发**：`scripts/weekly_scan.py` 报 content>4000；其中 ≥5,500 者为高危（余量 <10%，任何一次追加都可能撞上限）。2026-10-11 首跑一次处置 3 条磁石（5,996／5,905／5,857 字符），外置 8 条原子条目，父条目降至 2,294／2,744／1,671 字符。
-- **动作（前置）**：🔴 先做**覆盖度扫描**，判定"每个语义段是否已被兄弟条目承载"，再决定"外置"还是"索引指向"。方法：为原文每个语义段取 1-2 个**特征串**，全库 `SELECT id FROM memory_items WHERE content LIKE '%串%'`。命中集合**只含本条** ⇒ 磁石独有，**必须外置**；命中**含他人** ⇒ 索引指向既有 id，**不复制**（复制＝制造重复）。
-- **动作**：外置条目用 `remember` 新建，`--metadata` 带 `{"projectId":"proj_local_mql2p6a1","family":"<族名>","parentId":"<父完整UUID>"}`，标题含族名 + 证据日期；父条目保留「本族新教训一律 kind=lesson 另立原子条目互引 id」的族规。
-- **规则**：🔴 `parentId` 必须取**完整 36 位 UUID**（`leafmem-cli get` 或只读 sqlite 查得），**禁用 8 位短前缀** —— 2026-10-11 首跑写错一组（记成 `62d1`，真值 `c6d1`，仅一字之差），与步骤 6 的 supports 短 id 事故同源。
-- **MUST**：`remember` 之后**立刻** `get` 核 `createdAt` 为**当日**。早于今日 ⇒ 命中并覆盖了既有条目，须立即按步骤 3 存档恢复原文。
-- **动作**：父条目回写 ＝ 用 `leafmem-cli update` 传「完整父 UUID」并指定 `--content`（核心 + 谱系索引）与 `--summary`（新摘要）。🔴 **不传 `--metadata`**（PATCH 为替换语义，传了会波及 `recallCount`/`lastRecalledAt`）；`--tags` 传**原 tags 的并集**。
-- **MUST（零丢失硬门禁）**：🔴 回写后必须对原文每个语义段的特征串做**全库** `LIKE` 复扫，`ORPHANS` 必须 **= 0**；出现孤儿 ⇒ 把该细节**回补进对应子条目**后再复验，不得放过、不得只改父条目。
-- **反例**：2026-10-11 首跑，我第一版只比对"索引池"（父+子+兄弟条目）就宣布完成，4 个特征串被判为孤儿；全库扫描确认是**真丢失**（`史/理/硬/路`、`歷/處/網`、`is ambiguous`、`29/29` 全库 0 命中）⇒ 回补进子条目后才归零。**判据：只查索引池不算取证，必须全库扫描。**
-- **验证**：以族关键词 recall，新原子条目 score ≥ 0.6（首跑实测 0.82～1.06）。
+- **触发**：`scripts/weekly_scan.py` 报 content>4000；其中 ≥5,500 者为高危（余量 <10%，任何一次追加都可能撞上限）。
+- **📖 触发即必读** `references/step5b-long-entry-split.md`（完整执行序列：覆盖度扫描判定表 → 外置 metadata 字段 → 父条目回写参数 → 验证收尾）。**不执行覆盖度扫描就外置＝制造重复；不回写父条目＝谱系断链。**
+
+**🔴 四条硬门禁（纪律本体在此，执行细节在 reference）**：
+1. **覆盖度扫描前置**：原文每个语义段取 1–2 个特征串跑全库 `SELECT id ... WHERE content LIKE '%串%'`；命中**只含本条** ⇒ 必须外置，命中**含他人** ⇒ 索引指向既有 id **不复制**（复制＝制造重复）。
+2. **`parentId` 必须取完整 36 位 UUID**，🔴 禁用 8 位短前缀 —— 10-11 首跑写错一组（记成 `62d1`，真值 `c6d1`，仅一字之差），与步骤 6 的 supports 短 id 事故同源。
+3. **写后必核 `createdAt` 为当日**：早于今日 ⇒ 命中覆盖了既有条目，立即按步骤 3 存档恢复原文。**父条目回写不传 `--metadata`**（PATCH 替换语义会波及 `recallCount`/`lastRecalledAt`），`--tags` 传原 tags 并集。
+4. **零丢失硬门禁**：回写后对原文每个语义段做**全库** `LIKE` 复扫，`ORPHANS` 必须 = 0；出现孤儿 ⇒ 回补进对应子条目后再复验，**不得只改父条目**。🔴 **判据：只查索引池不算取证，必须全库扫描** —— 10-11 首跑只查索引池判了 4 个孤儿，全库扫描确认是**真丢失**（`史/理/硬/路`、`歷/處/網`、`is ambiguous`、`29/29` 全库 0 命中），回补后才归零。
+
 - **收尾**：拆分属写入动作 ⇒ 完成后必须重跑步骤 9 镜像同步，并核三源一致（DB = FTS = Mirror）。
 
 ### 步骤 6：宿主模型蒸馏（reflect 宿主版）
@@ -134,7 +129,7 @@ description: >
 - **动作**：memory_recall(action="search", kind="lesson") 拉近 30 天 lesson；按 tags 聚类 ≥3 条同主题
 - **动作**：宿主模型归纳共性规律为 1 条 principle，证据 id 存入 metadata.supports
 - **动作**：memory_write(action="remember", kind="principle", importance=0.85, tags=[主题,principle,reflected], metadata={supports:[证据id列表], reflectedAt:当前ISO时间, reflectTag:主题, lastRefreshedAt:当前ISO时间}) —— 🔴 reflectedAt 必传：引擎据此刷新 active context 的 lastReflectAt 标记（0.3.19+），周度观察才能看到蒸馏时间戳随本通道刷新
-- **MUST**：🔴 supports 数组必须存证据 lesson 的【完整 36 位 UUID】——禁止 8 位短 id 前缀（2026-09-07 实测踩坑：3 条 principle 写短 id 致 observation.py ALERT「12 个 supports 指向不存在记忆」principle_supports_missing=12；观察脚本按完整 id 校验，短 id 全部失配。修复=CLI update 全量 metadata（PATCH 为替换语义，须连 reflectedAt/reflectTag/lastRefreshedAt/projectId 一并回填），复验 supports_missing=0）。从 lesson 取完整 UUID：存档 JSON 或 `leafmem-cli get <短id匹配的完整记录>` 反查
+- **MUST**：🔴 supports 数组必须存证据 lesson 的【完整 36 位 UUID】——禁止 8 位短 id 前缀（2026-09-07 实测踩坑：3 条 principle 写短 id 致 observation.py ALERT「12 个 supports 指向不存在记忆」principle_supports_missing=12；观察脚本按完整 id 校验，短 id 全部失配。修复=CLI update 全量 metadata（PATCH 为替换语义，须连 reflectedAt/reflectTag/lastRefreshedAt/projectId 一并回填），复验 supports_missing=0）。从 lesson 取完整 UUID：存档 JSON 或 `sqlite3 ~/.leafmem/memory.sqlite "SELECT id FROM memory_items WHERE id LIKE '<8位>%'"` 反查（🔴 `get` 只认完整 UUID，传短 id 报 `Memory not found`，勿误判为条目已删）
 - **节流**：同主题 6 天内已蒸馏（查已有 principle 的 reflectedAt）则跳过
 
 ### 步骤 7：画像刷新（profile 宿主版）
@@ -143,14 +138,15 @@ description: >
 
 - **动作**：memory_recall(action="search", kind="preference") 拉全部 preference；memory_recall(action="active_get", kind="profile") 读当前画像
 - **动作**：宿主模型比对差异，**只输出需要更新的分节**（"## 分节标题\n新内容" markdown）；memory_write(action="active_distill", kind="profile", content=更新分节)
-- **动作**：🔴 通道（2026-09-14 实测打通）：active_distill 仅实现在 src/mcp/handler.ts，HTTP 面（routes-memory / routes-console）不暴露 → 自动化会话（mcp__leafmem__* 恒 absent）可用 `scripts/leafmem_mcp_call.py memory_write '{"action":"active_distill","kind":"profile","content":"..."}'`：该脚本按 ~/.workbuddy/mcp.json 的 leafmem 配置启动临时 stdio 进程，initialize 后发 tools/call，与常驻服务共享同一 sqlite。写完用 HTTP GET /v1/governance 复验 sections 数与 profile.updatedAt（本法 2026-09-14 实测：18→21 分节、merged=3、updatedAt 刷新为当日）。🔴 复验鉴权（2026-09-28 实测）：HTTP 面只认 `Authorization: Bearer <apiKey>` 头，**`X-API-Key` 无效**（返回 `Missing or invalid API key`，易误判为服务故障）；apiKey 取 `~/.leafmem/agent-service.json` 的 `apiKey` 字段。返回结构：顶层 `profile / principles / stats / recallHot`；`profile = { present, preamble, sections[{title, content}], updatedAt }`，分节数 = sections 数组长度。
+- **动作**：🔴 通道（2026-09-14 实测打通）：自动化会话（`mcp__leafmem__*` 恒 absent）用 `scripts/leafmem_mcp_call.py memory_write '{"action":"active_distill","kind":"profile","content":"..."}'` —— `active_distill` 只在 `src/mcp/handler.ts` 实现，HTTP 面不暴露；该脚本拉临时 stdio 进程与常驻服务共享同一 sqlite。
+- **动作**：🔴 **scope 必须走查询串 `?scope=agent:workbuddy`**（2026-10-05 实测）：传 `?scopeType=agent&scopeId=workbuddy` 或省略 scope，服务端**不报错**而是返回**空快照**（`profile.present=false` / `sections=[]` / `principles=0`）。症状酷似**数据丢失**，实为口径错。🔴 判据：`stats.principleCount` 与步骤 2 的 `kind='principle'` 计数不一致，即先怀疑 scope 参数形态。
+- **动作**：🔴 节奏：周度观察的 [WARN]「画像超过 14 天未刷新」即本步骤的触发信号（2026-09-14 实测命中）。周维护时先跑 observation（步骤 10），再据此决定是否刷新画像。
 
-- **动作**：🔴 **scope 必须走查询串 `?scope=agent:workbuddy`**（2026-10-05 实测）：传 `?scopeType=agent&scopeId=workbuddy`、或省略 scope，服务端**不报错**而是返回**空快照** —— `profile.present=false` / `profile.updatedAt=null` / `sections=[]` / `principles=0` / `stats.principleCount=0` / `totalRecallCount=0`（唯 `entityCount` 仍返回全局值，极易被误读为「只有实体还在、画像与原则全丢了」）。症状酷似**数据丢失**，实为口径错。判据：`stats.principleCount` 与步骤 2 的 `kind='principle'` 计数不一致，即先怀疑 scope 参数形态。
-- **动作**：🔴 节奏：周度观察的 [WARN]「画像超过 14 天未刷新」即本步骤的触发信号（2026-09-14 实测命中：08-30 最后一次刷新，09-14 已 15 天）。周维护时先跑 observation，再据此决定是否刷新画像。
+**🔴 分节合并语义**：引擎按分节标题合并——同名分节被替换、新分节追加、**未提到的分节原样保留**。宿主永远不要输出全文覆写，避免误删其他分节。
 
-**备注**：🔴 分节合并语义：引擎按分节标题合并——同名分节被替换、新分节追加、**未提到的分节原样保留**。宿主永远不要输出全文覆写，避免误删其他分节。
+**备注（2026-08-19）**：🔴 console 洞察页"用户画像"卡片=profile 快照，**memory_govern update 修改 preference 记录不会自动反映到画像卡片**；`memory_organize(action=profile)` 需付费 inferencer（本机返回 no_inferencer）。用户反馈"画像没更新"时走本步骤宿主版 active_distill（2026-08-19 实测成功：sectionsBefore/After 13、merged 1）。
 
-**备注（2026-08-19）**：🔴 console 洞察页"用户画像"卡片=profile 快照（active_distill kind=profile 的产物），**memory_govern update 修改 preference 记录不会自动反映到画像卡片**；mcp__leafmem__memory_organize(action=profile) 需付费 inferencer（本机返回 no_inferencer）。用户反馈"画像没更新"时走本步骤宿主版 active_distill（2026-08-19 实测成功：sectionsBefore/After 13、merged 1，卡片内容即时含新规则）。
+**📖 按需读** `references/mcp-channels.md`（通道调用器用法 / HTTP `Bearer` 鉴权与 `X-API-Key` 失效 / governance 返回结构 / scope 静默空快照全症状表 / console 卡片刷新路径）——**在自动化会话执行本步骤或步骤 8 时必读**。
 
 ### 步骤 8：衰减降权
 
@@ -180,7 +176,7 @@ description: >
   - e. 治理时机：decay_candidates>0 → 建议执行/确认步骤 8 已覆盖
   - f. 实体词表活性：entity_count 周环比——记忆在增长但实体连续 2 周零增长 → 词表陈旧信号，转步骤 11 巡检
 - **分支**：若脚本输出 ALERT（FTS 回归/行数不一致/证据链断裂）→ 标记为需行动，在报告中最优先呈现，必要时提前单独告警
-- **规则**：🔴 **`profile_sections` 是子串计数口径，会比真值多算**（2026-10-05 实测：脚本报 28、治理接口解析真值 27）。根因＝observation.py 用 `content.count("## ")` 数分节，正文里任何 `## ` 字面示例（如「晶体来源文档规范」节内）都被计成额外一节。**引用画像分节数时以治理接口 `/v1/governance?scope=agent:workbuddy` 解析出的 sections 数组长度为准**，脚本值只作环比趋势用，二者差 1-2 不算异常（差值突然变大才需查正文是否新插入了标题字面量）。
+- **规则**：🔴 **`profile_sections` 是子串计数口径，会比真值多算**（2026-10-05 实测：脚本报 28、治理接口真值 27）。**引用画像分节数以治理接口 `/v1/governance?scope=agent:workbuddy` 的 sections 数组长度为准**，脚本值只作环比趋势用；二者差 1–2 不算异常，差值突然变大才需查正文是否新插了标题字面量（根因与全症状见 `references/scripts-usage.md`）
 
 **备注**：结论格式：正常 / 需关注 / 需行动 + 一句话依据；追加记录到宿主当日记忆日志（含日期，追加不覆盖）
 
@@ -271,12 +267,21 @@ description: >
 
 ## 参考文件（references）
 
-- `scripts/stale_task_sweep.py` — 🔴 残留任务闭环清扫扫描器（2026-10-02 新增，只读、零 LLM 依赖）：列出超龄（默认 ≥24h，--hours 可调）未闭环任务 + 末条 entry 摘要 + 非法状态值检测（合法枚举 active/paused/completed/archived）。退出码 0=无残留、2=有残留需闭环、1=错误。闭环动作不走本脚本，由宿主判读后经 `leafmem-cli task-append` 执行。用法：`python3 scripts/stale_task_sweep.py [--hours 24] [--json]`。
-- `scripts/archive_dump.py` — 🔴 全量存档导出器（2026-10-05 新增，**步骤 3 强制检查点的标准实现**，只读 sqlite 绝不写入）：以 `file:...?mode=ro` 只读打开 `~/.leafmem/memory.sqlite`，导出 scope=agent:workbuddy 全量 `memory_items`（tags_json/metadata_json 自动解回为 tags/metadata 对象）并**回读校验**条数。输出五项 `ITEMS / ALL / FTS / SIZE / VERIFY`。用法：`python3 scripts/archive_dump.py [输出路径]`。
-- `scripts/weekly_scan.py` — 🔴 周维护量化扫描器（2026-09-21 新增，只读、零 LLM 依赖）：一次输出五类信号——①真重复（全文规范化 SHA256；技能 NEVER 规则禁用前缀聚类）②碎片簇候选 + **簇内 3-gram 凝聚度 maxJac**（仅 ≥0.55 判真碎片簇）③跨日近重复（3-gram 倒排索引，1800+ 条秒级；朴素 O(n^2) 全量集合交集会跑不动）④content>4000 字符的超长/畸形条目（content==summary 记号畸形体）⑤蒸馏候选（近 30 天 lesson 按 tag 聚类 ≥3）+ 现有 principle 覆盖清单 + supports 断链检查。用法：`python3 scripts/weekly_scan.py [--json] [--days 30]`。只读，绝不写删。
-- `scripts/leafmem_mcp_call.py` — 🔴 MCP stdio 通道调用器（2026-09-14 新增）：用于调用 HTTP 面未暴露的 MCP 动作（active_distill / organize 类）。按 ~/.workbuddy/mcp.json 的 leafmem 条目启动临时 stdio 进程，initialize 后发 tools/call，与常驻服务共享同一 sqlite。用法：`python3 scripts/leafmem_mcp_call.py <tool> '<args JSON>'`（例：`memory_organize '{"action":"decay","dryRun":false}'`）。
-- `~/projects/leafmem/ops/mirror-sync.js` — 镜像同步脚本（**安装目录 ＝ `~/projects/leafmem`**；旧文所记 `npm root -g/@xdragonjia/leafmem` 实测为空目录、无脚本）。🔴 2026-10-11 实测：该镜像**未被任何周期性任务覆盖**，本轮前已 6 天未刷新（2,069 vs 库内 2,171，差 102 条）——降级兜底会失真，需评估并入周维护常态化触发。
-- `~/projects/leafmem/ops/observation.py` — 周度观察采集脚本（零 LLM 依赖，约 20 项治理指标 + ALERT/WARN/INFO 判定；--mode weekly；日志 ~/.leafmem/observation/leafmem-observation-log.jsonl）
-- `~/projects/leafmem/ops/consolidation.js` — ⚠️ 历史脚本（硬依赖已移除的 DEEPSEEK_API_KEY，不可运行；仅作存档参考，去重职责已由本技能步骤 3 承担）
+**📖 按需读** `references/scripts-usage.md` —— 各脚本的**完整参数、输出字段、退出码、判读陷阱**。各步骤正文已写「何时用」，此处只留职责索引：
+
+| 文件 | 职责 | 用在哪一步 |
+|---|---|---|
+| `references/cli-write-channel.md` | 写入通道 task-append / CLI-first 降级链 / recall 返回契约 / remember 覆盖事故全记录 | 步骤 1 |
+| `references/step5b-long-entry-split.md` | 长谱系条目拆分完整执行序列（覆盖度扫描判定表 → 回写参数 → 验证收尾） | 步骤 5b |
+| `references/mcp-channels.md` | 自动化会话 MCP 通道（active_distill / decay / Bearer 鉴权 / scope 静默空快照） | 步骤 7、8 |
+| `references/scripts-usage.md` | 4 个只读脚本 + ops/ 工具的完整用法与输出判读 | 步骤 2b、3、4、5、5b、9、10、11 |
+| `scripts/stale_task_sweep.py` | 残留任务闭环清扫扫描器（只读；exit 2 = 有超龄未闭环或非法状态值） | 步骤 2b |
+| `scripts/archive_dump.py` | 全量存档导出器（步骤 3 强制检查点标准实现，只读 sqlite） | 步骤 3 |
+| `scripts/weekly_scan.py` | 周维护量化扫描器（一次输出五类信号，只读） | 步骤 4、5、5b |
+| `scripts/leafmem_mcp_call.py` | MCP stdio 通道调用器（用于 HTTP 面未暴露的动作） | 步骤 7、8 |
+| `~/projects/leafmem/ops/mirror-sync.js` | 镜像同步（🔴 安装目录 = `~/projects/leafmem`） | 步骤 9 |
+| `~/projects/leafmem/ops/observation.py` | 周度观察采集（约 20 项治理指标，零 LLM 依赖） | 步骤 10 |
+| `~/projects/leafmem/ops/entity-relink.mjs` | 存量记忆实体补链（只加不删，跑前备份 sqlite） | 步骤 11 |
+| `~/projects/leafmem/ops/consolidation.js` | ⚠️ 历史脚本（硬依赖已移除的 DEEPSEEK_API_KEY，不可运行；去重职责已由步骤 4 承担） | — |
 
 > 📜 版本演进记录已外置 → **CHANGELOG.md 末尾**。
