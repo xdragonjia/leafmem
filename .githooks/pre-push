@@ -1,0 +1,43 @@
+#!/bin/zsh
+# .githooks/pre-push — 推送前本地复跑「发布卫生审计」
+#
+# 目的：把 CI 第 8 步（Publish hygiene audit）前移到推送前，避免 main 长时间变红。
+# 判据同源：直接调用 ops/publish-audit.sh，与 CI 使用同一份脚本，判据不会漂移。
+#
+# 设计原则：
+#   · 对「环境缺失」fail-open —— 缺 zsh / 缺 npm / 构建失败时告警放行，绝不因环境问题阻断正常推送；
+#   · 对「审计结论」fail-closed —— 只有审计脚本自身返回非零才阻断。
+#   · dist/ 未入库（.gitignore），干净 clone 下审计必然报「dist/ 不存在」，
+#     故此处先构建以复现 CI 顺序，避免把所有推送都拦掉。
+set -u
+
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$REPO_ROOT" || exit 0
+
+if ! command -v zsh >/dev/null 2>&1; then
+  echo "⚠️  pre-push: 未找到 zsh，跳过发布卫生审计（不阻断推送）"
+  exit 0
+fi
+
+if ! command -v npm >/dev/null 2>&1; then
+  echo "⚠️  pre-push: 未找到 npm，跳过发布卫生审计（不阻断推送）"
+  exit 0
+fi
+
+if [[ ! -d dist ]]; then
+  echo "ℹ️  pre-push: dist/ 缺失，先构建以复现 CI 顺序…"
+  if ! npm run build --silent; then
+    echo "⚠️  pre-push: 构建失败，跳过审计（不阻断推送；CI 会复验）"
+    exit 0
+  fi
+fi
+
+echo "🔍 pre-push: 运行发布卫生审计（与 CI 同一脚本）…"
+if zsh ops/publish-audit.sh; then
+  echo "✅ pre-push: 发布卫生审计通过"
+  exit 0
+fi
+
+echo "❌ pre-push: 发布卫生审计未通过，已阻断推送。"
+echo "   修复后重试；确需跳过可用：git push --no-verify（CI 仍会拦截）"
+exit 1

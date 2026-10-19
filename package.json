@@ -135,7 +135,8 @@
     "bench:lme": "node --experimental-strip-types benchmarks/longmemeval/bench.ts",
     "bench:locomo": "node --experimental-strip-types benchmarks/locomo/bench.ts",
     "prepublishOnly": "zsh ops/publish-audit.sh",
-    "audit": "zsh ops/publish-audit.sh"
+    "audit": "zsh ops/publish-audit.sh",
+    "hooks:install": "sh ops/install-hooks.sh"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
