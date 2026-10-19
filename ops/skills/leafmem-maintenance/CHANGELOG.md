@@ -5,7 +5,7 @@
 ## [1.8.0] - 2026-10-12
 
 - 🔴 **P1 体积越线专项修复：渐进式披露重构**（承接 1.7.1 登记的未修项）。`check_skill_size.py` 报 **cl100k 11,554 token ≥ 预算 10,000**，溯源 10-11 的 v1.7.0 新增整段步骤 5b（1,199 token）。按 `skill-maintainer/references/per-skill-slimming-sop.md` 执行，**先取证后下刀**：
-  - **三处引用耦合取证**（SOP 第 2 步，缺一即假阴性）：① 文件系统 `grep -rln` 全库 —— 命中方全是 CHANGELOG／baseline／历史日志，非消费者；② 🔴 `~/.workbuddy/workbuddy.db` 的 `automations` 表 —— 命中 **`marvmem-canary-weekly`（ACTIVE）**，读 prompt 原文确认它是**按 ①–⑦ 顺序整份顺序执行、不按锚点消费**；③ KLXZ 侧 `~/.kunlunxiaozhi/workbuddy.db` —— 无同名任务。据此排除「按锚点消费的段外移＝净负」风险。
+  - **三处引用耦合取证**（SOP 第 2 步，缺一即假阴性）：① 文件系统 `grep -rln` 全库 —— 命中方全是 CHANGELOG／baseline／历史日志，非消费者；② 🔴 `~/.workbuddy/workbuddy.db` 的 `automations` 表 —— 命中 **`canary-weekly` 自动化任务（ACTIVE；任务 ID 前缀沿用旧品牌命名）**，读 prompt 原文确认它是**按 ①–⑦ 顺序整份顺序执行、不按锚点消费**；③ KLXZ 侧 `~/.kunlunxiaozhi/workbuddy.db` —— 无同名任务。据此排除「按锚点消费的段外移＝净负」风险。
   - **模式 B 外移**（非模式 A 路由化：单关注点技能里混入了「少数场景才用」的通道与用法细节）：新建 4 个 reference，正文留「指针 + 何时读 + 不读的后果」——
     | 外移内容 | 去向 | 正文保留 |
     |---|---|---|
