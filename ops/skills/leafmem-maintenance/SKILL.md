@@ -230,6 +230,14 @@ description: >
 
 **📖 按需读** `references/examples.md` —— 碎片整合正例、前缀聚类误删反例。执行只需记一句：**先存档 → 写入成功 → 再删原条**。
 
+## CLI 通道：长文本引号陷阱（2026-09-06 实测修复，🔴 数据损坏级）
+
+`~/.leafmem/leafmem-cli.sh` 曾有 4 处未加引号的 `${@:-}`（recall/remember/list/update 向 Python 传参），shell 词分割会拆碎 `--content "长文本 含空格"`，Python 只取首词 → **含空格长文本静默截断，无报错**。
+
+- 修法＝`${@+"$@"}`（保引号语义 + 兼容 bash 3.2 + `set -u`）
+- 🔴 **两处都要改**：本地 `~/.leafmem/leafmem-cli.sh` ＋ 上游模板 `projects/leafmem/ops/leafmem-cli.sh`——`dist/agents/hooks.js` 的 `installLeafmemCli()` 每次升级会**无条件覆盖本地**，只改本地必被回滚
+- CLI 写完**回读校验字段长度**；CLI 出问题可用 MCP 直连兜底（两通道互为备份）
+
 ## `<error_handling>` 异常处理
 
 **failure_criteria 失败判据**：

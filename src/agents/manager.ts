@@ -5,6 +5,8 @@ import { homedir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defaultMemoryMcpStoragePath } from "../mcp/stdio.js";
+import { versionLine, writeMarkedBlock } from "./marked-block.js";
+import { resolveIdentityFile } from "./identity-path.js";
 import { createLeafMem } from "../core/memory.js";
 import { createWorkBuddyMemoryAdapter, writeWorkBuddyInstructions } from "../adapters/workbuddy.js";
 import { openSqliteDatabase } from "../system/sqlite.js";
@@ -114,14 +116,14 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
     scopeId: "workbuddy",
     defaultSessionsRoot: (home) => join(home, ".workbuddy"),
     configPath: (home) => join(home, ".workbuddy", "mcp.json"),
-    instructionsPath: (home) => join(home, ".workbuddy", "SOUL.md"),
+    instructionsPath: (home) => resolveIdentityFile(home, ".workbuddy", "SOUL.md"),
   },
   kunlunxiaozhi: {
     label: "昆仑小智",
     scopeId: "kunlunxiaozhi",
     defaultSessionsRoot: (home) => join(home, ".kunlunxiaozhi"),
     configPath: (home) => join(home, ".kunlunxiaozhi", "mcp.json"),
-    instructionsPath: (home) => join(home, ".kunlunxiaozhi", "SOUL.md"),
+    instructionsPath: (home) => resolveIdentityFile(home, ".kunlunxiaozhi", "SOUL.md"),
   },
 };
 
@@ -270,7 +272,7 @@ export async function installInstructions(
     await migrateInstructionsOutOfMemoryMd(agent, options.home);
     return changed;
   }
-  return await writeMarkedBlock(path, instructionBlock(agent));
+  return (await writeMarkedBlock(path, instructionBlock(agent))).changed;
 }
 
 /** Remove a legacy leafmem discipline block from MEMORY.md (pre-0.3.0 location). */
@@ -503,6 +505,7 @@ function isWorkBuddyFamily(agent: AgentId): boolean {
 function instructionBlock(agent: AgentId): string {
   const scopeId = AGENTS[agent].scopeId;
   return `<!-- leafmem-agent-instructions:start -->
+${versionLine()}
 Memory lookup:
 
 - If a task may depend on user-specific preferences, prior project decisions, repo conventions, or earlier troubleshooting history, query LeafMem before answering or editing. Prefer a lightweight \`memory_recall\` call with \`action: "recall"\` using the current request. For cross-agent continuity, omit scope first so LeafMem can search the shared user memory store; for narrow lookups or durable writes, use \`agent:${scopeId}\`. Skip this for trivial, fully self-contained requests.
@@ -515,27 +518,6 @@ Memory lookup:
 
 
 
-
-async function writeMarkedBlock(path: string, block: string): Promise<boolean> {
-  const current = await readText(path);
-  const start = "<!-- leafmem-agent-instructions:start -->";
-  const end = "<!-- leafmem-agent-instructions:end -->";
-  const startIndex = current.indexOf(start);
-  const endIndex = current.indexOf(end);
-  if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-    const before = current.slice(0, startIndex).trimEnd();
-    const after = current.slice(endIndex + end.length).trimStart();
-    const next = [before, block, after].filter(Boolean).join("\n\n");
-    if (`${next}\n` === current) {
-      return false;
-    }
-    await writeText(path, `${next}\n`);
-    return true;
-  }
-  const next = current.trim() ? `${current.trimEnd()}\n\n${block}\n` : `${block}\n`;
-  await writeText(path, next);
-  return true;
-}
 
 function nodeScriptArgs(path: string): string[] {
   return extname(path) === ".ts" ? ["--import", "tsx", path] : [path];

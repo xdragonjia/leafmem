@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **`src/agents/identity-path.ts`**：解析宿主**真实**身份文件路径。WorkBuddy 有 path service 时读到 `~/.workbuddy/user-<uuid>-personal/`（`workspace-state.json` 或身份文件存在即认定为 persona 目录），否则回退 `~/.workbuddy`。此前安装器硬编码 `~/.workbuddy/SOUL.md`，会把注入块写进宿主不读的文件（2026-10-21 实证：一轮 SOUL 优化白做）。
+- **`src/agents/marked-block.ts`**：身份文件的标记块安全写入器——块内版本标记（`version=N`）、写前自动备份到 `~/.leafmem/backup/identity/<ts>/`、`写临时文件 + rename` 原子替换、**写后校验「块恰好 1 份 + 块外内容 hash 不变」**；标记不成对（只有 start）时**拒绝写入**而不是追加第二个块；软链路径先 `realpath` 再写（`rename` 会替换软链本身）。
+- **`test/instructions.test.ts`**：7 条单测覆盖首次追加/替换保块外/幂等/坏标记拒绝/空文件/路径解析/软链写入。
+
+### Changed
+- `installInstructions`（manager.ts）与 `writeWorkBuddyInstructions`（workbuddy.ts）统一走上述安全写入器；指令块首行新增 `<!-- leafmem-agent-instructions:version=2 -->`。
+
+### Fixed
+- 安装器把指令块写到宿主不读取的路径（顶层 `SOUL.md` 而非 scoped persona 目录）。
+- 旧写入器无备份、无版本标记、坏标记会追加重复块。
+
+
 ## [0.3.23] - 2026-10-21
 
 ### Added

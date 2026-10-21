@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { LeafMem } from "../core/memory.js";
 import type { MemoryRecord, MemoryScope } from "../core/types.js";
+import { versionLine, writeMarkedBlock } from "../agents/marked-block.js";
 import {
   parseMarkdownEntries,
   readTextFile,
@@ -278,13 +279,12 @@ export async function writeWorkBuddyInstructions(
   placement: "top" | "bottom" = "bottom",
   scopeId?: string,
 ): Promise<boolean> {
-  const current = (await readTextFile(path)) ?? "";
-  const next = replaceWorkBuddyInstructions(current, workBuddyInstructionBlock(updateCommand, scopeId), placement);
-  if (next === current) {
-    return false;
-  }
-  await writeText(path, next);
-  return true;
+  // 2026-10-21: delegate to the guarded writer (version mark + backup + atomic rename +
+  // post-write proof that everything outside the block is byte-identical, and refusal to
+  // append a duplicate block when the markers are malformed).
+  const result = await writeMarkedBlock(path, workBuddyInstructionBlock(updateCommand, scopeId));
+  void placement; // block is always placed where it already sits; fresh installs append.
+  return result.changed;
 }
 
 /**
@@ -303,6 +303,7 @@ export function workBuddyInstructionBlock(updateCommand?: string, scopeId = "wor
     ? `- When the user asks to update or upgrade LeafMem, the memory module, or the memory connector, run \`${updateCommand}\` and then ask the host to refresh or reconnect the LeafMem MCP service if needed.`
     : "- When the user asks to update or upgrade LeafMem, the memory module, or the memory connector, run the local `leafmem-agent update workbuddy` command and then ask the host to refresh or reconnect the LeafMem MCP service if needed.";
   return `${WORKBUDDY_INSTRUCTIONS_START}
+${versionLine()}
 LeafMem memory workflow:
 
 - **Lifecycle hooks are the primary path** (if installed): a UserPromptSubmit hook auto-recalls relevant memory and injects it into your context before you answer; a Stop hook auto-captures the turn's durable facts. When hooks are active you do NOT need to call recall/commit manually — the injected "LeafMem recall" context is already yours to use.
