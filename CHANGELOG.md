@@ -30,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - 测试 18/18（新增噪声拒绝 + strict 真人抽取 + 中文停用词 + 短 CJK 词表子串防护用例）；tsc 0 错。
   - **词表子串误命中防护**：≤2 字 CJK 词表名只在 @mention 形态命中（实测"国王健康椅"误抽 person"王健"）；≥3 字名保留裸文本 includes（权威人名主通道）。
 
+### Changed（维护层与发布卫生）
+- **`task_append` status 运行时枚举校验**：非法状态不再静默入库。
+- **`commit-summary` 零产出显式失败化（exit 3）**：避免"看起来成功"的空产出。
+- **版本化 pre-push `publish-audit` 钩子**：发布审计前移到推送前。
+- **leafmem-maintenance 技能 v1.4.1 → v1.8.3**：36 位 UUID 强制（principle metadata.supports）、自动化会话走 MCP stdio 通道、去重/碎片判据量化、复验鉴权口径与收尾留痕、残留任务闭环清扫、governance scope 参数与 profile 节数口径、`archive_dump.py` 定为步骤 3 标准实现、周报输出路径固定、短 id 查询修正 + 渐进披露引用、体积余量专项 + 步骤 5b 判定维度。
+- **测试**：export 断言改确定性轮询（修 CI flaky 39557197915——count 依赖库残留状态）。
+
 ### Fixed（沿革：2026-09-11 四层写入闸门，随本版发布）
 - **四层写入侧闸门：自动化任务书整段入库致全库召回 400 根治（2026-09-11，09-10/09-11 两日连续复发）**。根因链（备份库取证实证）：自动化会话的 `<user_query>` 内文就是系统生成的任务书全文（7951 字符），`sanitizeCapturedText` 的 user_query 提取将其当人类原话放行 → 规则提取器 decision cue「改用」在任务书正文命中（@6020）→ `normalizeMemoryCandidate` 无长度上限 → 整段任务书以 `content==summary`、`kind=decision`、`source=turn_inference` 入库 → recall 批量 embedding 超 bge-m3 单条上限 → **全库** recall 400。四层设防：
   - L1 `sanitize.ts` + hooks 桥客户端副本：自动化任务书拦截——骨架标志（`automation_system_reminder` / `<automations>` / `<user-prompt-submit-hook>`）直接拒；长文（>1500 字符）+ 宿主任务书句式（`You MUST follow these steps` / `Execute the task as specified in the user query`）组合拒。hook 对净化为空的行为为静默跳过（不发请求不报错），自动化会话 Stop 自动捕获（垃圾主要来源）随之停用，合法记忆走 CLI 显式写入不受影响。
