@@ -7,22 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.3.24] - 2026-10-21
+## [0.3.23] - 2026-10-21
 
 ### Added
-- **A-MEM 式记忆间链接**（NeurIPS 2025 A-Mem 借鉴）：新表 `memory_links`（source/target/relation/confidence，区别于 entity_links 的记忆-实体链接）；召回命中 top5 的链接邻居以「🔗 关联记忆」块附加注入（走 layers.linked 跨后端通道，不占 hits 配额——remote-embeddings 模式下 palaceLayer 取 retrieval 后端会丢 memory.recall 的 dynamicContext，实测教训）。成本纪律：引擎写入时不调 LLM 建链（2026 调研点名的成本陷阱），建链归宿主（规则版每日/LLM 判断版每周）。
-- **召回保温**（Retrieval-Driven Reconsolidation 借鉴）：recency 评分取 updatedAt 与 lastRecalledAt 较新者——常被召回的记忆保温，不只按写入时间衰减。
-- **memory_govern 新增 supersede 动作**（Zep invalidate-don't-delete 写入侧）：旧记忆被取代时链到新条+降权不删除，历史可查；同写 memory_links(supersede)。
-- **受控词表 mtime 热加载**：entity-vocab.json 变化后下一条写入即生效，免重启服务（端到端实测）。
-- **console 记忆浏览页新增「全部标签」筛选下拉**（tag 频次 top12+计数）。
-- README 3.4/3.5 节：实体抽取判据、词表增强通道、记忆链接/保温/取代机制说明（console 帮助文档同步）。
-
-### Fixed
-- entity: person 抽取准确率（噪声三重拦截+person 似然判据+namespace/tool 重分类+CJK mention+短 CJK 词表名仅 @形态命中防子串误命中）——详见 0.3.23 节。
-- test(http): export 断言改确定性轮询（CI flaky：count 依赖库残留状态）。
-- ops: sqlite-backup v2 可用性校验+状态落盘；ci-watch.sh 新增（push 后轮询 CI 到 conclusion 的机制化脚本）。
-
-## [0.3.23] - 2026-10-21
+- **A-MEM 式记忆间链接**（NeurIPS 2025 A-Mem 借鉴）：新表 `memory_links`（source/target/relation/confidence，区别于 entity_links 的记忆-实体链接）；召回命中 top5 的链接邻居以「🔗 关联记忆」块附加注入（走 `layers.linked` 跨后端通道，不占 hits 配额）。成本纪律：引擎写入时不调 LLM 建链，建链归宿主（规则版每日/LLM 判断版每周）。
+- **召回保温**（Retrieval-Driven Reconsolidation 借鉴）：recency 评分取 `updatedAt` 与 `lastRecalledAt` 较新者——常被召回的记忆保温，不只按写入时间衰减。
+- **`memory_govern` 新增 `supersede` 动作**（Zep invalidate-don't-delete 写入侧）：旧记忆被取代时链到新条 + 降权不删除，历史可查；同写 `memory_links(supersede)`。
+- **受控词表 mtime 热加载**：`entity-vocab.json` 变化后下一条写入即生效，免重启服务。
+- **console 记忆浏览页新增「全部标签」筛选下拉**（tag 频次 top12 + 计数）。
+- **console 知识图谱交互重构**：布局归一化（主连通分量包围盒映射视口，力参数只负责相对结构）；deg=1 叶节点锚定邻接点；非主分量落外围环；语义缩放（标签/节点屏显恒定）；fit 双模式（默认主分量充满 /「适应屏幕」全节点）；**密度过滤**（per-node top-5 边 + 边透明度按权重分级 + 标签 top-degree 渐进 + 节点 glow 移除 + 「弱边」开关并声明过滤计数）；**箭头三档透明度**（SVG marker 不继承 stroke-opacity）；**筛选+选中语义**（选择邻域覆盖类别过滤：跨类邻居 context 档显示并带标签，NERVIS 规则）；筛选态标签全显（可见 ≤60 保底）。
+- **`ops/ci-watch.sh`**：push 后轮询 GitHub Actions 到 conclusion 的机制化脚本（替代"口头承诺等 CI"）。
+- README 新增 3.4（实体抽取判据与受控词表增强通道）、3.5（记忆链接/保温/取代机制）——console 帮助页同步。
 
 ### Fixed
 - **实体抽取 person 准确率修复（22 个 person 中 18 个噪声）**。根因两处：① `@mention→person` 启发式守卫太弱（只挡版本号/纯数字/7 泛词），字段名（paraId/idref/version）、标签词（mention/skill/image）、时长（120s/2K）、包名命名空间（xdragonjia/clawhub_*/user_*）全被建成 person；② `MENTION_RE` 的 `\w` 不含 CJK，`@韩丽敏` 只能匹配单字——**中文人名永远抽不出来，抽出来的全是英文噪声**。修复：
@@ -35,8 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - 测试 18/18（新增噪声拒绝 + strict 真人抽取 + 中文停用词 + 短 CJK 词表子串防护用例）；tsc 0 错。
   - **词表子串误命中防护**：≤2 字 CJK 词表名只在 @mention 形态命中（实测"国王健康椅"误抽 person"王健"）；≥3 字名保留裸文本 includes（权威人名主通道）。
 
-
-### Fixed
+### Fixed（沿革：2026-09-11 四层写入闸门，随本版发布）
 - **四层写入侧闸门：自动化任务书整段入库致全库召回 400 根治（2026-09-11，09-10/09-11 两日连续复发）**。根因链（备份库取证实证）：自动化会话的 `<user_query>` 内文就是系统生成的任务书全文（7951 字符），`sanitizeCapturedText` 的 user_query 提取将其当人类原话放行 → 规则提取器 decision cue「改用」在任务书正文命中（@6020）→ `normalizeMemoryCandidate` 无长度上限 → 整段任务书以 `content==summary`、`kind=decision`、`source=turn_inference` 入库 → recall 批量 embedding 超 bge-m3 单条上限 → **全库** recall 400。四层设防：
   - L1 `sanitize.ts` + hooks 桥客户端副本：自动化任务书拦截——骨架标志（`automation_system_reminder` / `<automations>` / `<user-prompt-submit-hook>`）直接拒；长文（>1500 字符）+ 宿主任务书句式（`You MUST follow these steps` / `Execute the task as specified in the user query`）组合拒。hook 对净化为空的行为为静默跳过（不发请求不报错），自动化会话 Stop 自动捕获（垃圾主要来源）随之停用，合法记忆走 CLI 显式写入不受影响。
   - L2 `runtime.ts` 规则提取器：推断候选（turn_inference）>500 字符丢弃——规则 cue 只该抓一句话声明；`explicit_remember`（用户说"记住：…"）豁免、上限 6000 与核心层一致（避免误杀显式长内容）。
