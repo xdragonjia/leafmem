@@ -34,7 +34,9 @@ const KNOWN_TOOLS: Set<string> = new Set([
 // Rule-based entity extractor (zero LLM dependency)
 // ---------------------------------------------------------------------------
 
-const MENTION_RE = /@(\w[\w.-]*\w|\w)/g;
+// 🔴 2026-10-21：\w 不含中文，@贾小龙 原先只匹配到单字"贾"（中文人名永远抽不出）——
+//    扩展字符类含 CJK 统一表意文字
+const MENTION_RE = /@([\w一-鿿][\w一-鿿.-]*[\w一-鿿]|[\w一-鿿])/g;
 const QUOTED_RE = /["""]([^"""]+?)["""]/g;
 const PASCAL_CASE_RE = /\b([A-Z][a-z]+(?:[A-Z][a-z]+)+)\b/g;
 
@@ -85,6 +87,33 @@ const BARE_NUMBER_RE = /^\d+$/;                 // 3 / 21
 const DOMAIN_RE = /^[a-z0-9-]+(\.[a-z]{2,})+$/i; // qq.com / agent.qq.com
 const GENERIC_MENTIONS = new Set([
   "media", "rest", "www", "http", "https", "com", "cn", "org", "net", "localhost",
+]);
+// 🔴 2026-10-21：@mention 噪声拦截四件套（person 准确率修复，实测 22 person 中 18 噪声）
+const NOISE_MENTIONS = new Set([
+  // 字段名/标签词/文档结构词（实测误抽）
+  "paraid", "idref", "version", "mention", "skill", "image", "latest", "group",
+  "type", "name", "id", "ref", "tag", "tags", "label", "status", "level", "kind",
+  "date", "time", "author", "owner", "user", "users", "all", "here", "channel",
+  "github", "npm", "docker", "playwright", "sqlite", "neo4j", "weknora",
+]);
+// 形态噪声：时长(120s/210s/30min)、编号(2K/v3/x1)
+const NOISE_MENTION_RE = /^(?:\d+(?:\.\d+)?(?:s|m|min|h|d|k|w|ms)|\d+[kmw]|v\d+.*)$/i;
+// 命名空间/包名形态：下划线/点多段小写标识（clawhub_yhongm / user_15d05850）
+const NAMESPACE_LIKE_RE = /^[a-z0-9]+(?:[_][a-z0-9]+)+$/;
+// 🔴 person 似然（2026-10-21）：中文 2-4 字 / 首大写英文名 / 全小写纯字母单词；
+//    驼峰字段名(paraId)/全大写(GROUP)/带下划线/带数字 一律不像人名
+const PERSON_LIKE_RE = /^(?:[一-鿿]{2,4}|[A-Z][a-z]+(?:[- ][A-Z][a-z]+)*|[a-z]{2,20})$/;
+const TOOL_PRODUCT_MENTIONS = new Set([
+  "ima", "larksuite", "workbuddy-buddy", "feishu", "wecom", "wechat",
+]);
+// 已知包名/命名空间（实测误抽为 person 的 ID 形态）
+const KNOWN_NAMESPACES = new Set(["xdragonjia", "earl-chen", "clawhub"]);
+// 🔴 中文领域停用词（@巡察/@整改 等领域词不像人名但过 PERSON_LIKE 形态，须挡）
+const CHINESE_NON_PERSON = new Set([
+  "巡察", "巡视", "整改", "制度", "公司", "党委", "纪委", "党组", "审计", "党建",
+  "监督", "报告", "方案", "问题", "工作", "学习", "教育", "管理", "组织", "干部",
+  "集团", "落实", "责任", "会议", "通知", "办法", "规定", "清单", "台账", "材料",
+  "文档", "知识", "记忆", "技能", "任务", "项目", "数据", "系统", "平台", "工具",
 ]);
 
 function isNoiseMention(name: string): boolean {
@@ -150,6 +179,14 @@ export class RuleBasedEntityExtractor implements EntityExtractor {
 
     // 3. @mentions → person (with noise guards: versions/domains/digits are
     //    not people; domain-like mentions become org instead)
+    // 🔴 2026-10-21 小龙指出 person 实体很不准（22 个里 18 个是噪声）：
+    //    根因＝@任意词都建 person，守卫只挡版本号/纯数字/7 个泛词。实测噪声四类：
+    //    ① 字段名/标签词（paraId/idref/version/mention/skill/image/latest/GROUP）
+    //    ② 时长/编号（120s/210s/2K）③ 产品/工具名（ima/larksuite/workbuddy-buddy）
+    //    ④ 包名/命名空间（xdragonjia/clawhub_*/user_15d05850/earl-chen 式 ID）。
+    //    修复：噪声词表+形态正则+工具产品词表拦截；包名/命名空间形态→namespace（新 kind，
+    //    EntityKind 开放枚举允许）；strict 模式（生产 MCP 用 strict:true）下 @mention 一律
+    //    不新建 person，只认受控词表——person 宁可少不可错。
     for (const match of text.matchAll(MENTION_RE)) {
       const name = match[1]!;
       const key = name.toLowerCase();
@@ -159,6 +196,19 @@ export class RuleBasedEntityExtractor implements EntityExtractor {
         entities.set(key, { name, kind: "org" });
         continue;
       }
+      if (NOISE_MENTIONS.has(key) || NOISE_MENTION_RE.test(name)) continue;
+      if (TOOL_PRODUCT_MENTIONS.has(key)) {
+        entities.set(key, { name, kind: "tool" });
+        continue;
+      }
+      if (NAMESPACE_LIKE_RE.test(name) || KNOWN_NAMESPACES.has(key)) {
+        entities.set(key, { name, kind: "namespace" });
+        continue;
+      }
+      if (!PERSON_LIKE_RE.test(name)) continue; // 形态不像人名=不建 person
+      if (CHINESE_NON_PERSON.has(name)) continue; // 中文领域词≠人名
+      // 🔴 2026-10-21 判据修正：strict 不再一刀切禁建 person（实测 @韩丽敏 真人被挡）——
+      //    通过形态+停用词+噪声三重过滤后的 @mention 可信，允许建 person
       entities.set(key, { name, kind: "person" });
     }
 

@@ -146,9 +146,30 @@ describe("RuleBasedEntityExtractor", () => {
   });
 
   it("extracts @mentions as person entities", async () => {
-    const entities = await extractor.extract("Assigned to @alice and @bob-dev");
+    // 🔴 2026-10-21 判据更新：person 须似人名形态（中文2-4字/首大写英文/小写单词）；
+    //    连字符/下划线/驼峰/带数字形态不再建 person（namespace/噪声）
+    const entities = await extractor.extract("Assigned to @alice and @贾小龙");
     const people = entities.filter((e) => e.kind === "person");
     assert.ok(people.length >= 2);
+  });
+
+  it("rejects noise mentions as person (2026-10-21 准确率修复)", async () => {
+    const entities = await extractor.extract(
+      "see @paraId @120s @2K @user_15d05850 @clawhub_yhongm @xdragonjia @GROUP @version"
+    );
+    const people = entities.filter((e) => e.kind === "person");
+    assert.equal(people.length, 0);
+    const ns = entities.filter((e) => e.kind === "namespace").map((e) => e.name);
+    assert.ok(ns.includes("user_15d05850"));
+    assert.ok(ns.includes("clawhub_yhongm"));
+    assert.ok(ns.includes("xdragonjia"));
+  });
+
+  it("strict mode still extracts person-like mentions, blocks domain words", async () => {
+    const strict = new RuleBasedEntityExtractor({ strict: true });
+    const entities = await strict.extract("@韩丽敏 提交了 @巡察 报告与 @paraId");
+    const people = entities.filter((e) => e.kind === "person").map((e) => e.name);
+    assert.deepEqual(people, ["韩丽敏"]);
   });
 
   it("extracts quoted strings as project names", async () => {

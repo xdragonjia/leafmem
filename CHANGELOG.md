@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.23] - 2026-10-21
+
+### Fixed
+- **实体抽取 person 准确率修复（22 个 person 中 18 个噪声）**。根因两处：① `@mention→person` 启发式守卫太弱（只挡版本号/纯数字/7 泛词），字段名（paraId/idref/version）、标签词（mention/skill/image）、时长（120s/2K）、包名命名空间（xdragonjia/clawhub_*/user_*）全被建成 person；② `MENTION_RE` 的 `\w` 不含 CJK，`@韩丽敏` 只能匹配单字——**中文人名永远抽不出来，抽出来的全是英文噪声**。修复：
+  - 噪声三重拦截：NOISE_MENTIONS 词表（字段/标签/结构词）+ NOISE_MENTION_RE（时长/编号形态）+ CHINESE_NON_PERSON 领域停用词（@巡察/@整改 等过形态但非人名）。
+  - person 似然判据 PERSON_LIKE_RE：中文 2-4 字 / 首大写英文 / 小写单词；驼峰/全大写/下划线/带数字形态一律不建 person。
+  - 包名形态 → 新 kind `namespace`（EntityKind 开放枚举）；产品名（ima/larksuite/workbuddy-buddy）→ `tool`。
+  - MENTION_RE 扩展 CJK 字符类，中文 @mention 可完整抽取。
+  - 受控词表增强通道：语义层权威实体（图谱 ONT_Person 481/ONT_Organization 116，源自文档注册表结构化 owner）经 export_vocab_to_leafmem.py 导出 entity-vocab.json，strict 模式第 0 步优先命中——**无 @ 符号的权威人名也能正确建 person**（本机端到端实测）。
+  - 存量矫正：删 14 噪声 person、重分类 4（ima/larksuite/workbuddy-buddy→tool、xdragonjia→namespace，先改 kind 保链接再删）；语义层 bridge_leafmem.py 同步补"LeafMem 已删实体的图内残留清理"（原先只 MERGE 不删）。
+  - 测试 17/17（新增噪声拒绝 + strict 真人抽取 + 中文停用词用例）；tsc 0 错。
+
+
 ### Fixed
 - **四层写入侧闸门：自动化任务书整段入库致全库召回 400 根治（2026-09-11，09-10/09-11 两日连续复发）**。根因链（备份库取证实证）：自动化会话的 `<user_query>` 内文就是系统生成的任务书全文（7951 字符），`sanitizeCapturedText` 的 user_query 提取将其当人类原话放行 → 规则提取器 decision cue「改用」在任务书正文命中（@6020）→ `normalizeMemoryCandidate` 无长度上限 → 整段任务书以 `content==summary`、`kind=decision`、`source=turn_inference` 入库 → recall 批量 embedding 超 bge-m3 单条上限 → **全库** recall 400。四层设防：
   - L1 `sanitize.ts` + hooks 桥客户端副本：自动化任务书拦截——骨架标志（`automation_system_reminder` / `<automations>` / `<user-prompt-submit-hook>`）直接拒；长文（>1500 字符）+ 宿主任务书句式（`You MUST follow these steps` / `Execute the task as specified in the user query`）组合拒。hook 对净化为空的行为为静默跳过（不发请求不报错），自动化会话 Stop 自动捕获（垃圾主要来源）随之停用，合法记忆走 CLI 显式写入不受影响。
