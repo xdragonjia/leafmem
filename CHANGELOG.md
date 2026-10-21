@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **`src/agents/marked-block.ts`**：身份文件的标记块安全写入器——块内版本标记（`version=N`）、写前自动备份到 `~/.leafmem/backup/identity/<ts>/`、`写临时文件 + rename` 原子替换、**写后校验「块恰好 1 份 + 块外内容 hash 不变」**；标记不成对（只有 start）时**拒绝写入**而不是追加第二个块；软链路径先 `realpath` 再写（`rename` 会替换软链本身）。
 - **`test/instructions.test.ts`**：7 条单测覆盖首次追加/替换保块外/幂等/坏标记拒绝/空文件/路径解析/软链写入。
 
+- **注入块压缩（v3）**：16 条 → 7 组，6,473 → **3,022 字符（-53%）**；压缩中保留全部承重表述（`Lifecycle hooks are the primary path`、`Do this silently`、`defaults writes to agent:<scope>`、四工具名、`agent/sessionId/rollingSummary`、`status:"active"`、`maintenanceRequest`、禁直写 SQLite、`tags` 数组、`importance` 数字、CLI 首通道）。
+- **注入块契约测试**（`test/instruction-block.test.ts`）：断言 15 个承重 token + 体积 <3,200 + CLI 是 PRIMARY；删规则会直接 CI 失败。
+- **`placement:"top"` 支持**：块已存在时保持原位；首次安装钉在文件顶部（原有内容完整保留在块后）。
+
 ### Changed
 - `installInstructions`（manager.ts）与 `writeWorkBuddyInstructions`（workbuddy.ts）统一走上述安全写入器；指令块首行新增 `<!-- leafmem-agent-instructions:version=2 -->`。
 

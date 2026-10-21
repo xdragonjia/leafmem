@@ -18,7 +18,7 @@ export const BLOCK_START = "<!-- leafmem-agent-instructions:start -->";
 export const BLOCK_END = "<!-- leafmem-agent-instructions:end -->";
 
 /** Bump when the block CONTENT contract changes (tests assert required tokens per version). */
-export const BLOCK_VERSION = 2;
+export const BLOCK_VERSION = 3;
 
 export const versionLine = (v: number = BLOCK_VERSION): string =>
   `<!-- leafmem-agent-instructions:version=${v} -->`;
@@ -49,6 +49,8 @@ export type MarkedBlockResult = {
 };
 
 export type MarkedBlockOptions = {
+  /** Where to place a NEW block when the file has none yet (existing blocks keep their place). */
+  position?: "top" | "bottom";
   /** Where pre-write snapshots go. Defaults to ~/.leafmem/backup/identity/<ts>/ */
   backupRoot?: string;
   /** Injectable clock for tests. */
@@ -89,9 +91,20 @@ export async function writeMarkedBlock(
     after = current.slice(endIndex + BLOCK_END.length).trimStart();
     next = `${[before, block, after].filter(Boolean).join("\n\n").replace(/\s+$/, "")}\n`;
   } else {
-    before = current.trimEnd();
-    after = "";
-    next = current.trim() ? `${before}\n\n${block}\n` : `${block}\n`;
+    const pos = options.position ?? "bottom";
+    if (!current.trim()) {
+      before = "";
+      after = "";
+      next = `${block}\n`;
+    } else if (pos === "top") {
+      before = "";
+      after = current.trim();
+      next = `${block}\n\n${after}\n`;
+    } else {
+      before = current.trimEnd();
+      after = "";
+      next = `${before}\n\n${block}\n`;
+    }
   }
 
   const outerHash = sha(`${before.trim()}\u0000${after.trim()}`);

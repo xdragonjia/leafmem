@@ -109,3 +109,13 @@ test("identity path: 软链目标存在时写到真实文件（不破坏软链�
   const real = await readFile(join(scoped, "SOUL.md"), "utf8");
   assert.ok(real.includes("RULES"), "必须写到软链指向的真实文件");
 });
+
+test("placement=top: 无块时钉在文件顶部（安装器要求块优先于其余规则）", async () => {
+  const dir = await tmp();
+  const file = join(dir, "SOUL.md");
+  await writeFile(file, "# SOUL\n\n- 业务规则\n", "utf8");
+  await writeMarkedBlock(file, block("RULES"), { position: "top", backupRoot: join(dir, "bk") });
+  const text = await readFile(file, "utf8");
+  assert.ok(text.startsWith(BLOCK_START), "块必须位于文件顶部");
+  assert.ok(text.trimEnd().endsWith("- 业务规则"), "原有内容必须完整保留在块后");
+});
