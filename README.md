@@ -418,6 +418,18 @@ LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使�
 
 ---
 
+### 3.6 每日日志回流（ops/ingest-daily-logs.py）
+
+把工作日志（`YYYY-MM-DD.md`）增量回流进记忆库，供 recall / 图谱 / 周维整复用：
+
+```bash
+python3 ops/ingest-daily-logs.py --dry-run                      # 先看会入什么
+python3 ops/ingest-daily-logs.py --source work=~/notes/daily    # 指定源目录
+```
+
+- 按 `## ` 节切分，只收日期命名文件；**append-safe**：节尾追加的内容以「（续N）」增量入库，不重复、不丢失
+- 状态文件默认 `~/.leafmem/daily-ingest-state.json`，只在写入成功后才记账（失败下轮重试）
+
 ## 📈 基准测试
 
 基线测量 2026-08-08；**默认配置（BGE-M3 embedding + bge-reranker-v2-m3 重排）完整重测 2026-08-11**。基准的三个配置层级：

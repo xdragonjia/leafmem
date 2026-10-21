@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.24] - 2026-10-21
+
+### Added
+- **`ops/ingest-daily-logs.py`（daily md → LeafMem 回流工具，产品化）**：把每日工作日志（`YYYY-MM-DD.md`）按 `## ` 节切分后增量写入 LeafMem（kind=experience，tags=[daily-log, 源, 日期]，metadata 带 source_file/section 可溯源）。参数化：`--source tag=path`（可重复）、`--api`、`--state`、`--scope`、`--max-len`、`--dry-run`。
+
+### Fixed
+- **append-only 日志的增量去重漏尾部（严重）**：旧实现以「节标题 + 正文前 200 字」做指纹，节尾追加内容不改指纹 → 当天下午/晚上的日志被永久跳过、静默丢失。改为按**已入长度**比对（`state['lens']`），节增长 >40 字即把新增部分以「（续N）」分段入库（≤4800 字/段）；state 只在发送成功后记账，失败自动重试。
+- **长节截断后的尾部丢失**：单节超过 5600 字被截断的部分此前永不入库，现由增量机制补齐。
+- **源目录硬断言过严**：非关键源缺失会导致整脚本退出（连累全部源），现降级为跳过并告警。
+
 ## [0.3.23] - 2026-10-21
 
 ### Added

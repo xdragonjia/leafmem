@@ -1,6 +1,6 @@
 {
   "name": "@xdragonjia/leafmem",
-  "version": "0.3.23",
+  "version": "0.3.24",
   "description": "LeafMem — long-term memory engine for AI agents (recall, reflect, profile, governance).",
   "type": "module",
   "keywords": [
@@ -125,6 +125,7 @@
     "ops/mirror-sync.js",
     "ops/entity-relink.mjs",
     "ops/observation.py",
+    "ops/ingest-daily-logs.py",
     "ops/consolidation.js"
   ],
   "scripts": {
