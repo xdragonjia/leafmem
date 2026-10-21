@@ -69,8 +69,15 @@ def sections(text: str):
 
 
 def chunk_text(delta: str, target: int = CHUNK_TARGET):
+    """按行切；单行本身超 target 时硬切（否则整行成一块，最终被 MAX_LEN 截断丢字）。"""
     chunks, cur = [], ""
     for line in delta.split("\n"):
+        while len(line) > target:
+            if cur.strip():
+                chunks.append(cur.strip())
+                cur = ""
+            chunks.append(line[:target])
+            line = line[target:]
         if len(cur) + len(line) + 1 > target:
             if cur.strip():
                 chunks.append(cur.strip())
@@ -162,8 +169,10 @@ def main() -> int:
                         })
                     continue
                 new += 1
+                # 🔴 lens 记「实际入库长度」而非全文长度：否则超长节首入只取 max_len，
+                # 剩余部分因 lens 已到全文长度而永远不再入（T6 测试实证）
                 batch.append({
-                    "_h": h, "_fk": fk, "_sec": sec_key, "_len": len(body),
+                    "_h": h, "_fk": fk, "_sec": sec_key, "_len": min(len(body), args.max_len),
                     "content": f"[{f.stem}·{title[:40]}] {body[:args.max_len]}",
                     "kind": "experience", "scope": args.scope,
                     "tags": ["daily-log", tag, f.stem],

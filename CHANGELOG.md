@@ -7,19 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.3.24] - 2026-10-21
-
-### Added
-- **`ops/ingest-daily-logs.py`（daily md → LeafMem 回流工具，产品化）**：把每日工作日志（`YYYY-MM-DD.md`）按 `## ` 节切分后增量写入 LeafMem（kind=experience，tags=[daily-log, 源, 日期]，metadata 带 source_file/section 可溯源）。参数化：`--source tag=path`（可重复）、`--api`、`--state`、`--scope`、`--max-len`、`--dry-run`。
-
-### Fixed
-- **append-only 日志的增量去重漏尾部（严重）**：旧实现以「节标题 + 正文前 200 字」做指纹，节尾追加内容不改指纹 → 当天下午/晚上的日志被永久跳过、静默丢失。改为按**已入长度**比对（`state['lens']`），节增长 >40 字即把新增部分以「（续N）」分段入库（≤4800 字/段）；state 只在发送成功后记账，失败自动重试。
-- **长节截断后的尾部丢失**：单节超过 5600 字被截断的部分此前永不入库，现由增量机制补齐。
-- **源目录硬断言过严**：非关键源缺失会导致整脚本退出（连累全部源），现降级为跳过并告警。
-
 ## [0.3.23] - 2026-10-21
 
 ### Added
+- **`ops/ingest-daily-logs.py`（daily md → LeafMem 回流工具，产品化）**：把每日工作日志（`YYYY-MM-DD.md`）按 `## ` 节切分后增量写入 LeafMem（kind=experience，tags=[daily-log, 源, 日期]，metadata 带 source_file/section 可溯源）。参数化：`--source tag=path`（可重复）、`--api`、`--state`、`--scope`、`--max-len`、`--dry-run`。
 - **A-MEM 式记忆间链接**（NeurIPS 2025 A-Mem 借鉴）：新表 `memory_links`（source/target/relation/confidence，区别于 entity_links 的记忆-实体链接）；召回命中 top5 的链接邻居以「🔗 关联记忆」块附加注入（走 `layers.linked` 跨后端通道，不占 hits 配额）。成本纪律：引擎写入时不调 LLM 建链，建链归宿主（规则版每日/LLM 判断版每周）。
 - **召回保温**（Retrieval-Driven Reconsolidation 借鉴）：recency 评分取 `updatedAt` 与 `lastRecalledAt` 较新者——常被召回的记忆保温，不只按写入时间衰减。
 - **`memory_govern` 新增 `supersede` 动作**（Zep invalidate-don't-delete 写入侧）：旧记忆被取代时链到新条 + 降权不删除，历史可查；同写 `memory_links(supersede)`。
@@ -39,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - 存量矫正：删 14 噪声 person、重分类 4（ima/larksuite/workbuddy-buddy→tool、xdragonjia→namespace，先改 kind 保链接再删）；语义层 bridge_leafmem.py 同步补"LeafMem 已删实体的图内残留清理"（原先只 MERGE 不删）。
   - 测试 18/18（新增噪声拒绝 + strict 真人抽取 + 中文停用词 + 短 CJK 词表子串防护用例）；tsc 0 错。
   - **词表子串误命中防护**：≤2 字 CJK 词表名只在 @mention 形态命中（实测"国王健康椅"误抽 person"王健"）；≥3 字名保留裸文本 includes（权威人名主通道）。
+
+### Fixed（daily 回流管线）
+- **append-only 日志的增量去重漏尾部（严重）**：旧实现以「节标题 + 正文前 200 字」做指纹，节尾追加内容不改指纹 → 当天下午/晚上的日志被永久跳过、静默丢失。改为按**已入长度**比对（`state['lens']`），节增长 >40 字即把新增部分以「（续N）」分段入库（≤4800 字/段）；state 只在发送成功后记账，失败自动重试。
+- **长节截断后的尾部丢失**：单节超过 5600 字被截断的部分此前永不入库，现由增量机制补齐。
+- **源目录硬断言过严**：非关键源缺失会导致整脚本退出（连累全部源），现降级为跳过并告警。
 
 ### Changed（维护层与发布卫生）
 - **`task_append` status 运行时枚举校验**：非法状态不再静默入库。
