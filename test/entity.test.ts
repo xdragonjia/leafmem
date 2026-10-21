@@ -148,7 +148,7 @@ describe("RuleBasedEntityExtractor", () => {
   it("extracts @mentions as person entities", async () => {
     // 🔴 2026-10-21 判据更新：person 须似人名形态（中文2-4字/首大写英文/小写单词）；
     //    连字符/下划线/驼峰/带数字形态不再建 person（namespace/噪声）
-    const entities = await extractor.extract("Assigned to @alice and @贾小龙");
+    const entities = await extractor.extract("Assigned to @alice and @王小明");
     const people = entities.filter((e) => e.kind === "person");
     assert.ok(people.length >= 2);
   });
@@ -167,9 +167,9 @@ describe("RuleBasedEntityExtractor", () => {
 
   it("strict mode still extracts person-like mentions, blocks domain words", async () => {
     const strict = new RuleBasedEntityExtractor({ strict: true });
-    const entities = await strict.extract("@韩丽敏 提交了 @巡察 报告与 @paraId");
+    const entities = await strict.extract("@李芳 提交了 @公司 报告与 @paraId");
     const people = entities.filter((e) => e.kind === "person").map((e) => e.name);
-    assert.deepEqual(people, ["韩丽敏"]);
+    assert.deepEqual(people, ["李芳"]);
   });
 
   it("extracts quoted strings as project names", async () => {

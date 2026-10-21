@@ -34,7 +34,7 @@ const KNOWN_TOOLS: Set<string> = new Set([
 // Rule-based entity extractor (zero LLM dependency)
 // ---------------------------------------------------------------------------
 
-// 🔴 2026-10-21：\w 不含中文，@贾小龙 原先只匹配到单字"贾"（中文人名永远抽不出）——
+// 🔴 2026-10-21：\w 不含中文，中文 @mention 原先只匹配到首字（中文人名永远抽不出）——
 //    扩展字符类含 CJK 统一表意文字
 const MENTION_RE = /@([\w一-鿿][\w一-鿿.-]*[\w一-鿿]|[\w一-鿿])/g;
 const QUOTED_RE = /["""]([^"""]+?)["""]/g;
@@ -108,11 +108,13 @@ const TOOL_PRODUCT_MENTIONS = new Set([
 ]);
 // 已知包名/命名空间（实测误抽为 person 的 ID 形态）
 const KNOWN_NAMESPACES = new Set(["xdragonjia", "earl-chen", "clawhub"]);
-// 🔴 中文领域停用词（@巡察/@整改 等领域词不像人名但过 PERSON_LIKE 形态，须挡）
+// 🔴 中文非人名停用词（通用词，过 PERSON_LIKE 形态但不是人名）。
+//    业务/领域专有词（如巡视整改领域）**不硬编码进引擎**——放本机受控词表
+//    entity-vocab.json（step 0 优先命中，kind=project 即拦截 person 误建），
+//    保持引擎通用性与发布卫生（2026-10-21 发布审计拦截后设计修正）。
 const CHINESE_NON_PERSON = new Set([
-  "巡察", "巡视", "整改", "制度", "公司", "党委", "纪委", "党组", "审计", "党建",
-  "监督", "报告", "方案", "问题", "工作", "学习", "教育", "管理", "组织", "干部",
-  "集团", "落实", "责任", "会议", "通知", "办法", "规定", "清单", "台账", "材料",
+  "公司", "集团", "部门", "组织", "管理", "工作", "学习", "教育",
+  "报告", "方案", "问题", "会议", "通知", "办法", "规定", "清单", "台账", "材料",
   "文档", "知识", "记忆", "技能", "任务", "项目", "数据", "系统", "平台", "工具",
 ]);
 
@@ -207,7 +209,7 @@ export class RuleBasedEntityExtractor implements EntityExtractor {
       }
       if (!PERSON_LIKE_RE.test(name)) continue; // 形态不像人名=不建 person
       if (CHINESE_NON_PERSON.has(name)) continue; // 中文领域词≠人名
-      // 🔴 2026-10-21 判据修正：strict 不再一刀切禁建 person（实测 @韩丽敏 真人被挡）——
+      // 🔴 2026-10-21 判据修正：strict 不再一刀切禁建 person（实测真人中文 mention 被挡）——
       //    通过形态+停用词+噪声三重过滤后的 @mention 可信，允许建 person
       entities.set(key, { name, kind: "person" });
     }
