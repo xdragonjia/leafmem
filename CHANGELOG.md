@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.24] - 2026-10-21
+
+### Added
+- **A-MEM 式记忆间链接**（NeurIPS 2025 A-Mem 借鉴）：新表 `memory_links`（source/target/relation/confidence，区别于 entity_links 的记忆-实体链接）；召回命中 top5 的链接邻居以「🔗 关联记忆」块附加注入（走 layers.linked 跨后端通道，不占 hits 配额——remote-embeddings 模式下 palaceLayer 取 retrieval 后端会丢 memory.recall 的 dynamicContext，实测教训）。成本纪律：引擎写入时不调 LLM 建链（2026 调研点名的成本陷阱），建链归宿主（规则版每日/LLM 判断版每周）。
+- **召回保温**（Retrieval-Driven Reconsolidation 借鉴）：recency 评分取 updatedAt 与 lastRecalledAt 较新者——常被召回的记忆保温，不只按写入时间衰减。
+- **memory_govern 新增 supersede 动作**（Zep invalidate-don't-delete 写入侧）：旧记忆被取代时链到新条+降权不删除，历史可查；同写 memory_links(supersede)。
+- **受控词表 mtime 热加载**：entity-vocab.json 变化后下一条写入即生效，免重启服务（端到端实测）。
+- **console 记忆浏览页新增「全部标签」筛选下拉**（tag 频次 top12+计数）。
+- README 3.4/3.5 节：实体抽取判据、词表增强通道、记忆链接/保温/取代机制说明（console 帮助文档同步）。
+
+### Fixed
+- entity: person 抽取准确率（噪声三重拦截+person 似然判据+namespace/tool 重分类+CJK mention+短 CJK 词表名仅 @形态命中防子串误命中）——详见 0.3.23 节。
+- test(http): export 断言改确定性轮询（CI flaky：count 依赖库残留状态）。
+- ops: sqlite-backup v2 可用性校验+状态落盘；ci-watch.sh 新增（push 后轮询 CI 到 conclusion 的机制化脚本）。
+
 ## [0.3.23] - 2026-10-21
 
 ### Fixed
