@@ -5,6 +5,11 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **`ops/ingest-daily-logs.py` 增加 state 缺失 fail-safe**：去重完全依赖 `--state`（`seen` + `lens` 记账），state 缺失时整批历史 daily 节会被当作全新导入。2026-10-22 哨兵实测：首跑后 `~/.leafmem/daily-ingest-state.json` 未留存，此时重跑将重复入库 **2,698 节**；且 LeafMem 同 kind+tags 为 UPDATE 覆盖语义，重复导入会连带改写原条目，属破坏性。现行为：state 文件不存在且未显式传 `--force-fresh` → 打印原因并以 **exit 3** 拒绝执行；确属首次导入须显式 `--force-fresh`。验证：无 flag → exit 3；`--force-fresh --dry-run` 与「state 存在」两路均正常放行，dry-run 前后库内条数不变。
+
 ## [0.3.23] - 2026-10-21
 
 ### Added

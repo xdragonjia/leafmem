@@ -120,7 +120,22 @@ def main() -> int:
                     help="写入 scope（字符串；不传会落 project scope 导致跨宿主召回不到）")
     ap.add_argument("--max-len", type=int, default=MAX_LEN_DEFAULT)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--force-fresh", action="store_true",
+                    help="确认这是一次全新导入。state 文件缺失时必须显式加此参数")
     args = ap.parse_args()
+
+    # 🔴 fail-safe（2026-10-22 哨兵加）：去重完全依赖 --state 的 seen/lens 记账，
+    # state 一旦缺失，整批历史 daily md 会被当作全新导入重复入库（2026-10-21 首跑后
+    # ~/.leafmem/daily-ingest-state.json 未留存 → 重跑即 2.6k 条重复，且 LeafMem 同 kind+tags
+    # 去重是 UPDATE 覆盖语义，会连原条目一起改掉，属破坏性）。故 state 缺失一律拦下。
+    if not Path(args.state).exists() and not args.force_fresh:
+        print(
+            f"❌ state 文件不存在：{args.state}\n"
+            "   去重依赖该文件；缺失状态下运行会把全部历史 daily 节当新内容重复入库。\n"
+            "   若确认是首次导入，加 --force-fresh 重跑；否则先恢复/指定正确的 --state。",
+            file=sys.stderr,
+        )
+        return 3
 
     specs = args.source or [f"user-daily={Path.home() / '.workbuddy' / 'memory'}"]
     sources = parse_sources(specs)
