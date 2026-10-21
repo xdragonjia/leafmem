@@ -286,10 +286,22 @@ describe("LeafMem HTTP API", () => {
     const history = (await historyRes.json()) as Record<string, unknown>;
     assert.ok((history.events as unknown[]).length >= 1);
 
-    const exportRes = await api("/v1/memories/export");
-    assert.equal(exportRes.status, 200);
-    const exported = (await exportRes.json()) as Record<string, unknown>;
-    assert.ok((exported.count as number) >= 2);
+    // 🔴 2026-10-21 flaky 修复（CI 39557197915 红）：count>=2 依赖库内残留状态——
+    //    改确定性断言：本批两条 id 必在导出集中；并轮询容忍异步提交可见性延迟
+    //    （CI 慢盘上 batch 写后 export 偶发不可见，本地 10 连跑不复现）
+    const want = new Set(memories.map((m) => m.id));
+    let exportedIds = new Set<string>();
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const exportRes = await api("/v1/memories/export");
+      assert.equal(exportRes.status, 200);
+      const exported = (await exportRes.json()) as Record<string, unknown>;
+      exportedIds = new Set(
+        ((exported.memories as Array<Record<string, unknown>>) ?? []).map((m) => m.id)
+      );
+      if ([...want].every((id) => exportedIds.has(id))) break;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    for (const id of want) assert.ok(exportedIds.has(id));
 
     const deleteRes = await api("/v1/memories/batch", {
       method: "DELETE",
