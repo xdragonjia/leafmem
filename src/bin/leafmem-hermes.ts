@@ -105,7 +105,11 @@ async function main(): Promise<void> {
     if (existing.length === 0) {
       await adapter.importExistingMemory();
     }
-    await adapter.syncProjection();
+    // 2026-10-21: syncProjection disabled — SOUL/USER/MEMORY are user-authoritative files.
+    // Projecting DB records back onto them truncates real content to the 1,375/2,200-char
+    // caps (same reason the WorkBuddy mcp bin disabled it in 2026-08-06). Import is one-way:
+    // importExistingMemory() reads the files into the DB and never writes back.
+    // await adapter.syncProjection();
     return;
   }
 
@@ -129,7 +133,11 @@ async function main(): Promise<void> {
           sessionSummary,
         });
       }
-      await adapter.syncProjection();
+      // 2026-10-21: syncProjection disabled — SOUL/USER/MEMORY are user-authoritative files.
+      // Projecting DB records back onto them truncates real content to the 1,375/2,200-char
+      // caps (same reason the WorkBuddy mcp bin disabled it in 2026-08-06). Import is one-way:
+      // importExistingMemory() reads the files into the DB and never writes back.
+      // await adapter.syncProjection();
       return;
     }
     await adapter.flushSession();
@@ -147,7 +155,11 @@ async function main(): Promise<void> {
     content: options.content,
     oldText: options.oldText,
   });
-  await adapter.syncProjection();
+  // 2026-10-21: syncProjection disabled — SOUL/USER/MEMORY are user-authoritative files.
+  // Projecting DB records back onto them truncates real content to the 1,375/2,200-char
+  // caps (same reason the WorkBuddy mcp bin disabled it in 2026-08-06). Import is one-way:
+  // importExistingMemory() reads the files into the DB and never writes back.
+  // await adapter.syncProjection();
 }
 
 function parseCli(argv: string[], env: NodeJS.ProcessEnv): CliOptions {
@@ -325,7 +337,11 @@ async function installPlugin(options: CliOptions): Promise<void> {
   if (existing.length === 0) {
     await adapter.importExistingMemory();
   }
-  await adapter.syncProjection();
+  // 2026-10-21: syncProjection disabled — SOUL/USER/MEMORY are user-authoritative files.
+  // Projecting DB records back onto them truncates real content to the 1,375/2,200-char
+  // caps (same reason the WorkBuddy mcp bin disabled it in 2026-08-06). Import is one-way:
+  // importExistingMemory() reads the files into the DB and never writes back.
+  // await adapter.syncProjection();
 }
 
 function buildPluginManifest(): string {

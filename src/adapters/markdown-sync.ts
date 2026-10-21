@@ -38,13 +38,45 @@ export async function listMarkdownFiles(dir: string): Promise<string[]> {
   }
 }
 
+export type MarkdownListWriteOptions = {
+  /** Allow replacing the file even when the new content is much smaller. Default false. */
+  allowShrink?: boolean;
+  /** Minimum allowed ratio new/old (default 0.5). Below it the write is refused. */
+  maxShrinkRatio?: number;
+};
+
+/**
+ * 🔴 2026-10-21: this primitive OVERWRITES the whole file with a rendered list.
+ * Identity files (SOUL/USER/MEMORY) are user-authoritative and can be 30KB+, while
+ * the projection caps are 1,375 / 2,200 chars — calling this on them silently
+ * truncates real content. Guard it: refuse to blank a non-empty file, and refuse to
+ * shrink below `maxShrinkRatio` unless the caller explicitly opts in.
+ */
 export async function writeMarkdownListFile(
   path: string,
   entries: string[],
   maxChars?: number,
+  options: MarkdownListWriteOptions = {},
 ): Promise<void> {
   const rendered = renderMarkdownList(entries, maxChars);
-  await writeText(path, rendered ? `${rendered}\n` : "");
+  const next = rendered ? `${rendered}\n` : "";
+  const current = (await readTextFile(path)) ?? "";
+  if (current.trim() && !options.allowShrink) {
+    if (!next.trim()) {
+      throw new Error(
+        `[leafmem] refusing to blank ${path} (had ${current.length} chars). Pass allowShrink to override.`,
+      );
+    }
+    const ratio = next.length / current.length;
+    const min = options.maxShrinkRatio ?? 0.5;
+    if (ratio < min) {
+      throw new Error(
+        `[leafmem] refusing to shrink ${path} from ${current.length} to ${next.length} chars ` +
+          `(${(ratio * 100).toFixed(0)}% < ${(min * 100).toFixed(0)}%). Pass allowShrink to override.`,
+      );
+    }
+  }
+  await writeText(path, next);
 }
 
 export async function writeMarkdownBlocksFile(path: string, blocks: string[]): Promise<void> {

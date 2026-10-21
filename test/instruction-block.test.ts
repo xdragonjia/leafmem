@@ -66,3 +66,10 @@ test("block: 自动化通道写成「首选」而非「兜底」", () => {
   assert.ok(/PRIMARY channel/i.test(block), "CLI 必须是自动化会话的首选通道");
   assert.ok(/ToolSearch/.test(block), "必须写明不要用 ToolSearch 重试");
 });
+
+test("block: 宿主中性（两宿主共享同一 SOUL 时块必须逐字相同）", () => {
+  const a = workBuddyInstructionBlock("node /x/leafmem-agent.js update workbuddy", "workbuddy");
+  const b = workBuddyInstructionBlock("node /x/leafmem-agent.js update kunlunxiaozhi", "workbuddy");
+  assert.equal(a, b, "宿主专属 update 命令会让共享 SOUL 永不幂等");
+  assert.match(a, /update <host>/, "命令必须写成占位形式");
+});

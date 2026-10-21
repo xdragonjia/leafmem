@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 - `installInstructions`（manager.ts）与 `writeWorkBuddyInstructions`（workbuddy.ts）统一走上述安全写入器；指令块首行新增 `<!-- leafmem-agent-instructions:version=2 -->`。
 
+### Changed（第三批：投影清理与幂等）
+- **`writeMarkdownListFile` 加护栏**：该原语会用渲染结果**整文件覆盖**并按 1,375/2,200 字符截断——对 30KB 身份文件＝静默损毁。现在：非空文件禁止被清空、新内容 <50% 时拒绝写入，除非显式 `allowShrink`（4 条单测锁定）。
+- **hermes / openclaw 的 `syncProjection` 全部禁用**：与 mcp bin（2026-08-06）、workbuddy 保持一致——身份文件归用户所有，只做单向导入（`importExistingMemory`），不再把 DB 记录投影回写。
+- **注入块改为宿主中性**：`update workbuddy` / `update kunlunxiaozhi` 写成 `update <host>`（示例仍给 `update workbuddy`）。此前双宿主共享同一 SOUL 时，每次安装会互相覆盖 → 永不幂等、反复产生备份（实测一次安装 9 份）。现三跑 hash 完全一致。
+
 ### Fixed
 - 安装器把指令块写到宿主不读取的路径（顶层 `SOUL.md` 而非 scoped persona 目录）。
 - 旧写入器无备份、无版本标记、坏标记会追加重复块。

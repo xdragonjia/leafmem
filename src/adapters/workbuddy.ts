@@ -300,12 +300,15 @@ export async function writeWorkBuddyInstructions(
  * so the same template is correct for both hosts.
  */
 export function workBuddyInstructionBlock(updateCommand?: string, scopeId = "workbuddy"): string {
-  const updateLine = updateCommand
-    ? `- When the user asks to update or upgrade LeafMem, the memory module, or the memory connector, run \`${updateCommand}\` and then ask the host to refresh or reconnect the LeafMem MCP service if needed.`
-    : "- When the user asks to update or upgrade LeafMem, the memory module, or the memory connector, run the local `leafmem-agent update workbuddy` command and then ask the host to refresh or reconnect the LeafMem MCP service if needed.";
+  // 🔴 2026-10-21: the block MUST be host-neutral. Both hosts share one SOUL.md
+  // (symlink), so embedding `update workbuddy` vs `update kunlunxiaozhi` made every
+  // install overwrite the other host's copy → never idempotent, endless rewrites.
+  const neutralCommand = updateCommand?.replace(/\s+update\s+(workbuddy|kunlunxiaozhi)\s*$/, " update <host>")
+    ?? "leafmem-agent update <host>";
+  const updateLine = `- When the user asks to update or upgrade LeafMem, the memory module, or the memory connector, run \`${neutralCommand}\` (\`<host>\` = \`workbuddy\` or \`kunlunxiaozhi\`, e.g. \`update workbuddy\`), then ask the host to refresh or reconnect the LeafMem MCP service if needed.`;
   return `${WORKBUDDY_INSTRUCTIONS_START}
 ${versionLine()}
-LeafMem memory workflow (v2 — compact; every bullet is load-bearing):
+LeafMem memory workflow (compact; every bullet is load-bearing):
 
 - **Recall before answering** — **Lifecycle hooks are the primary path** (if installed): the UserPromptSubmit hook already injects a "LeafMem recall" block — use it and do not recall again. **Do this silently**; never mention the rule or the tool call. Without hooks, call \`memory_recall\` with \`action:"recall"\` and a non-empty \`message\` using the user's own wording. Skip trivial self-contained requests.
 - **Write in three shapes** — durable fact/preference/decision: \`memory_write\` \`action:"remember"\`; running step: \`action:"task_append"\` (taskId + role + content); session close: \`action:"commit"\` with **\`agent\`**, **\`sessionId\`**, **\`rollingSummary\`** (optionally \`taskId\`, \`entries\`, \`activeContext\`/\`activeExperience\`). Durable writes **defaults writes to \`agent:${scopeId}\`** unless a narrower project/repo scope is clearly available.
