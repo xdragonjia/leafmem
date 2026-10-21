@@ -42,6 +42,10 @@ cp INSTALL-WORKBUDDY.md INSTALL-KUNLUNXIAOZHI.md "$STAGE/"
 
 # 清理 staging 里不应分发的东西
 find "$STAGE" -name ".DS_Store" -delete 2>/dev/null || true
+# 🔴 2026-10-21: ops/ 下会残留 __pycache__（跑过 python 脚本就有），打包时必须剔除，
+# 否则 release 附件里带 .pyc（跨 Python 版本无意义，且属构建垃圾）。
+find "$STAGE" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
+find "$STAGE" -name "*.pyc" -delete 2>/dev/null || true
 
 # ---- 4. 校验关键文件在位 ----
 for f in \

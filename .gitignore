@@ -7,3 +7,7 @@ benchmarks/locomo/*.json
 benchmarks/longmemeval/*.json
 benchmarks/results/
 release/
+
+# Python 缓存（打包前剔除）
+__pycache__/
+*.pyc
