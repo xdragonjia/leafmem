@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - MENTION_RE 扩展 CJK 字符类，中文 @mention 可完整抽取。
   - 受控词表增强通道：语义层权威实体（图谱 ONT_Person 481/ONT_Organization 116，源自文档注册表结构化 owner）经 export_vocab_to_leafmem.py 导出 entity-vocab.json，strict 模式第 0 步优先命中——**无 @ 符号的权威人名也能正确建 person**（本机端到端实测）。
   - 存量矫正：删 14 噪声 person、重分类 4（ima/larksuite/workbuddy-buddy→tool、xdragonjia→namespace，先改 kind 保链接再删）；语义层 bridge_leafmem.py 同步补"LeafMem 已删实体的图内残留清理"（原先只 MERGE 不删）。
-  - 测试 17/17（新增噪声拒绝 + strict 真人抽取 + 中文停用词用例）；tsc 0 错。
+  - 测试 18/18（新增噪声拒绝 + strict 真人抽取 + 中文停用词 + 短 CJK 词表子串防护用例）；tsc 0 错。
+  - **词表子串误命中防护**：≤2 字 CJK 词表名只在 @mention 形态命中（实测"国王健康椅"误抽 person"王健"）；≥3 字名保留裸文本 includes（权威人名主通道）。
 
 
 ### Fixed

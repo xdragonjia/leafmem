@@ -155,9 +155,14 @@ export class RuleBasedEntityExtractor implements EntityExtractor {
     const lower = text.toLowerCase();
 
     // 0. Controlled domain vocabulary (highest priority)
+    // 🔴 2026-10-21 边界判据：CJK 短名（≤2 字）裸文本 includes 会子串误命中
+    //    （实测"国王健康椅"→person"王健"）——2 字中文名只在 @mention 形态命中；
+    //    ≥3 字名子串误命中概率极低，保留 includes（语义层权威人名主要靠此通道）
     for (const entry of this.vocab) {
       const key = entry.name.toLowerCase();
-      if (lower.includes(key) && !entities.has(key)) {
+      const isShortCjk = entry.name.length <= 2 && /[\u4e00-\u9fff]/.test(entry.name);
+      const hit = isShortCjk ? lower.includes(`@${key}`) : lower.includes(key);
+      if (hit && !entities.has(key)) {
         entities.set(key, { name: entry.name, kind: entry.kind });
       }
     }

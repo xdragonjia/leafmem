@@ -1,5 +1,8 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { InMemoryEntityStore } from "../src/entity/store-memory.js";
 import { RuleBasedEntityExtractor } from "../src/entity/extractor.js";
 
@@ -170,6 +173,23 @@ describe("RuleBasedEntityExtractor", () => {
     const entities = await strict.extract("@李芳 提交了 @公司 报告与 @paraId");
     const people = entities.filter((e) => e.kind === "person").map((e) => e.name);
     assert.deepEqual(people, ["李芳"]);
+  });
+
+  it("short CJK vocab entries only match with @mention (子串误命中防护)", async () => {
+    // 2 字 CJK 词表名在裸文本中不命中（"国王健康椅"不应抽出"王健"）；@形态命中
+    const vocabDir = mkdtempSync(join(tmpdir(), "leafmem-vocab-"));
+    const vocabPath = join(vocabDir, "vocab.json");
+    writeFileSync(vocabPath, JSON.stringify({
+      entities: { "王健": { kind: "person" }, "韩丽敏": { kind: "person" } },
+    }));
+    const ex = new RuleBasedEntityExtractor({ vocabPath });
+    const bare = await ex.extract("新办公室买了国王健康椅");
+    assert.equal(bare.filter((e) => e.name === "王健").length, 0);
+    const mentioned = await ex.extract("找 @王健 核对");
+    assert.ok(mentioned.some((e) => e.name === "王健" && e.kind === "person"));
+    // ≥3 字名裸文本仍命中（权威人名主通道）
+    const long3 = await ex.extract("由韩丽敏负责跟进");
+    assert.ok(long3.some((e) => e.name === "韩丽敏"));
   });
 
   it("extracts quoted strings as project names", async () => {
