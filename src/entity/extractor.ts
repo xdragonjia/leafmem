@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { MemoryInferencer } from "../system/types.js";
@@ -118,6 +118,14 @@ const CHINESE_NON_PERSON = new Set([
   "文档", "知识", "记忆", "技能", "任务", "项目", "数据", "系统", "平台", "工具",
 ]);
 
+function safeMtime(path: string): number {
+  try {
+    return statSync(path).mtimeMs;
+  } catch {
+    return -1;
+  }
+}
+
 function isNoiseMention(name: string): boolean {
   const n = name.trim();
   return (
@@ -130,7 +138,7 @@ function isDomainLike(name: string): boolean {
 }
 
 export class RuleBasedEntityExtractor implements EntityExtractor {
-  private readonly vocab: VocabEntry[];
+  private vocab: VocabEntry[];
 
   constructor(options?: { vocabPath?: string; strict?: boolean }) {
     // Custom (P0-1 fix, 2026-08-07): the controlled vocabulary is only loaded
@@ -146,11 +154,28 @@ export class RuleBasedEntityExtractor implements EntityExtractor {
       leafmemEnv("ENTITY_VOCAB") !== undefined;
     this.vocab = wantsVocab ? loadControlledVocab(options?.vocabPath) : [];
     this.strict = options?.strict ?? false;
+    // 🔴 2026-10-21 词表热加载（小龙问"通过接口可以动态更新呢"）：记词表路径+mtime，
+    // 每次 extract 检查 mtime 变化即重载——宿主更新词表无需重启服务（原实现构造时
+    // 一次性加载，导出新词表后必须重启才生效，是"动态更新"的断点）
+    this.vocabPath = wantsVocab
+      ? (options?.vocabPath ?? leafmemEnv("ENTITY_VOCAB") ?? defaultVocabPath())
+      : undefined;
+    this.vocabMtime = this.vocabPath ? safeMtime(this.vocabPath) : -1;
   }
 
   private readonly strict: boolean;
+  private readonly vocabPath?: string;
+  private vocabMtime: number;
 
   async extract(text: string): Promise<ExtractedEntity[]> {
+    // 🔴 词表热加载：mtime 变化即重载（宿主动态更新词表无需重启服务）
+    if (this.vocabPath) {
+      const mt = safeMtime(this.vocabPath);
+      if (mt !== this.vocabMtime) {
+        this.vocab = loadControlledVocab(this.vocabPath);
+        this.vocabMtime = mt;
+      }
+    }
     const entities: Map<string, ExtractedEntity> = new Map();
     const lower = text.toLowerCase();
 

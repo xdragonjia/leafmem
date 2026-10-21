@@ -338,7 +338,7 @@ const state = {
   scope: ((_q.get('scope') || localStorage.getItem('leafmem_scope') || 'all').replace(/^(workbuddy|kunlunxiaozhi)$/i, 'agent:$1')),
   agentIds: [], scopeList: [],
   explorerCache: null, explorerCacheScope: null,
-  explorerPage: 0, explorerQuery: '', explorerKind: '', explorerSource: '', tasksPage: 0,
+  explorerPage: 0, explorerQuery: '', explorerKind: '', explorerSource: '', explorerTag: '', tasksPage: 0,
   recallQuery: '', eventType: '', expandedPrincipleId: null, principlesPage: 0, eventsPage: 0,
   sharedMemory: true,
 };
@@ -583,6 +583,11 @@ async function renderExplorer(el) {
     if (state.explorerKind) mems = mems.filter(m => m.kind === state.explorerKind);
     if (state.explorerSource === '__tail__') mems = mems.filter(m => sourceTailSet.has(m.source));
     else if (state.explorerSource) mems = mems.filter(m => m.source === state.explorerSource);
+    // 🔴 2026-10-21：标签筛选下拉（小龙找不到 daily-log 入口——kind/source 下拉里没有 tag）
+    const tagCounts = {};
+    for (const m of mems) for (const t of (m.tags || [])) tagCounts[t] = (tagCounts[t] || 0) + 1;
+    const tagTop = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 12);
+    if (state.explorerTag) mems = mems.filter(m => (m.tags || []).includes(state.explorerTag));
     if (state.explorerQuery) {
       const q = state.explorerQuery.toLowerCase();
       mems = mems.filter(m => (m.content || '').toLowerCase().includes(q) ||
@@ -608,6 +613,11 @@ async function renderExplorer(el) {
           ${sourceTop.map(([k, c]) => `<option value="${esc(k)}"${k === state.explorerSource ? ' selected' : ''}>${esc(k)}（${c}）</option>`).join('')}
           ${sourceTail.length ? `<option value="__tail__"${state.explorerSource === '__tail__' ? ' selected' : ''}>其他来源（${sourceTail.length} 种 · ${sourceTailCount} 条）</option>` : ''}
           ${(state.explorerSource && state.explorerSource !== '__tail__' && !sourceTopKeys.has(state.explorerSource) && !sourceTailSet.has(state.explorerSource)) ? `<option value="${esc(state.explorerSource)}" selected>${esc(state.explorerSource)}</option>` : ''}
+        </select>
+        <select class="input" onchange="state.explorerTag=this.value;state.explorerPage=0;renderPage()" title="按标签筛选（如 daily-log 回流记忆）">
+          <option value="">全部标签</option>
+          ${tagTop.map(([k, c]) => `<option value="${esc(k)}"${k === state.explorerTag ? ' selected' : ''}>${esc(k)}（${c}）</option>`).join('')}
+          ${(state.explorerTag && !tagTop.some(([k]) => k === state.explorerTag)) ? `<option value="${esc(state.explorerTag)}" selected>${esc(state.explorerTag)}</option>` : ''}
         </select>
         <span class="mono-sm">${mems.length} 条记录</span>
         <div class="spacer"></div>
