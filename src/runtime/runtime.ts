@@ -69,7 +69,11 @@ export function createMemoryRuntime(params: {
       const retrievalLayer =
         params.memory.retrieval.backend === "qmd" ? retrievalRecall.injectedContext : undefined;
       const stableContext = [activeLayer, navigationLayer].filter(Boolean).join("\n\n").trim();
-      const dynamicContext = [taskWindow?.injectedContext, retrievalLayer, palaceLayer]
+      // 🔴 2026-10-21：A-MEM 链接邻居块经 layers.linked 跨后端保留（remote-embeddings
+      // 模式 palaceLayer 取 retrieval 后端，memory.recall 的 dynamicContext 被丢）——
+      // 在组合层显式并入，保证链接上下文不随后端选择丢失。
+      const linkedLayer = palaceRecall.layers?.linked;
+      const dynamicContext = [taskWindow?.injectedContext, retrievalLayer, palaceLayer, linkedLayer]
         .filter(Boolean)
         .join("\n\n")
         .trim();
@@ -86,6 +90,7 @@ export function createMemoryRuntime(params: {
           palace: palaceLayer || undefined,
           graph: palaceRecall.layers?.graph,
           navigation: navigationLayer || undefined,
+          linked: palaceRecall.layers?.linked,
         },
       };
     },

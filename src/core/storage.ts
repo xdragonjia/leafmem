@@ -166,6 +166,36 @@ export class SqliteMemoryStore implements MemoryStore {
       throw error;
     }
   }
+
+  /** 🔴 2026-10-21 A-MEM：memory_links 双向邻居查询（表不存在时返回空，向后兼容旧库）。 */
+  async linkedNeighborIds(ids: string[], limit: number): Promise<string[]> {
+    if (ids.length === 0 || limit <= 0) return [];
+    using db = openSqliteDatabase(this.filePath);
+    try {
+      const placeholders = ids.map(() => "?").join(",");
+      const rows = db.prepare(
+        `SELECT target_id AS nid FROM memory_links WHERE source_id IN (${placeholders})
+         UNION
+         SELECT source_id AS nid FROM memory_links WHERE target_id IN (${placeholders})
+         LIMIT ?`,
+      ).all(...ids, ...ids, limit) as { nid: string }[];
+      return rows.map((r) => r.nid).filter((nid) => !ids.includes(nid));
+    } catch {
+      return [];
+    }
+  }
+
+  /** 🔴 2026-10-21 A-MEM：写记忆间链接（INSERT OR IGNORE 幂等）。 */
+  async addLink(sourceId: string, targetId: string, relation: string, confidence: number): Promise<void> {
+    using db = openSqliteDatabase(this.filePath);
+    try {
+      db.prepare(
+        "INSERT OR IGNORE INTO memory_links (source_id, target_id, relation, confidence, created_at) VALUES (?,?,?,?,?)",
+      ).run(sourceId, targetId, relation, confidence, new Date().toISOString());
+    } catch {
+      // fail-open：旧库无表时静默（链接是增强不是必需）
+    }
+  }
 }
 
 export class InMemoryStore implements MemoryStore {

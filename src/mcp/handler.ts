@@ -654,7 +654,7 @@ export function createMemoryToolSet(params: {
         type: "object",
         additionalProperties: false,
         properties: {
-          action: { type: "string", enum: ["update", "delete", "attribute", "pin"] },
+          action: { type: "string", enum: ["update", "delete", "attribute", "pin", "supersede"] },
           id: { type: "string" },
           pinned: { type: "boolean" },
           scopeType: SCOPE_TYPE_SCHEMA,
@@ -675,7 +675,7 @@ export function createMemoryToolSet(params: {
       },
       execute: async (args) => {
         const action = expectString(args.action, "action");
-        if (action === "update" || action === "pin") {
+        if (action === "update" || action === "pin" || action === "supersede") {
           const id = expectString(args.id, "id");
           const scope = requireDestructiveScope(args, params.defaultScopes);
           const existing = await params.memory.get(id);
@@ -688,6 +688,25 @@ export function createMemoryToolSet(params: {
             const tags = [...existing.tags].filter((t) => t !== "pinned");
             if (pin) tags.push("pinned");
             patch = { tags };
+          } else if (action === "supersede") {
+            // 🔴 2026-10-21 Zep 借鉴（invalidate-don't-delete 写入侧）：旧记忆被新记忆
+            // 取代时，不删旧条（历史可查），而是链到新条并降权——isPastValidUntil 对
+            // 带 supersededBy 的记录不再施加过期惩罚（链已解析），召回时旧条以低分
+            // 出现并标注"已被取代→读新条"。args.supersededBy=新记忆 id。
+            const successor = expectString(args.supersededBy, "supersededBy");
+            const succ = await params.memory.get(successor);
+            if (!succ) {
+              return { record: null, updated: false, error: `supersededBy 目标不存在: ${successor}` };
+            }
+            patch = {
+              metadata: {
+                ...(existing.metadata ?? {}),
+                supersededBy: successor,
+                supersededAt: new Date().toISOString(),
+              },
+            };
+            // 🔴 同写 memory_links（supersede 关系），召回邻居扩展可带出取代链
+            await params.memory.addMemoryLink(id, successor, "supersede", 1.0);
           } else {
             patch = {};
             if (args.content !== undefined) patch.content = args.content;

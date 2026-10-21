@@ -103,6 +103,8 @@ export type MemoryRecallResult = {
     retrieval?: string;
     graph?: string;
     navigation?: string;
+    /** 🔴 2026-10-21 A-MEM：链接邻居上下文块（跨后端保留通道）。 */
+    linked?: string;
   };
 };
 
@@ -118,6 +120,10 @@ export interface MemoryStore {
   save(records: MemoryRecord[]): Promise<void>;
   upsert?(record: MemoryRecord): Promise<void>;
   delete?(id: string): Promise<void>;
+  /** 🔴 2026-10-21 A-MEM：取给定记忆的链接邻居 id（双向，限 limit 条）。可选实现。 */
+  linkedNeighborIds?(ids: string[], limit: number): Promise<string[]>;
+  /** 🔴 2026-10-21 A-MEM：写一条记忆间链接。可选实现。 */
+  addLink?(sourceId: string, targetId: string, relation: string, confidence: number): Promise<void>;
 }
 
 export function normalizeScope(scope: MemoryScope): MemoryScope {

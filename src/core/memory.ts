@@ -908,7 +908,16 @@ export class LeafMem {
       // Custom (P1-importance): distilled principles get a fixed boost so
       // curated top-level guidance outranks raw fragments on relevance ties.
       const principle = record.kind === "principle" ? 1 : 0;
-      const recency = computeRecencyBoost(record.updatedAt, this.now());
+      // 🔴 2026-10-21 借鉴 Retrieval-Driven Reconsolidation（arXiv 2609.16053）：
+      // recency 取 updatedAt 与 lastRecalledAt 的较新者——被召回使用过的记忆
+      // "保温"（warm），而非只按写入时间衰减；常用=相关的人类记忆特性。
+      const lastRecalled = typeof record.metadata?.lastRecalledAt === "string"
+        ? (record.metadata.lastRecalledAt as string)
+        : record.updatedAt;
+      const recencyBase = Date.parse(lastRecalled) > Date.parse(record.updatedAt)
+        ? lastRecalled
+        : record.updatedAt;
+      const recency = computeRecencyBoost(recencyBase, this.now());
       const importance = record.importance;
       const scope = resolveScopeWeight(record.scope, options.scopes);
       // Custom (P1-2): records past their metadata.valid_until window and
@@ -945,11 +954,18 @@ export class LeafMem {
     const query = buildRecallQuery(options.query, options.recentMessages);
     const hits = await this.search(query, options);
     this.recordRecallCounts(hits);
+    // 🔴 2026-10-21 A-MEM 借鉴：命中记忆的链接邻居作为**附加上下文块**注入
+    // （不占 hits 配额——主命中 8 槽常满，填空位设计永不触发）。邻居是
+    // 预组织的高相关子集（同主题/因果/取代前体），单独成块防淹没主结果。
+    const linkedContext = await this.formatLinkedNeighbors(hits, 900);
     const graphContext = await this.formatEntityGraphContext(query, hits);
     const navigationContext = formatMemoryNavigation(
       hits.map((hit) => hit.record),
       Math.min(1_200, Math.max(0, options.maxChars ?? 1_200)),
     );
+    // 🔴 链接块走 layers.linked 独立通道（不并入 dynamicContext）：runtime 在
+    // remote-embeddings 模式下 palaceLayer 取 retrieval 后端结果，memory.recall 的
+    // dynamicContext 会被丢弃；layers 是跨后端保留的通道（2026-10-21 实测教训）。
     const dynamicContext = [formatRecallContext(hits, options.maxChars ?? 4_000), graphContext]
       .filter(Boolean)
       .join("\n\n");
@@ -960,8 +976,9 @@ export class LeafMem {
       dynamicContext: dynamicContext || undefined,
       navigationContext: navigationContext || undefined,
       evidence: hits.map((hit) => hit.evidence),
-      layers: graphContext || navigationContext
-        ? { graph: graphContext || undefined, navigation: navigationContext || undefined }
+      layers: graphContext || navigationContext || linkedContext
+        ? { graph: graphContext || undefined, navigation: navigationContext || undefined,
+            linked: linkedContext || undefined }
         : undefined,
     };
   }
@@ -974,6 +991,51 @@ export class LeafMem {
    * never blocks or breaks the recall response. 5-minute dedup window per
    * record prevents burst re-counting of the same hit.
    */
+  /**
+   * 🔴 2026-10-21 A-MEM 式链接邻居上下文块：取 top3 命中的 memory_links 邻居
+   * （双向），格式化为"🔗 关联记忆"块（summary 级，≤maxChars）。邻居不占 hits
+   * 配额——主命中槽常满，填空位设计永不触发；独立成块防淹没主结果。
+   * fail-open：表缺失/查询异常返回空串。
+   */
+  private async formatLinkedNeighbors(
+    hits: MemorySearchHit[],
+    maxChars: number,
+  ): Promise<string> {
+    if (hits.length === 0 || !this.store.linkedNeighborIds) return "";
+    const topIds = hits.slice(0, 5).map((h) => h.record.id);
+    try {
+      const neighborIds = await this.store.linkedNeighborIds(topIds, 4);
+      if (neighborIds.length === 0) return "";
+      const hitIds = new Set(topIds);
+      const records = await this.store.load();
+      const lines: string[] = [];
+      let used = 0;
+      for (const id of neighborIds) {
+        if (hitIds.has(id)) continue;
+        const record = records.find((r) => r.id === id);
+        if (!record) continue;
+        const summary = (record.summary?.trim() || record.content.trim())
+          .replace(/\s+/g, " ")
+          .slice(0, 200);
+        const line = `- [链接·${record.kind}] ${summary}（get=memory_recall(action=get, id=${id})）`;
+        if (used + line.length > maxChars) break;
+        lines.push(line);
+        used += line.length;
+      }
+      return lines.length
+        ? `🔗 关联记忆（与命中记忆有显式链接，A-MEM 式邻居）:\n${lines.join("\n")}`
+        : "";
+    } catch {
+      return "";
+    }
+  }
+
+  /** 🔴 2026-10-21 A-MEM：写记忆间链接（store 无实现时静默）。 */
+  async addMemoryLink(sourceId: string, targetId: string, relation: string, confidence = 0.5): Promise<void> {
+    if (!this.store.addLink) return;
+    await this.store.addLink(sourceId, targetId, relation, confidence);
+  }
+
   private recordRecallCounts(hits: MemorySearchHit[]): void {
     if (hits.length === 0) return;
     const top = hits.slice(0, 3);

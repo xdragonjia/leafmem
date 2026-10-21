@@ -129,6 +129,7 @@ export type RecallInspection = {
     palace?: string;
     graph?: string;
     navigation?: string;
+    linked?: string;
   };
   hits?: MemorySearchHit[];
 };

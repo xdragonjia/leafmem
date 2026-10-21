@@ -187,6 +187,24 @@ export function ensureMemorySubsystemSchema(db: DatabaseSync): void {
   db.exec("CREATE INDEX IF NOT EXISTS idx_entity_relations_source ON entity_relations(source_entity_id);");
   db.exec("CREATE INDEX IF NOT EXISTS idx_entity_relations_target ON entity_relations(target_entity_id);");
   db.exec("CREATE INDEX IF NOT EXISTS idx_entity_relations_memory ON entity_relations(memory_id);");
+  // 🔴 2026-10-21 A-MEM 借鉴：记忆间链接表（Zettelkasten 式）。entity_links 是
+  // 记忆-实体链接，此表是记忆-记忆链接（同主题/因果/取代前体），召回命中一条时
+  // 扩展其链接邻居（预组织高上下文子集，减 RAG 噪声）。规则建链零 LLM 成本，
+  // LLM 判断建链/演化归每周维护（与知识系统协同，防写时 LLM 成本爆炸）。
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS memory_links (" +
+      "source_id TEXT NOT NULL, " +
+      "target_id TEXT NOT NULL, " +
+      "relation TEXT NOT NULL, " +
+      "confidence REAL NOT NULL DEFAULT 0.5, " +
+      "created_at TEXT NOT NULL, " +
+      "PRIMARY KEY (source_id, target_id, relation), " +
+      "FOREIGN KEY (source_id) REFERENCES memory_items(id) ON DELETE CASCADE, " +
+      "FOREIGN KEY (target_id) REFERENCES memory_items(id) ON DELETE CASCADE" +
+      ");",
+  );
+  db.exec("CREATE INDEX IF NOT EXISTS idx_memory_links_source ON memory_links(source_id);");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_memory_links_target ON memory_links(target_id);");
 }
 
 export function parseJsonObject(
