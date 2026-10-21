@@ -5,7 +5,7 @@ All notable changes to LeafMem are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.23] - 2026-10-21
 
 ### Added
 - **`src/agents/identity-path.ts`**：解析宿主**真实**身份文件路径。WorkBuddy 有 path service 时读到 `~/.workbuddy/user-<uuid>-personal/`（`workspace-state.json` 或身份文件存在即认定为 persona 目录），否则回退 `~/.workbuddy`。此前安装器硬编码 `~/.workbuddy/SOUL.md`，会把注入块写进宿主不读的文件（2026-10-21 实证：一轮 SOUL 优化白做）。
@@ -27,9 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - 安装器把指令块写到宿主不读取的路径（顶层 `SOUL.md` 而非 scoped persona 目录）。
 - 旧写入器无备份、无版本标记、坏标记会追加重复块。
-
-
-## [0.3.23] - 2026-10-21
 
 ### Added
 - **`ops/ingest-daily-logs.py`（daily md → LeafMem 回流工具，产品化）**：把每日工作日志（`YYYY-MM-DD.md`）按 `## ` 节切分后增量写入 LeafMem（kind=experience，tags=[daily-log, 源, 日期]，metadata 带 source_file/section 可溯源）。参数化：`--source tag=path`（可重复）、`--api`、`--state`、`--scope`、`--max-len`、`--dry-run`。
