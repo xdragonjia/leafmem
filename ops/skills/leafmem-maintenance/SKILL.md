@@ -1,6 +1,6 @@
 ---
 name: leafmem-maintenance
-version: "1.8.1"
+version: "1.8.3"
 agent_created: true
 author: xiaoxia
 description: >
@@ -112,6 +112,7 @@ description: >
 把 content 逼近单条 6,000 上限的「合并磁石」条目做**无损拆分**：核心留在本条，谱系/案例外置为 kind=lesson 原子条目，两向互引 id。
 
 - **触发**：`scripts/weekly_scan.py` 报 content>4000；其中 ≥5,500 者为高危（余量 <10%，任何一次追加都可能撞上限）。
+- **🔴 先判「该不该拆」**（10-20）：`合法长文` 只是长度事实；仅 ≥5,500 或一题多族磁石才拆，单主题与过时 runbook（加 `已被替代` 后降权）不拆；基线 7 条与判据全表见 reference。
 - **📖 触发即必读** `references/step5b-long-entry-split.md`（完整执行序列：覆盖度扫描判定表 → 外置 metadata 字段 → 父条目回写参数 → 验证收尾）。**不执行覆盖度扫描就外置＝制造重复；不回写父条目＝谱系断链。**
 
 **🔴 四条硬门禁（纪律本体在此，执行细节在 reference）**：
@@ -199,7 +200,7 @@ description: >
   - 若有删除/整合/蒸馏动作，或周度观察出现需关注/需行动项 → 通过宿主可用的消息渠道发送周报：规模变化/真重复删除数/碎片整合数/新 principle 数/画像 section 数/decay 降权数 + 本周观察结论与关键环比（memories/principle/recall/profile/一致性）
   - 否则 → 仅写宿主当日记忆日志，不推送
 
-- **产物落点（2026-10-12 立）**：🔴 写 `outputs/` 前**必读**其唯一权威分类入口 `~/WorkBuddy/outputs/CLASSIFICATION_RULES.md`。周报属「状态报告／日周报」类 ⇒ 固定落 **`~/WorkBuddy/outputs/报告/leafmem-weekly-report-{YYYYMMDD}.md`**（先例＝周期健康报告 `报告/weknora-health/`）。**反例·禁写两处**：① `outputs/` **根目录**（只容 `CLASSIFICATION_RULES.md`）② `outputs/项目/leafmem-productization/runs/observation/`（2026-09 起失效，观测数据已落 `~/.leafmem/observation/`）。**判据**：写后 `find ~/WorkBuddy/outputs -maxdepth 1 -type f` 只应见 `CLASSIFICATION_RULES.md`。无整理动作且观察全绿 → **不落盘文件**。
+- **产物落点**：🔴 写 `outputs/` 前必读 `~/WorkBuddy/outputs/CLASSIFICATION_RULES.md`。周报固定落 `~/WorkBuddy/outputs/报告/leafmem-weekly-report-{YYYYMMDD}.md`。**禁写**：`outputs/` 根目录、`outputs/项目/leafmem-productization/runs/observation/`（2026-09 起失效）。**判据**：写后 `find ~/WorkBuddy/outputs -maxdepth 1 -type f` 只应见 `CLASSIFICATION_RULES.md`。全绿且无动作 → 不落盘。
 
 **备注**：推送渠道由宿主环境决定；无配置渠道时退化为仅日志，不报错
 
@@ -227,18 +228,7 @@ description: >
 
 ## 示例（examples）
 
-**✅ 好例：碎片簇整合（正确）**
-
-- **场景**：同一天 3 条「LeafMem 召回慢」碎片，内容互补
-- **执行**：先存档 → 读 3 条全文 → 整合为 1 条 lesson（结论：召回慢因 FTS 未命中触发全量扫描；动作：开 rerank 并限 limit）→ write 成功 → 逐条 delete → recall 验证命中
-- **为什么**：符合先存档、写后删、可验证的闭环，且一条只跟踪一个侧面
-
-**❌ 坏例：前缀聚类误删（错误）**
-
-- **场景**：两条记忆都以「# 教训：WeKnora 操作」开头，但内容一个是上传、一个是删除
-- **执行**：按前缀 60 字聚类判为重复，删了删除那条
-- **结果**：❌ 丢了不可恢复的操作教训
-- **为什么**：前缀聚类把同头部不同内容当重复；必须用全文规范化哈希
+**📖 按需读** `references/examples.md` —— 碎片整合正例、前缀聚类误删反例。执行只需记一句：**先存档 → 写入成功 → 再删原条**。
 
 ## `<error_handling>` 异常处理
 
@@ -269,19 +259,20 @@ description: >
 
 **📖 按需读** `references/scripts-usage.md` —— 各脚本的**完整参数、输出字段、退出码、判读陷阱**。各步骤正文已写「何时用」，此处只留职责索引：
 
-| 文件 | 职责 | 用在哪一步 |
+| 文件 | 职责（细节读文件） | 步骤 |
 |---|---|---|
-| `references/cli-write-channel.md` | 写入通道 task-append / CLI-first 降级链 / recall 返回契约 / remember 覆盖事故全记录 | 步骤 1 |
-| `references/step5b-long-entry-split.md` | 长谱系条目拆分完整执行序列（覆盖度扫描判定表 → 回写参数 → 验证收尾） | 步骤 5b |
-| `references/mcp-channels.md` | 自动化会话 MCP 通道（active_distill / decay / Bearer 鉴权 / scope 静默空快照） | 步骤 7、8 |
-| `references/scripts-usage.md` | 4 个只读脚本 + ops/ 工具的完整用法与输出判读 | 步骤 2b、3、4、5、5b、9、10、11 |
-| `scripts/stale_task_sweep.py` | 残留任务闭环清扫扫描器（只读；exit 2 = 有超龄未闭环或非法状态值） | 步骤 2b |
-| `scripts/archive_dump.py` | 全量存档导出器（步骤 3 强制检查点标准实现，只读 sqlite） | 步骤 3 |
-| `scripts/weekly_scan.py` | 周维护量化扫描器（一次输出五类信号，只读） | 步骤 4、5、5b |
-| `scripts/leafmem_mcp_call.py` | MCP stdio 通道调用器（用于 HTTP 面未暴露的动作） | 步骤 7、8 |
-| `~/projects/leafmem/ops/mirror-sync.js` | 镜像同步（🔴 安装目录 = `~/projects/leafmem`） | 步骤 9 |
-| `~/projects/leafmem/ops/observation.py` | 周度观察采集（约 20 项治理指标，零 LLM 依赖） | 步骤 10 |
-| `~/projects/leafmem/ops/entity-relink.mjs` | 存量记忆实体补链（只加不删，跑前备份 sqlite） | 步骤 11 |
-| `~/projects/leafmem/ops/consolidation.js` | ⚠️ 历史脚本（硬依赖已移除的 DEEPSEEK_API_KEY，不可运行；去重职责已由步骤 4 承担） | — |
+| `references/cli-write-channel.md` | 写入通道／CLI 降级链／recall 契约／remember 覆盖事故 | 1 |
+| `references/step5b-long-entry-split.md` | 长条目拆分执行序列＋判定表＋基线 | 5b |
+| `references/mcp-channels.md` | 自动化 MCP 通道／鉴权／scope 空快照 | 7、8 |
+| `references/examples.md` | 整合正例／前缀聚类反例 | 5 |
+| `references/scripts-usage.md` | 脚本参数、输出字段、退出码、判读陷阱 | 2b、3、4、5、9、10、11 |
+| `scripts/stale_task_sweep.py` | 残留任务扫描（只读；exit 2＝有超龄/非法状态） | 2b |
+| `scripts/archive_dump.py` | 全量存档导出（步骤 3 检查点实现） | 3 |
+| `scripts/weekly_scan.py` | 周维护量化扫描（五类信号，只读） | 4、5、5b |
+| `scripts/leafmem_mcp_call.py` | MCP stdio 调用（HTTP 面未暴露的动作） | 7、8 |
+| `ops/mirror-sync.js` | 镜像同步（🔴 安装目录 `~/projects/leafmem`） | 9 |
+| `ops/observation.py` | 周度观察采集（约 20 指标，零 LLM） | 10 |
+| `ops/entity-relink.mjs` | 实体补链（只加不删，跑前备份） | 11 |
+| `ops/consolidation.js` | ⚠️ 历史脚本（缺 DEEPSEEK_API_KEY 不可运行；去重已归步骤 4） | — |
 
 > 📜 版本演进记录已外置 → **CHANGELOG.md 末尾**。
