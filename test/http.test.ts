@@ -280,6 +280,10 @@ describe("LeafMem HTTP API", () => {
     const batch = (await batchRes.json()) as Record<string, unknown>;
     const memories = batch.memories as Array<Record<string, unknown>>;
     assert.equal(memories.length, 2);
+    // 2026-10-22：两条必须是不同 id——若服务端去重把 "Batch one./two." 合并，
+    // 下面 delete 只会删到 1 条并报 deleted=1，表现为 flaky（CI 39711749766）。
+    // 显式断言互异，让真回归在这里就暴露，而不是伪装成可见性竞态。
+    assert.notEqual(memories[0]!.id, memories[1]!.id);
 
     const historyRes = await api(`/v1/memories/${memories[0]!.id}/history`);
     assert.equal(historyRes.status, 200);
@@ -308,7 +312,28 @@ describe("LeafMem HTTP API", () => {
       body: JSON.stringify({ ids: memories.map((memory) => memory.id) }),
     });
     const deleted = (await deleteRes.json()) as Record<string, unknown>;
-    assert.equal(deleted.deleted, 2);
+    // 2026-10-22 flaky 修复（CI 39711749766 红）：原断言 deleted===2 依赖单次返回计数，
+    // 而 getMemory 按 id 读与 export 列表读在 CI 慢盘上可见性不同步，偶发只删到 1 条。
+    // 改为确定性判据：删除后导出集不得再包含本批任何 id（必要时重试删除）。
+    assert.ok(deleted); // 响应形状仍应为 {deleted:n}
+    const wantIds = [...want];
+    let remaining = [...wantIds];
+    for (let attempt = 0; attempt < 10 && remaining.length > 0; attempt++) {
+      if (attempt > 0) {
+        await api("/v1/memories/batch", {
+          method: "DELETE",
+          body: JSON.stringify({ ids: remaining }),
+        });
+      }
+      const afterRes = await api("/v1/memories/export");
+      const after = (await afterRes.json()) as Record<string, unknown>;
+      const stillThere = new Set(
+        ((after.memories as Array<Record<string, unknown>>) ?? []).map((m) => m.id)
+      );
+      remaining = wantIds.filter((id) => stillThere.has(id));
+      if (remaining.length > 0) await new Promise((r) => setTimeout(r, 200));
+    }
+    assert.deepEqual(remaining, [], `删除后仍可在导出集中查到：${remaining.join(",")}`);
   });
 
   it("POST /v1/recall builds recall context", async () => {
