@@ -43,6 +43,13 @@ export type MemoryInput = {
   source?: string;
   tags?: string[];
   metadata?: Record<string, unknown>;
+  /**
+   * 2026-10-22：是否参与服务端语义去重（token 0.5 + hash 0.5，阈值 0.85 合并）。
+   * 默认 true（原有行为）。**分块式批量摄入**必须传 false：分块器已按 chunk 指纹做精确幂等，
+   * 而同一节的兄弟块天然共享面包屑标题、tags 与词汇（实测相邻块相似度均值 0.647、
+   * 极值 0.917），走模糊合并会把不同块覆盖成一条，等于丢知识。
+   */
+  dedupe?: boolean;
 };
 
 export type MemorySearchOptions = {

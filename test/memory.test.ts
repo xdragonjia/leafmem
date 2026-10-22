@@ -139,6 +139,29 @@ test("deduplicates similar memories instead of creating duplicates", async () =>
   assert.equal(all.length, 1);
 });
 
+test("dedupe:false keeps sibling chunks as separate records", async () => {
+  // 2026-10-22：分块摄入按 chunk 指纹做精确幂等，必须能绕过 0.85 模糊合并——
+  // 同一节的兄弟块共享面包屑标题与词汇，实测相邻块相似度均值 0.647、极值 0.917，
+  // 走模糊合并会把不同块覆盖成一条，等于丢知识。
+  const memory = createLeafMem({ store: new InMemoryStore(), dedupeThreshold: 0.85 });
+  const base = {
+    scope: { type: "agent" as const, id: "workbuddy" },
+    kind: "experience" as const,
+    tags: ["daily-log", "mission", "2026-10-21"],
+    metadata: { chunk: { index: 1, segment_total: 2 } },
+  };
+  const content =
+    "[2026-10-21·收口补正·1/2] 回溯底稿归档完成：177 份底稿按批次入册，增量轨改造验证通过，" +
+    "口径污染事故已定位到上游回写脚本并修复。";
+
+  const first = await memory.remember({ ...base, content, dedupe: false });
+  const second = await memory.remember({ ...base, content, dedupe: false });
+
+  assert.notEqual(first.id, second.id);
+  const all = await memory.list({ scopes: [{ type: "agent", id: "workbuddy" }] });
+  assert.equal(all.length, 2);
+});
+
 test("sqlite stores concurrent writes from separate instances without clobbering", async () => {
   const root = await mkdtemp(join(tmpdir(), "leafmem-sqlite-concurrent-"));
   const path = join(root, "memory.sqlite");

@@ -83,6 +83,8 @@ export type WriteMemoryInput = {
   source?: string;
   tags?: string[];
   metadata?: Record<string, unknown>;
+  /** 2026-10-22：false = 跳过服务端语义去重（分块摄入用，见 core/types.ts MemoryInput.dedupe）。 */
+  dedupe?: boolean;
 };
 
 export type ListMemoriesInput = {

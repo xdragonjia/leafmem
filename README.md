@@ -425,10 +425,18 @@ LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使�
 ```bash
 python3 ops/ingest-daily-logs.py --dry-run                      # 先看会入什么
 python3 ops/ingest-daily-logs.py --source work=~/notes/daily    # 指定源目录
+python3 ops/ingest-daily-logs.py --selftest                     # 只跑分块无损自检
+python3 ops/ingest-daily-logs.py --rebuild-state                # state 丢失后从库内自愈
 ```
 
-- 按 `## ` 节切分，只收日期命名文件；**append-safe**：节尾追加的内容以「（续N）」增量入库，不重复、不丢失
-- 状态文件默认 `~/.leafmem/daily-ingest-state.json`，只在写入成功后才记账（失败下轮重试）
+- 按 `## ` 节切分，只收日期命名文件
+- **结构分块（v3）**：段落 / 列表 / 表格 / 代码块为天然边界（表格与代码块原子不切），超长再按句边界细分；目标 900 字、下限 350、硬上限 5200。**不做 embedding 语义分块**——NAACL 2025 实证其成本换不来稳定收益，且易过碎
+- **面包屑标题前缀写进正文**：`[2026-10-21·节标题·2/7]`，向量与词法两路检索都能命中标题词（Anthropic contextual retrieval 同族做法，零 LLM 成本）
+- **父块锚点**：metadata 带 `source_file / section / chunk{seq,span,chars,continued}`，命中小块可回读整节或原文区间
+- **无损不变量**：所有块正文按序拼接（去空白）必须与原文逐字符相等，`--selftest` 对全部源文件断言；不通过则该节跳过写库并报错
+- **增量按字符偏移续写**：节尾追加只入新增区间，块尾天然落在结构/句边界；块指纹（`state.seen`）吸收回退重叠
+- **写入传 `dedupe:false`**：分块摄入按块精确幂等，服务端 0.85 模糊合并会把同节兄弟块（实测相邻块相似度均值 0.647、极值 0.917）覆盖成一条
+- 状态文件默认 `~/.leafmem/daily-ingest-state.json`，只在写入成功后才记账（失败下轮重试）；**state 缺失时脚本拒绝运行**（防整批重导），可先 `--rebuild-state` 从库内 metadata 反推
 
 ## 📈 基准测试
 

@@ -219,7 +219,9 @@ export class LeafMem {
       const records = await this.store.load();
 
       // --- Evaluate: use evaluator or fallback to threshold-based dedup ---
-      if (this.evaluator || this.dedupeThreshold < 1) {
+      // input.dedupe === false：调用方已自己做精确幂等（如分块摄入按 chunk 指纹），
+      // 跳过模糊合并——否则同节兄弟块会被 0.85 阈值覆盖成一条（2026-10-22）。
+      if (input.dedupe !== false && (this.evaluator || this.dedupeThreshold < 1)) {
         const inputText = buildSearchText({
           kind: input.kind,
           content: input.content,

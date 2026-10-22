@@ -60,6 +60,8 @@ export async function handleMemoryRoutes(
         source: memory.source as string | undefined,
         tags: memory.tags as string[] | undefined,
         metadata: memory.metadata as Record<string, unknown> | undefined,
+        // 2026-10-22：透传 dedupe=false，供分块摄入跳过模糊合并
+        dedupe: memory.dedupe === false ? false : undefined,
       }));
     }
     json(res, 201, { memories: records, count: records.length });

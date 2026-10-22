@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **`ops/daily_chunker.py` 结构分块内核（daily 回流的 v3 分块器）**：段落 / 列表 / 表格 / fenced code 为天然边界（表格与代码块原子不切），超长块再按中文句末标点细分，目标 900 字 / 下限 350 / 硬上限 5200；纯装饰分隔行（`---`）在规范化阶段剔除。**不采用 embedding 语义分块**——NAACL 2025《Is Semantic Chunking Worth the Computational Cost?》结论是额外算力换不来稳定收益，且实测易过碎（均值 43 tokens 时准确率反而低于递归 512 tokens）。
+- **面包屑标题前缀写进正文**（`[日期·节标题·k/n]`，增量续写为 `·续N`）：向量与词法两路检索都能看到标题词，零 LLM 成本；Anthropic contextual retrieval 报告该族做法可降 top-20 失败率 35%~49%。
+- **父块锚点**：每条块 metadata 带 `source_file / section / chunk{index,segment_total,seq,chars,span,continued}`，hits 后可回读整节或原文区间（small-to-big 的最小实现）。
+- **`MemoryInput.dedupe?: boolean`（含 HTTP/平台透传）**：`false` 表示跳过服务端 0.85 语义合并。分块摄入已按 chunk 指纹精确幂等，而同节兄弟块天然共享面包屑与 tags（实测相邻块相似度均值 0.647、极值 0.917），走模糊合并会把不同块覆盖成一条=丢知识。默认 true，不改变既有行为。
+- **`ops/ingest-daily-logs.py --rebuild-state`**：从库内 metadata 的 `chunk.span` 反推每节已入偏移并重建 state，杜绝「state 丢了就整批重导」。
+- **`--selftest`**：对全部源文件断言「块正文拼接（去空白）== 原文（去空白）」+ span 不重叠不越界。
+
+### Changed
+- **`ops/ingest-daily-logs.py` 升 v3**：增量记账由「按行切 + （续N）」改为**字符偏移续写**（块尾天然落在结构/句边界）+ 块指纹 `state.seen` 吸收回退重叠；state 版本 3（旧 state 自动重建为空）。整节已入时仅推进 offset。
+- 实测（293 个 daily md / 3600 节）：**4922 块，无损校验失败 0**，块长 p50=645、p90=1083、p99=2204、max=4828（无一超硬上限）。
+
 ### Fixed
 - **`ops/ingest-daily-logs.py` 增加 state 缺失 fail-safe**：去重完全依赖 `--state`（`seen` + `lens` 记账），state 缺失时整批历史 daily 节会被当作全新导入。2026-10-22 哨兵实测：首跑后 `~/.leafmem/daily-ingest-state.json` 未留存，此时重跑将重复入库 **2,698 节**；且 LeafMem 同 kind+tags 为 UPDATE 覆盖语义，重复导入会连带改写原条目，属破坏性。现行为：state 文件不存在且未显式传 `--force-fresh` → 打印原因并以 **exit 3** 拒绝执行；确属首次导入须显式 `--force-fresh`。验证：无 flag → exit 3；`--force-fresh --dry-run` 与「state 存在」两路均正常放行，dry-run 前后库内条数不变。
 

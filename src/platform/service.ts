@@ -243,6 +243,7 @@ export class LeafMemPlatformService implements PlatformMemoryService {
       source: input.source,
       tags: input.tags,
       metadata: { ...(input.metadata ?? {}), projectId },
+      dedupe: input.dedupe,
     };
 
     const record = await this.memory.remember(memoryInput);
