@@ -53,3 +53,40 @@ test("E4.1: 参考长度的文档归一因子为 1（典型块不打分）", () 
   const score = tokenOverlapScoreNormalized(query, typical);
   assert.equal(score, 1, "candLen == refLen 时归一因子应为 1.0，不改变原值");
 });
+
+// ---------------------------------------------------------------------------
+// E4.2（2026-10-22）：短语级匹配（3-gram）
+// ---------------------------------------------------------------------------
+
+test("E4.2: trigrams 忽略空白并产出连续 3-gram", async () => {
+  const { trigrams } = await import("../src/core/tokenize.js");
+  assert.deepEqual([...trigrams("abc")], ["abc"]);
+  assert.deepEqual([...trigrams("a b c")], ["abc"], "空白应被剔除");
+  assert.equal(trigrams("ab").size, 0, "短于 3 字无 gram");
+  // n 个字共有 n-2 个连续 3-gram：「语义层日更重建」7 字 → 5 个
+  assert.equal(trigrams("语义层日更重建").size, 5);
+  assert.equal(trigrams("本体语义层项目").size, 5);
+  // 8 字 → 6 个（题注里「连续 8 字命中产生 6 个 3-gram」即此）
+  assert.equal(trigrams("本体语义层项目Phase".slice(0, 8)).size, 6);
+});
+
+test("E4.2: 短语连续命中 > 散字碰巧覆盖（这正是该信号的存在理由）", async () => {
+  const { trigrams, trigramCoverage, tokenOverlapScoreNormalized } = await import("../src/core/tokenize.js");
+  const query = "语义层日更重建有没有在跑";
+  // A：真实同主题块（section 含「语义层日更重建」）
+  const relevant = "04:30 语义层日更重建（automation 4fe71397）";
+  // B：长原则文档，散字覆盖但无该短语（真实库里 5,100 字记录的情况）
+  const irrelevant =
+    "重建判断标准时必须先自审口径，语义是否一致取决于层级，日更与周更不可混谈" + "无关填充".repeat(300);
+
+  const covRelevant = trigramCoverage(trigrams(query), trigrams(relevant));
+  const covIrrelevant = trigramCoverage(trigrams(query), trigrams(irrelevant));
+  assert.ok(
+    covRelevant > covIrrelevant * 2,
+    `短语覆盖率应显著区分（relevant=${covRelevant.toFixed(3)} vs irrelevant=${covIrrelevant.toFixed(3)}）`,
+  );
+  // 对照：散字覆盖率对两者都不低（说明单靠 lexical 分不开）
+  const lexRelevant = tokenOverlapScoreNormalized([...query], [...new Set(relevant)]);
+  const lexIrrelevant = tokenOverlapScoreNormalized([...query], [...new Set(irrelevant)]);
+  assert.ok(lexIrrelevant > 0.5, "长文档的散字覆盖率本就很高——这是需要短语信号的证据");
+});

@@ -11,7 +11,7 @@ import { InMemoryTaskContextStore, SqliteTaskContextStore } from "../task/store.
 import type { MemoryInferencer, MemoryStorageBackend } from "../system/types.js";
 import { cosineSimilarity, embedTextHash } from "./hash-embedding.js";
 import { buildEnrichment } from "./enrich.js";
-import { tokenOverlapScoreNormalized } from "./tokenize.js";
+import { tokenOverlapScoreNormalized, trigramCoverage, trigrams } from "./tokenize.js";
 import { leafmemEnv } from "../system/env-compat.js";
 import { isSearchable, temporalSortKey } from "./temporal.js";
 import type { MemoryEvaluator } from "./evaluator.js";
@@ -63,6 +63,18 @@ const ENTITY_IDF_K = 40;
  * E4.1 改为**相关性门控**（乘 lexical）：打平时仍能上位，无关时自动失效。
  * env `LEAFMEM_PRINCIPLE_BOOST_MODE` = flat（旧行为）/ gated（默认）/ off
  */
+/**
+ * E4.2（2026-10-22）：section 短语匹配加成。
+ *
+ * 依据：process 型查询的正确答案块与查询有 5~8 字连续短语命中（8/10 题），
+ * 而散字覆盖率反而是无关长文档更高 ⇒ 需要**短语级**信号把"同主题"与"碰巧同字"分开。
+ * 取值弱于 fts 0.22 / entity 0.18：section 只是标题，不是内容本身，
+ * 命中标题只能说明"该看一眼"，不能压过内容级证据。
+ */
+const SECTION_BOOST = Number(leafmemEnv("SECTION_BOOST") ?? "0.2");
+/** ratio 达到该值即拿满 boost（查询含"什么时候/有没有"等无关部分，ratio 会被天然稀释） */
+const SECTION_RATIO_FULL = 0.4;
+
 const PRINCIPLE_BOOST = 0.1;
 /** principle tie-break 的"打平"阈值：分差 ≤ 此值视为打平（0.1 权重的 10%） */
 const PRINCIPLE_TIE_EPSILON = 0.01;
@@ -182,7 +194,7 @@ export class LeafMem {
 
   private readonly searchTextCache = new Map<
     string,
-    { updatedAt: string; tokens: string[]; vector: number[] }
+    { updatedAt: string; tokens: string[]; vector: number[]; sectionGrams: Set<string> }
   >();
   private static readonly SEARCH_TEXT_CACHE_MAX = 50_000;
   readonly active: ActiveMemoryManager;
@@ -960,6 +972,7 @@ export class LeafMem {
 
     const queryTokens = uniqueTokens(normalizedQuery);
     const queryVector = embedTextHash(normalizedQuery, this.embeddingDimensions);
+    const queryGrams = trigrams(normalizedQuery);
     const records = await this.store.load();
     // E1（2026-10-22）：先剔除非当前事实（superseded/archived）与 as-of 之后才成立的事实，
     // 再进入打分循环。放在这里而不是打分后，是为了让 rerank / FTS / entity 的配额都
@@ -981,6 +994,8 @@ export class LeafMem {
           updatedAt: record.updatedAt,
           tokens: uniqueTokens(candidateText),
           vector: embedTextHash(candidateText, this.embeddingDimensions),
+          // section 只有 v3 结构化块才有；没有就是空集（不产生 boost）
+          sectionGrams: trigrams(String(record.metadata?.section ?? "")),
         };
         this.searchTextCache.set(record.id, derived);
         if (this.searchTextCache.size > LeafMem.SEARCH_TEXT_CACHE_MAX) {
@@ -1006,6 +1021,10 @@ export class LeafMem {
       // flat=旧行为（无条件 0.1）；gated=乘 lexical —— 🔴 实测无效：process 型查询的
       // lexical 普遍 ≈1.0，乘上去几乎等于没门控（41 题 process 类 1/2/3 四档全不变）。
       // tiebreak=真正按原注释的字面实现（打平时才让指南上位），由排序阶段处理，不加分。
+      // E4.2：section 短语命中（只有 v3 块有 section，天然限定在结构化块上）
+      const sectionRatio = trigramCoverage(queryGrams, derived.sectionGrams);
+      const sectionBoost =
+        sectionRatio > 0 ? SECTION_BOOST * Math.min(1, sectionRatio / SECTION_RATIO_FULL) : 0;
       const principleFactor =
         this.principleBoostMode === "flat" ? 1 : 0;
       const principle = isPrinciple ? principleFactor : 0;
@@ -1032,6 +1051,7 @@ export class LeafMem {
           scope * w.scope +
           entity * ENTITY_MATCH_BOOST +
           fts * FTS_MATCH_BOOST +
+          sectionBoost +
           principle * PRINCIPLE_BOOST) *
         validUntilPenalty;
       const hit: MemorySearchHit = {

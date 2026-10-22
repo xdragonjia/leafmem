@@ -608,3 +608,30 @@ test("E4.1: 无关 principle 记录不再靠 0.1 加分登顶（旧行为会）"
     "无关原则仍应在候选里（只是不该登顶）",
   );
 });
+
+test("E4.2: section 短语命中使同主题块上位；section 不匹配时不加偏袒", async () => {
+  const memory = createLeafMem({ store: new InMemoryStore() });
+  const scope = { type: "agent" as const, id: "workbuddy" };
+
+  const matched = await memory.remember({
+    scope, kind: "experience",
+    content: "04:30 语义层日更跑通 34 步，CQ 32/32 全过。",
+    metadata: { section: "04:30 语义层日更重建（automation 4fe71397）" },
+    dedupe: false,
+  });
+  const unmatched = await memory.remember({
+    scope, kind: "experience",
+    content: "04:30 语义层日更相关的另一条记录，但没有 section 标题。",
+    metadata: {},
+    dedupe: false,
+  });
+
+  const hits = await memory.search("语义层日更重建有没有在跑", { scopes: [scope], maxResults: 5 });
+  assert.equal(hits[0]?.record.id, matched.id, "section 短语命中的记录应排第一");
+  assert.ok(hits.some((h) => h.record.id === unmatched.id), "无 section 的记录仍应被召回");
+
+  // 反例：查询与 section 无关时，section 不能凭空加分把它顶上来
+  const other = await memory.search("完全无关的另一件事 XYZ", { scopes: [scope], maxResults: 5 });
+  assert.ok(!other.length || other[0].record.id !== matched.id || other.length <= 2,
+    "无关查询不应因 section 存在而被抬高");
+});
