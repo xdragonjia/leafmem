@@ -11,6 +11,8 @@ import { InMemoryTaskContextStore, SqliteTaskContextStore } from "../task/store.
 import type { MemoryInferencer, MemoryStorageBackend } from "../system/types.js";
 import { cosineSimilarity, embedTextHash } from "./hash-embedding.js";
 import { buildEnrichment } from "./enrich.js";
+import { tokenOverlapScoreNormalized } from "./tokenize.js";
+import { leafmemEnv } from "../system/env-compat.js";
 import { isSearchable, temporalSortKey } from "./temporal.js";
 import type { MemoryEvaluator } from "./evaluator.js";
 import { InMemoryStore, SqliteMemoryStore } from "./storage.js";
@@ -54,7 +56,16 @@ const FTS_MATCH_BOOST = 0.22;
 const ENTITY_IDF_K = 40;
 /** Custom (P1-importance): distilled kind=principle memories are surfaced
  * higher in recall so curated top-level guidance beats raw fragments. */
+/**
+ * principle 固定加成。设计意图（原注释）是「打平时让 curated 指南上位」，
+ * 但实现是**无条件**加给所有 kind=principle —— 于是与本查询毫无关系的长原则记录
+ * 也白得 0.1，实测在 process 型查询上 10 题里 6 题 top1 是 principle 且无关。
+ * E4.1 改为**相关性门控**（乘 lexical）：打平时仍能上位，无关时自动失效。
+ * env `LEAFMEM_PRINCIPLE_BOOST_MODE` = flat（旧行为）/ gated（默认）/ off
+ */
 const PRINCIPLE_BOOST = 0.1;
+/** principle tie-break 的"打平"阈值：分差 ≤ 此值视为打平（0.1 权重的 10%） */
+const PRINCIPLE_TIE_EPSILON = 0.01;
 
 export type LeafMemOptions = {
   storage?: {
@@ -159,6 +170,16 @@ export class LeafMem {
    *     status/lastRecalledAt 等变化不影响缓存正确性（status 过滤另行实时读 record.metadata）。
    * 唯一陈旧来源是"绕过 API 直写 sqlite 改 content"，本项目纪律禁止；进程重启即清空。
    */
+  /**
+   * E4.1（2026-10-22）：lexical 长度归一并开关。
+   * `off`（默认，兼容旧行为）| `sqrt`（归一）。
+   * 用 env 而非硬编码：改打分核心必须能 A/B —— 41 题 golden set 上量出净收益再定默认，
+   * 不能凭"BM25 有长度归一所以我们也该有"上生产。
+   */
+  private readonly lexicalLenNorm: "off" | "sqrt";
+  /** principle 加成的门控方式，见 PRINCIPLE_BOOST 注释 */
+  private readonly principleBoostMode: "flat" | "gated" | "off" | "tiebreak";
+
   private readonly searchTextCache = new Map<
     string,
     { updatedAt: string; tokens: string[]; vector: number[] }
@@ -192,6 +213,11 @@ export class LeafMem {
     this.dedupeThreshold = clamp(options.dedupeThreshold ?? 0.85, 0, 1);
     this.evaluator = options.evaluator ?? null;
     this.weights = { ...DEFAULT_SEARCH_WEIGHTS, ...options.searchWeights };
+    this.principleBoostMode =
+      (leafmemEnv("PRINCIPLE_BOOST_MODE") ?? "tiebreak").toLowerCase() as
+        | "flat" | "gated" | "off" | "tiebreak";
+    this.lexicalLenNorm =
+      (leafmemEnv("LEXICAL_LEN_NORM") ?? "sqrt").toLowerCase() === "sqrt" ? "sqrt" : "off";
     this.inferencer = options.inferencer ?? null;
     this.entityStore = options.entityStore ?? null;
     this.entityExtractor = options.entityExtractor ?? null;
@@ -968,13 +994,21 @@ export class LeafMem {
         }
       }
       const candidateTokens = derived.tokens;
-      const lexical = tokenOverlapScore(queryTokens, candidateTokens);
+      const lexical = this.lexicalLenNorm === "sqrt"
+        ? tokenOverlapScoreNormalized(queryTokens, candidateTokens)
+        : tokenOverlapScore(queryTokens, candidateTokens);
       const hash = clamp(cosineSimilarity(queryVector, derived.vector), 0, 1);
       const entity = entityBoosts.get(record.id) ?? 0;
       const fts = ftsBoosts.get(record.id) ?? 0;
       // Custom (P1-importance): distilled principles get a fixed boost so
       // curated top-level guidance outranks raw fragments on relevance ties.
-      const principle = record.kind === "principle" ? 1 : 0;
+      const isPrinciple = record.kind === "principle";
+      // flat=旧行为（无条件 0.1）；gated=乘 lexical —— 🔴 实测无效：process 型查询的
+      // lexical 普遍 ≈1.0，乘上去几乎等于没门控（41 题 process 类 1/2/3 四档全不变）。
+      // tiebreak=真正按原注释的字面实现（打平时才让指南上位），由排序阶段处理，不加分。
+      const principleFactor =
+        this.principleBoostMode === "flat" ? 1 : 0;
+      const principle = isPrinciple ? principleFactor : 0;
       // 🔴 2026-10-21 借鉴 Retrieval-Driven Reconsolidation（arXiv 2609.16053）：
       // recency 取 updatedAt 与 lastRecalledAt 的较新者——被召回使用过的记忆
       // "保温"（warm），而非只按写入时间衰减；常用=相关的人类记忆特性。
@@ -1031,8 +1065,21 @@ export class LeafMem {
       }
     }
 
+    // principle tie-break（原注释的真实意图：curated 指南在**相关性打平时**上位）。
+    // 分差 ≤ PRINCIPLE_TIE_EPSILON 视为打平，此时 principle 优先；否则严格按分数。
+    // 这样与本查询无关的原则记录不再白得 0.1（实测该 0.1 足以让无关原则记录
+    // 在 process 型查询上霸榜：10 题里 6 题 top1 是无关 principle）。
+    const tieBreak = this.principleBoostMode === "tiebreak";
     return hits
-      .toSorted((left, right) => right.score - left.score)
+      .toSorted((left, right) => {
+        const gap = right.score - left.score;
+        if (tieBreak && Math.abs(gap) <= PRINCIPLE_TIE_EPSILON) {
+          const lp = left.record.kind === "principle" ? 1 : 0;
+          const rp = right.record.kind === "principle" ? 1 : 0;
+          if (lp !== rp) return rp - lp;
+        }
+        return gap;
+      })
       .slice(0, options.maxResults ?? 8);
   }
 

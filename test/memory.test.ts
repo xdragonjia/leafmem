@@ -574,3 +574,37 @@ test("E4: freshnessBias 默认关闭；开启后不改变候选集合（只可�
   assert.deepEqual(ids(biased), ids(base), "T2 只调顺序，不增删候选");
   assert.ok(ids(base).includes(old.id) && ids(base).includes(fresh.id));
 });
+
+// ---------------------------------------------------------------------------
+// E4.1（2026-10-22）：principle 由"无条件加分"改为"打平时优先"
+// ---------------------------------------------------------------------------
+
+test("E4.1: 无关 principle 记录不再靠 0.1 加分登顶（旧行为会）", async () => {
+  const memory = createLeafMem({ store: new InMemoryStore() });
+  const scope = { type: "agent" as const, id: "workbuddy" };
+
+  // 与查询完全无关的原则记录（旧行为：只要 kind=principle 白得 0.1）
+  const unrelated = await memory.remember({
+    scope,
+    kind: "principle",
+    content: "原则：无关内容 —— 与下面这次查询毫无关系的一段长的原则文本，讲的是另一件事。",
+    dedupe: false,
+  });
+  // 与查询高度相关的经验记录
+  const relevant = await memory.remember({
+    scope,
+    kind: "experience",
+    content: "巡查问题库重建 Phase 3 完成：集群蒸馏产出 12 颗晶体，当日闭环。",
+    dedupe: false,
+  });
+
+  const hits = await memory.search("巡查问题库重建 Phase 3 完成", {
+    scopes: [scope],
+    maxResults: 5,
+  });
+  assert.equal(hits[0]?.record.id, relevant.id, "相关记录必须排第一，无关原则不得插队");
+  assert.ok(
+    hits.some((h) => h.record.id === unrelated.id),
+    "无关原则仍应在候选里（只是不该登顶）",
+  );
+});
