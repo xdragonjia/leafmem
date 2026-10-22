@@ -56,6 +56,17 @@ export type MemorySearchOptions = {
   scopes?: MemoryScope[];
   maxResults?: number;
   minScore?: number;
+  /**
+   * E1（2026-10-22）：是否包含已退出"当前事实"的记录（status=superseded/archived）。
+   * 默认 false —— 被替代/归档的记忆不该再参与当前问答（它们是历史快照）。
+   * 排查历史、做对账、跑迁移核验时传 true。
+   */
+  includeInactive?: boolean;
+  /**
+   * E1：as-of 查询（"当时/8 月那会儿/历史上"）。只保留 eventTime <= asOf 的记录；
+   * **eventTime 缺失的记录仍然可见**（未知时间不判为未来，否则一次查询丢掉 12.5% 记忆）。
+   */
+  asOf?: string;
 };
 
 export type MemorySearchHit = {

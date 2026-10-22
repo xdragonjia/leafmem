@@ -198,15 +198,18 @@ describe("LeafMem HTTP API", () => {
       body: JSON.stringify({ ids: [agentRecord.id] }),
     });
     assert.equal(noScope.status, 200);
-    assert.equal((await noScope.json() as { deleted: number }).deleted, 0);
+    const noScopeBody = (await noScope.json()) as { deleted: number; warning?: string };
+    assert.equal(noScopeBody.deleted, 0);
+    // 2026-10-22：deleted 0 时不得静默 —— 必须告诉调用方"缺 scope 参数"。
+    assert.ok(noScopeBody.warning?.includes("scope"), "missing-scope 时必须回 warning");
 
-    // With explicit scope: deleted.
-    const scoped = await api(`/v1/memories/batch?scope=agent:workbuddy`, {
+    // body.scope 也应被接受（2026-10-22：此前只认 query，传 body 会静默 deleted:0）。
+    const bodyScope = await api("/v1/memories/batch", {
       method: "DELETE",
-      body: JSON.stringify({ ids: [agentRecord.id] }),
+      body: JSON.stringify({ ids: [agentRecord.id], scope: "agent:workbuddy" }),
     });
-    assert.equal(scoped.status, 200);
-    assert.equal((await scoped.json() as { deleted: number }).deleted, 1);
+    assert.equal(bodyScope.status, 200);
+    assert.equal((await bodyScope.json() as { deleted: number }).deleted, 1);
   });
 
   it("ignores caller-supplied projectId on POST /v1/memories", async () => {

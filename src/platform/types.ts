@@ -71,6 +71,10 @@ export type RecallInput = {
   toolContext?: string;
   maxChars?: number;
   inspect?: boolean;
+  /** E1：包含 superseded/archived（默认不含） */
+  includeInactive?: boolean;
+  /** E1：as-of 查询（按 eventTime 切片；缺 eventTime 的记录仍可见） */
+  asOf?: string;
 };
 
 export type WriteMemoryInput = {

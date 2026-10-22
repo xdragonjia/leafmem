@@ -41,11 +41,15 @@ export function createMemoryRuntime(params: {
         recentMessages: turn.recentMessages,
         scopes,
         maxChars,
+        includeInactive: turn.includeInactive,
+        asOf: turn.asOf,
       });
       mark("palaceRecall");
       const retrievalRecall = await params.memory.retrieval.recall(turn.userMessage, {
         scopes,
         maxChars,
+        includeInactive: turn.includeInactive,
+        asOf: turn.asOf,
       });
       mark("retrievalRecall");
       const activeBlocks = (

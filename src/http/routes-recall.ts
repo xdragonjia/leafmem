@@ -26,6 +26,8 @@ export async function handleRecallRoutes(
         recentMessages: body.recentMessages as string[] | undefined,
         toolContext: body.toolContext as string | undefined,
         maxChars: body.maxChars as number | undefined,
+        includeInactive: body.includeInactive === true,
+        asOf: typeof body.asOf === "string" ? body.asOf : undefined,
         inspect: true,
       });
       json(res, 200, result);
@@ -36,6 +38,8 @@ export async function handleRecallRoutes(
         recentMessages: body.recentMessages as string[] | undefined,
         toolContext: body.toolContext as string | undefined,
         maxChars: body.maxChars as number | undefined,
+        includeInactive: body.includeInactive === true,
+        asOf: typeof body.asOf === "string" ? body.asOf : undefined,
       });
       json(res, 200, result);
     }

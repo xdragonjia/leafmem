@@ -11,6 +11,10 @@ export type MemoryTurnInput = {
   taskId?: string;
   taskTitle?: string;
   toolContext?: string;
+  /** E1：包含 superseded/archived（默认不含） */
+  includeInactive?: boolean;
+  /** E1：as-of 查询（"当时/8 月那会儿"），按 eventTime 切片 */
+  asOf?: string;
 };
 
 export type CapturedMemoryProposal = Omit<MemoryInput, "scope"> & {

@@ -77,9 +77,18 @@ export async function handleMemoryRoutes(
     // matched agent-scoped records and every batch delete silently returned
     // {deleted: 0}. Mirror the single-DELETE semantics: an explicit scope=
     // selection is required to touch agent-scoped records.
-    const hasExplicitScope = Boolean(url.searchParams.get("scope")?.trim());
+    // 2026-10-22（E1 收尾实测）：scope 只认 query 参数，body 里的 scope 被忽略 ⇒
+    // 传 {"ids":[...],"scope":"agent:workbuddy"} 会**静默返回 deleted:0**（我本人踩了一次）。
+    // 现在两处都接受；并且当"有 ids 却一条都没删掉"时回一个 warning，不再假装成功。
+    const bodyScope = typeof body.scope === "string" ? body.scope.trim() : "";
+    const hasExplicitScope = Boolean(url.searchParams.get("scope")?.trim() || bodyScope);
     const context = hasExplicitScope
-      ? memoryContextFromQuery(ctx.projectId, url)
+      ? (bodyScope && !url.searchParams.get("scope")?.trim()
+          ? memoryContextFromQuery(
+              ctx.projectId,
+              new URL(`http://local/?scope=${encodeURIComponent(bodyScope)}`),
+            )
+          : memoryContextFromQuery(ctx.projectId, url))
       : { projectId: ctx.projectId };
     let deleted = 0;
     for (const id of ids) {
@@ -87,7 +96,13 @@ export async function handleMemoryRoutes(
         deleted++;
       }
     }
-    json(res, 200, { deleted });
+    const payload: Record<string, unknown> = { deleted };
+    if (ids.length > 0 && deleted === 0 && !hasExplicitScope) {
+      payload.warning =
+        "deleted 0 of " + ids.length +
+        ": agent-scoped records require an explicit scope, e.g. ?scope=agent:workbuddy (or body.scope)";
+    }
+    json(res, 200, payload);
     return;
   }
 

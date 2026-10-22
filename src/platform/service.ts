@@ -191,6 +191,8 @@ export class LeafMemPlatformService implements PlatformMemoryService {
       maxChars: input.maxChars,
       taskId: taskKey,
       toolContext: input.toolContext,
+      includeInactive: input.includeInactive,
+      asOf: input.asOf,
     });
 
     if (this.events) {

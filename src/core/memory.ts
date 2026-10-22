@@ -10,6 +10,7 @@ import { TaskContextManager } from "../task/manager.js";
 import { InMemoryTaskContextStore, SqliteTaskContextStore } from "../task/store.js";
 import type { MemoryInferencer, MemoryStorageBackend } from "../system/types.js";
 import { cosineSimilarity, embedTextHash } from "./hash-embedding.js";
+import { isSearchable } from "./temporal.js";
 import type { MemoryEvaluator } from "./evaluator.js";
 import { InMemoryStore, SqliteMemoryStore } from "./storage.js";
 import {
@@ -917,7 +918,12 @@ export class LeafMem {
     const queryTokens = uniqueTokens(normalizedQuery);
     const queryVector = embedTextHash(normalizedQuery, this.embeddingDimensions);
     const records = await this.store.load();
-    const scopedRecords = records.filter((record) => matchesRequestedScopes(record.scope, options.scopes));
+    // E1（2026-10-22）：先剔除非当前事实（superseded/archived）与 as-of 之后才成立的事实，
+    // 再进入打分循环。放在这里而不是打分后，是为了让 rerank / FTS / entity 的配额都
+    // 不浪费在注定不该出现的记录上（B0.7 实测 rerank 有远程配额，429 后会静默降级）。
+    const scopedRecords = records
+      .filter((record) => matchesRequestedScopes(record.scope, options.scopes))
+      .filter((record) => isSearchable(record, options));
     const entityBoosts = await this.resolveEntityBoosts(normalizedQuery);
     const ftsBoosts = this.ftsBoosts(normalizedQuery, options.scopes);
     const hits: MemorySearchHit[] = [];

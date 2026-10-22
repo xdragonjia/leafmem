@@ -470,3 +470,63 @@ test("mergeProfile merges at section level, preserving unmentioned sections (202
   assert.ok(doc!.content.includes("克制、具体"), "unmentioned section 2 preserved");
   assert.ok(!doc!.content.includes("MacPorts"), "stale content replaced");
 });
+
+// ---------------------------------------------------------------------------
+// E1（2026-10-22）：轻双时态 / 生命周期字段的读取侧语义
+// ---------------------------------------------------------------------------
+
+test("E1: status=superseded 默认不参与检索，includeInactive 才可见", async () => {
+  const memory = createLeafMem({ store: new InMemoryStore() });
+  const scope = { type: "agent" as const, id: "workbuddy" };
+  const old = await memory.remember({
+    scope, kind: "fact", content: "E1 样本：备份断链根因是 state 文件未留存。",
+    metadata: { status: "superseded", supersededBy: ["new-id"] }, dedupe: false,
+  });
+  const cur = await memory.remember({
+    scope, kind: "fact", content: "E1 样本：备份断链根因是 state 文件未留存（结论未变）。",
+    metadata: { status: "active" }, dedupe: false,
+  });
+
+  const visible = await memory.search("E1 样本 备份断链根因 state 文件", { scopes: [scope] });
+  assert.ok(visible.some((hit) => hit.record.id === cur.id), "active 记录应可见");
+  assert.ok(!visible.some((hit) => hit.record.id === old.id), "superseded 记录默认不可见");
+
+  const all = await memory.search("E1 样本 备份断链根因 state 文件", {
+    scopes: [scope], includeInactive: true,
+  });
+  assert.ok(all.some((hit) => hit.record.id === old.id), "includeInactive 后应可见");
+});
+
+test("E1: asOf 只截断 eventTime 之后的事实，缺 eventTime 的仍可见", async () => {
+  const memory = createLeafMem({ store: new InMemoryStore() });
+  const scope = { type: "agent" as const, id: "workbuddy" };
+  const aug = await memory.remember({
+    scope, kind: "fact", content: "E1 时点样本：八月断链发生在 8 月 12 日。",
+    metadata: { eventTime: "2026-08-12" }, dedupe: false,
+  });
+  const oct = await memory.remember({
+    scope, kind: "fact", content: "E1 时点样本：十月断链复发于 10 月 3 日。",
+    metadata: { eventTime: "2026-10-03" }, dedupe: false,
+  });
+  const unknown = await memory.remember({
+    scope, kind: "fact", content: "E1 时点样本：未标注时间的断链记录。",
+    metadata: {}, dedupe: false,
+  });
+
+  const atSept = await memory.search("E1 时点样本 断链", { scopes: [scope], asOf: "2026-09-01" });
+  const ids = atSept.map((hit) => hit.record.id);
+  assert.ok(ids.includes(aug.id), "8 月事实在 9 月初可见");
+  assert.ok(!ids.includes(oct.id), "10 月事实在 9 月初不可见");
+  assert.ok(ids.includes(unknown.id), "缺 eventTime 记录不能被 as-of 静默丢掉（未知≠未来）");
+});
+
+test("E1: 无法识别的 status 按 active 处理（宁多召回，不误杀）", async () => {
+  const memory = createLeafMem({ store: new InMemoryStore() });
+  const scope = { type: "agent" as const, id: "workbuddy" };
+  const weird = await memory.remember({
+    scope, kind: "fact", content: "E1 脏值样本：状态字段写成了奇怪的值。",
+    metadata: { status: "SUPERSEDED-typo" }, dedupe: false,
+  });
+  const hits = await memory.search("E1 脏值样本 状态字段", { scopes: [scope] });
+  assert.ok(hits.some((hit) => hit.record.id === weird.id), "未知状态不应被当成失效");
+});

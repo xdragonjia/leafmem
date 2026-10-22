@@ -1,4 +1,5 @@
 import { cosineSimilarity } from "../core/hash-embedding.js";
+import { isSearchable } from "../core/temporal.js";
 import type { MemoryRecord, MemoryScope } from "../core/types.js";
 import { createEmbeddingProvider, HashEmbeddingProvider } from "./embeddings.js";
 import { QmdRetrievalBackend } from "./qmd.js";
@@ -91,7 +92,15 @@ export class RetrievalManager {
 
   async search(
     query: string,
-    options: { scopes?: MemoryScope[]; maxResults?: number; minScore?: number } = {},
+    options: {
+      scopes?: MemoryScope[];
+      maxResults?: number;
+      minScore?: number;
+      /** E1：包含 superseded/archived（默认不包含） */
+      includeInactive?: boolean;
+      /** E1：as-of 切片（eventTime <= asOf） */
+      asOf?: string;
+    } = {},
   ): Promise<RetrievalHit[]> {
     const limit = Math.max(1, options.maxResults ?? DEFAULT_MAX_RESULTS);
     // When a cross-encoder reranker is configured, widen the candidate pool
@@ -109,7 +118,12 @@ export class RetrievalManager {
     } else {
       hits = await this.searchBuiltin(query, poolOptions);
     }
-    return await this.applyRerank(query, hits, limit);
+    // 🔴 E1（2026-10-22）：核心 search 已过滤，但 qmd/vectorStore 等后端不走核心打分，
+    // 故在合并后再滤一次（幂等）。顺序必须在 applyRerank **之前**——否则会为
+    // superseded 记录白付远程 rerank 配额（实测 siliconflow 连续 ~11 次即 429）。
+    // 无 record 的命中（仅 snippet，来自外部后端）无法判定状态，fail-open 保留
+    const visible = hits.filter((hit) => !hit.record || isSearchable(hit.record, options));
+    return await this.applyRerank(query, visible, limit);
   }
 
   /**
@@ -161,7 +175,16 @@ export class RetrievalManager {
 
   async recall(
     query: string,
-    options: { scopes?: MemoryScope[]; maxResults?: number; minScore?: number; maxChars?: number } = {},
+    options: {
+      scopes?: MemoryScope[];
+      maxResults?: number;
+      minScore?: number;
+      maxChars?: number;
+      /** E1：包含 superseded/archived（默认不含） */
+      includeInactive?: boolean;
+      /** E1：as-of 切片（eventTime <= asOf） */
+      asOf?: string;
+    } = {},
   ): Promise<RetrievalRecallResult> {
     const hits = await this.search(query, options);
     return {
