@@ -270,9 +270,13 @@ describe("LeafMem HTTP API", () => {
     const batchRes = await api("/v1/memories/batch", {
       method: "POST",
       body: JSON.stringify({
+        // 2026-10-22：显式 dedupe:false。默认走 evaluator 时，两条短内容
+        // （"Batch one." / "Batch two."）相似度可能触发合并 → 同一 id 出现两次，
+        // 后续 delete 只能删到 1 条（CI 39711749766 的 flaky 根因）。
+        // 这里既固定了测试语义，也顺带覆盖 dedupe 字段的 HTTP 透传。
         memories: [
-          { kind: "fact", content: "Batch one." },
-          { kind: "fact", content: "Batch two." },
+          { kind: "fact", content: "Batch one.", dedupe: false },
+          { kind: "fact", content: "Batch two.", dedupe: false },
         ],
       }),
     });

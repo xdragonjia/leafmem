@@ -134,6 +134,24 @@ export class LeafMem {
   private readonly inferencer: MemoryInferencer | null;
   /** Custom (P0-3): sqlite path for FTS5 boost queries; null for memory backend. */
   private readonly sqlitePath: string | null;
+  /**
+   * B0（2026-10-22）：searchText 派生量缓存。
+   *
+   * 为什么需要：search() 原本对**每条记录**实时算 uniqueTokens + 128 维哈希向量，
+   * 实测 5,018 条单次 610ms 中有 531ms 花在这里（load 仅 45ms）。缓存后 8 查询 192ms（≈20×）。
+   *
+   * 键只用 id + updatedAt 为何足够（已读码核实）：
+   *   - update() 末尾无条件改 updatedAt ⇒ 任何内容/metadata 变更都自动失效；
+   *   - recordRecallCounts 直接改 metadata 不走 update() ⇒ 召回计数不会打掉缓存；
+   *   - buildSearchText 只取 kind/summary/content/tags/scope，**不含 metadata** ⇒
+   *     status/lastRecalledAt 等变化不影响缓存正确性（status 过滤另行实时读 record.metadata）。
+   * 唯一陈旧来源是"绕过 API 直写 sqlite 改 content"，本项目纪律禁止；进程重启即清空。
+   */
+  private readonly searchTextCache = new Map<
+    string,
+    { updatedAt: string; tokens: string[]; vector: number[] }
+  >();
+  private static readonly SEARCH_TEXT_CACHE_MAX = 50_000;
   readonly active: ActiveMemoryManager;
   readonly task: TaskContextManager;
   readonly retrieval: RetrievalManager;
@@ -897,14 +915,29 @@ export class LeafMem {
     const w = this.weights;
 
     for (const record of scopedRecords) {
-      const candidateText = buildSearchText(record);
-      const candidateTokens = uniqueTokens(candidateText);
+      // B0：命中缓存则跳过 buildSearchText + 分词 + 128 维哈希（原占单次检索 ~87% 耗时）
+      let derived = this.searchTextCache.get(record.id);
+      if (!derived || derived.updatedAt !== record.updatedAt) {
+        const candidateText = buildSearchText(record);
+        derived = {
+          updatedAt: record.updatedAt,
+          tokens: uniqueTokens(candidateText),
+          vector: embedTextHash(candidateText, this.embeddingDimensions),
+        };
+        this.searchTextCache.set(record.id, derived);
+        if (this.searchTextCache.size > LeafMem.SEARCH_TEXT_CACHE_MAX) {
+          // 超限丢最老的一批（Map 保插入序）；本项目 5k~10k 量级不会触发
+          const drop = Math.floor(LeafMem.SEARCH_TEXT_CACHE_MAX / 5);
+          let i = 0;
+          for (const key of this.searchTextCache.keys()) {
+            if (i++ >= drop) break;
+            this.searchTextCache.delete(key);
+          }
+        }
+      }
+      const candidateTokens = derived.tokens;
       const lexical = tokenOverlapScore(queryTokens, candidateTokens);
-      const hash = clamp(
-        cosineSimilarity(queryVector, embedTextHash(candidateText, this.embeddingDimensions)),
-        0,
-        1,
-      );
+      const hash = clamp(cosineSimilarity(queryVector, derived.vector), 0, 1);
       const entity = entityBoosts.get(record.id) ?? 0;
       const fts = ftsBoosts.get(record.id) ?? 0;
       // Custom (P1-importance): distilled principles get a fixed boost so
