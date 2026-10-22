@@ -7,26 +7,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Changed
-- **rerank 参数由实测确定：`RERANK_TOP_K` 40 → 20、新增 `RERANK_DOC_CHARS`（默认 4000，原先整篇送）**。15 条标注题（答案含唯一数字/ID/路径，判据机械可验）正文覆盖 @1/@3/@8：不启用 rerank 4/5/7、topK40+全文 6/9/10 但 p50 1597ms、**topK20+全文 6/10/10 且 p50 906ms**、topK10 5/9/9。截断长度实测单调（800→4/7/9、2000→5/7/9、4000→6/9/10、不截断→6/9/10），故取 4000 作安全上界。生产端到端 recall p50 **1561ms → 1023ms（-34%）**。
-- **rerank 失败不再静默**：`CrossEncoderReranker` 记录 `lastFailure` 并在降级时输出节流警告（5 分钟一次）。此前 429/超时一律 `return null`，表现为"配了 rerank 却不生效"，只能靠 metadata 里有没有 `rerankScore` 反推。实测 siliconflow 连续约 11 次调用即 429，一次 37 条查询的探针后半段全部降级。
+（暂无）
+
+## [0.3.24] - 2026-10-22
 
 ### Added
-- **`LEAFMEM_TIMING=1` 分阶段耗时打点**（`runtime.buildRecallContext`）：输出 `palaceRecall / retrievalRecall / activeBlocks / taskWindow / navigation / assemble`。此前只知 HTTP 端到端 1.5s，无法判断是哪层；实测稳态 retrievalRecall≈800ms、palaceRecall≈220ms、其余≈4ms。
-- **`ops/daily_chunker.py` 结构分块内核（daily 回流的 v3 分块器）**：段落 / 列表 / 表格 / fenced code 为天然边界（表格与代码块原子不切），超长块再按中文句末标点细分，目标 900 字 / 下限 350 / 硬上限 5200；纯装饰分隔行（`---`）在规范化阶段剔除。**不采用 embedding 语义分块**——NAACL 2025《Is Semantic Chunking Worth the Computational Cost?》结论是额外算力换不来稳定收益，且实测易过碎（均值 43 tokens 时准确率反而低于递归 512 tokens）。
-- **`ops/daily_chunker.py` 结构分块内核（daily 回流的 v3 分块器）**：段落 / 列表 / 表格 / fenced code 为天然边界（表格与代码块原子不切），超长块再按中文句末标点细分，目标 900 字 / 下限 350 / 硬上限 5200；纯装饰分隔行（`---`）在规范化阶段剔除。**不采用 embedding 语义分块**——NAACL 2025《Is Semantic Chunking Worth the Computational Cost?》结论是额外算力换不来稳定收益，且实测易过碎（均值 43 tokens 时准确率反而低于递归 512 tokens）。
-- **面包屑标题前缀写进正文**（`[日期·节标题·k/n]`，增量续写为 `·续N`）：向量与词法两路检索都能看到标题词，零 LLM 成本；Anthropic contextual retrieval 报告该族做法可降 top-20 失败率 35%~49%。
-- **父块锚点**：每条块 metadata 带 `source_file / section / chunk{index,segment_total,seq,chars,span,continued}`，hits 后可回读整节或原文区间（small-to-big 的最小实现）。
-- **`MemoryInput.dedupe?: boolean`（含 HTTP/平台透传）**：`false` 表示跳过服务端 0.85 语义合并。分块摄入已按 chunk 指纹精确幂等，而同节兄弟块天然共享面包屑与 tags（实测相邻块相似度均值 0.647、极值 0.917），走模糊合并会把不同块覆盖成一条=丢知识。默认 true，不改变既有行为。
-- **`ops/ingest-daily-logs.py --rebuild-state`**：从库内 metadata 的 `chunk.span` 反推每节已入偏移并重建 state，杜绝「state 丢了就整批重导」。
-- **`--selftest`**：对全部源文件断言「块正文拼接（去空白）== 原文（去空白）」+ span 不重叠不越界。
+
+#### 记忆分层与生命周期（E1 / E2 / E5）
+
+- **轻双时态元数据字段（零 DDL，全在 `metadata`）**：`status`(active·procedural·superseded·archived) /
+  `eventTime` / `eventTimeSrc` / `invalidAt` / `supersededBy` / `supersededAt`（camelCase，与既有 `lastRecalledAt` 一致）。
+  默认检索排除 `superseded/archived`，兼容 08-31 起的旧约定（`supersededBy` 单串与非空数组都认）。
+- **`search({ asOf })`**：只保留 `eventTime <= asOf` 的记录，**缺 `eventTime` 仍可见**（未知时间不判为未来，
+  否则一次 as-of 查询会静默丢掉 12.5% 记忆）。
+- **`search({ includeInactive })` / HTTP `/v1/recall` 同名参数**：排查历史、对账、迁移核验时用。
+- **`MemoryInput.preserveUpdatedAt`（core→platform→HTTP 全链路）**：元数据维护类写入不刷新 `updatedAt`。
+  为什么必须有：`recency` 取 `max(lastRecalledAt, updatedAt)`，回填 4,308 条若把时间戳刷成 now，
+  等于宣称"全部刚更新"（1 年前记录 recency 0.2→1.0，权重 0.08 ⇒ +0.064 分），排序被系统性污染。
+- **`src/core/enrich.ts` 写入侧补齐**：`extractEventTime`（显式 → 面包屑 → 正文日期 → docDate → 文件名）
+  与 `classifyStatus`（有待办词且无结论词才判 procedural），接在 `remember()` 最内层，
+  MCP/CLI/HTTP/摄入脚本四条通道自动覆盖。全库实测 eventTime 可抽取 **85.7%**；
+  且**与 createdAt 不同月占 46.7%**（与审计 46.9% 互证）⇒ 抽到的是事件时间而非入库时间。
+
+#### 检索打分（E4.1 / E4.2 / E4.3 / E4.4）
+
+- **`tokenOverlapScoreNormalized`（词法长度归一）**：原 `tokenOverlapScore` 的分母只有
+  `queryTokens.length`，是「查询覆盖率」而非相似度 ⇒ 候选越长越容易碰巧覆盖全部查询字。
+  实测一条 5,100 字的 principle 记录对「语义层日更重建有没有在跑」这种无关查询也拿 `lexical=1.000`。
+  归一因子 `sqrt(600/candTokens)`，夹 `[0.5, 1.2]`。
+- **`trigrams` / `trigramCoverage` + `sectionBoost`**：section 的 3-gram 命中给 0.2 加成
+  （弱于 fts 0.22 / entity 0.18）。体检到的病根是**缺短语级信号**——process 型查询的答案块
+  与查询有 5~8 字连续命中（10 题里 8 题），而 top1 只有 2~3 题有。
+- **`metadata.aliases` 参与 section 短语匹配**（单串/数组都认）：同一主题可写多个不同「措辞粒度」的问法。
+- **状态页目录注入（`runtime.buildStatusPageLayer`）**：把 `kindOfSnapshot=weekly-status` 且 active 的
+  记忆标题（最多 8 条）作为一段短目录放进 `stableContext`，60s 缓存。
+  解决"别名枚举不到的问法"——侧面是开放集合，靠别名穷举覆盖不完。
+
+#### 性能与基础设施（B0 / B0.5 / B0.6）
+
+- **`searchTextCache`（进程内）**：缓存 `searchText` 派生的 tokens 与 128 维哈希向量，键 `id` + `updatedAt` 指纹。
+  实测 5,018 条单次 `search` **610ms → 91ms**（原实现中逐条实时算向量占 531ms，`store.load()` 仅 45ms）。
+  安全性依据：`update()` 必改 `updatedAt`；`recordRecallCounts` 直改 metadata 不走 `update`（召回不打掉缓存）；
+  `buildSearchText` 不含 metadata。
+- **`docVectorCache`（进程内）**：`retrieval.searchBuiltin` 原对 `baseHits`（top-**512**）**每次 recall 全量重算远程 embedding**
+  —— 实测带 agent context 的 HTTP recall **9.8s**（core search 只占 94ms）。修复后 **9.8s → 1.6s**，top-8 重合 8/8。
+- **`SqliteVectorCache` + `memory_vectors` 表（跨进程持久）**：`(id, model_id, updated_at, dims, vector BLOB)`，
+  与记忆同库、**不动 `memory_items`**。检索改三级查找：进程内 Map → SQLite → 远程 embedding。
+  重启后同批查询 **5.7s → 2.3s**。`model_id` 记 `provider:model`（如 `openai:BAAI/bge-m3`），
+  换模型必须失效，否则混用不同向量空间。
+
+#### 观测与运维
+
+- **`LEAFMEM_TIMING=1` 分阶段耗时打点**：输出 `palaceRecall / retrievalRecall / activeBlocks / taskWindow /
+  navigation / statusPages / assemble`。实测稳态 retrievalRecall≈700–1000ms、palaceRecall≈220–280ms、其余≈0。
+- **`ops/daily_chunker.py` 结构分块内核**：段落 / 列表 / 表格 / fenced code 为天然边界（表格与代码块原子不切），
+  超长块再按中文句末标点细分，目标 900 字 / 下限 350 / 硬上限 5200；纯装饰分隔行（`---`）规范化剔除。
+  **不采用 embedding 语义分块**——NAACL 2025《Is Semantic Chunking Worth the Computational Cost?》
+  结论是额外算力换不来稳定收益，且实测易过碎（均值 43 tokens 时准确率反而低于递归 512 tokens）。
+- **面包屑标题前缀写进正文**（`[日期·节标题·k/n]`，增量续写为 `·续N`）：向量与词法两路都能看到标题词，
+  零 LLM 成本；Anthropic contextual retrieval 报告该族做法可降 top-20 失败率 35%~49%。
+- **父块锚点**：每条块 metadata 带 `source_file / section / chunk{index,segment_total,seq,chars,span,continued}`，
+  hits 后可回读整节或原文区间（small-to-big 的最小实现）。
+- **`ops/ingest-daily-logs.py --rebuild-state` / `--selftest`**：从库内 `chunk.span` 反推偏移重建 state
+  （杜绝"state 丢了就整批重导"）；`--selftest` 断言「块正文拼接（去空白）== 原文（去空白）」+ span 不重叠不越界。
+- **`MemoryInput.dedupe?: boolean`（含 HTTP/平台透传）**：`false` 跳过服务端 0.85 语义合并。
 
 ### Changed
-- **`ops/ingest-daily-logs.py` 升 v3**：增量记账由「按行切 + （续N）」改为**字符偏移续写**（块尾天然落在结构/句边界）+ 块指纹 `state.seen` 吸收回退重叠；state 版本 3（旧 state 自动重建为空）。整节已入时仅推进 offset。
-- 实测（293 个 daily md / 3600 节）：**4922 块，无损校验失败 0**，块长 p50=645、p90=1083、p99=2204、max=4828（无一超硬上限）。
+
+- 🔴 **默认检索排序会变（升级前请读）**：`LEAFMEM_LEXICAL_LEN_NORM` 默认 `sqrt`、
+  `LEAFMEM_PRINCIPLE_BOOST_MODE` 默认 `tiebreak`、`LEAFMEM_SECTION_BOOST` 默认 `0.2`。
+  41 题 golden 实测：core R@1 **9→28**、R@8 **25→38**；retrieval R@1 **27→31**、R@8 **36→39**、MRR 0.741→**0.829**。
+  需要旧行为可显式设 `LEAFMEM_LEXICAL_LEN_NORM=off`、`LEAFMEM_PRINCIPLE_BOOST_MODE=flat`、`LEAFMEM_SECTION_BOOST=0`。
+- **`PRINCIPLE_BOOST` 由"无条件加分"改为"排序期 tie-break"**：原实现只要 `kind=principle` 就白得 0.1，
+  与其注释意图（"打平时让 curated 指南上位"）不符，实测导致 process 型查询 10 题里 6 题 top1 是无关原则。
+- **rerank 参数由实测定档：`RERANK_TOP_K` 40 → 20、`RERANK_DOC_CHARS` 默认 4000（原先整篇送）**。
+  15 条标注题正文覆盖 @1/@3/@8：不启用 rerank 4/5/7、topK40+全文 6/9/10（p50 1597ms）、
+  **topK20+全文 6/10/10（p50 906ms）**、topK10 5/9/9。截断长度实测单调（800→4/7/9、4000→6/9/10），
+  故 4000 是饱和点而非折中。生产端到端 recall p50 **1561ms → 1023ms（-34%）**。
+- **rerank 失败不再静默**：`CrossEncoderReranker` 记录 `lastFailure` 并在降级时输出节流警告（5 分钟一次）。
+  此前 429/超时一律 `return null`，表现为"配了 rerank 却不生效"。实测 siliconflow 连续约 11 次调用即 429。
+- **`ops/ingest-daily-logs.py` 升 v3**：增量记账由「按行切 +（续N）」改为**字符偏移续写**
+  （块尾天然落在结构/句边界）+ 块指纹 `state.seen` 吸收回退重叠；state 版本 3（旧 state 自动重建为空）。
+  实测 293 个 daily md / 3600 节 → **4922 块，无损校验失败 0**，p50=645 / max=4828。
 
 ### Fixed
-- **`ops/ingest-daily-logs.py` 增加 state 缺失 fail-safe**：去重完全依赖 `--state`（`seen` + `lens` 记账），state 缺失时整批历史 daily 节会被当作全新导入。2026-10-22 哨兵实测：首跑后 `~/.leafmem/daily-ingest-state.json` 未留存，此时重跑将重复入库 **2,698 节**；且 LeafMem 同 kind+tags 为 UPDATE 覆盖语义，重复导入会连带改写原条目，属破坏性。现行为：state 文件不存在且未显式传 `--force-fresh` → 打印原因并以 **exit 3** 拒绝执行；确属首次导入须显式 `--force-fresh`。验证：无 flag → exit 3；`--force-fresh --dry-run` 与「state 存在」两路均正常放行，dry-run 前后库内条数不变。
+
+- **FTS 未排除已失效记录**：`ftsBoosts` 的 SQL 只 JOIN `memory_items` 判存活，没排除 `superseded`——
+  它们既占满 `LIMIT 30` 名额，又通过 idf 影响全库 BM25。迁移 2,411 条后实测 6 条查询 `fts` 分项漂移 0.066~0.538。
+  语义上也不成立：已被取代的事实不该影响"当前"答案的排序。
+- **单条 `POST /v1/memories` 未透传 `dedupe`**（批量路由早已透传）：导致 `dedupe:false` 在单条路径被静默忽略。
+  实际事故：恢复脚本写回一条与既有块同文的记录 → 0.85 去重把它合并进该块并返回**该块的 id** → 按该 id 删除，误删真实块。
+- **`DELETE /v1/memories/batch` 的 scope 只认 query**：body 里的 `scope` 被静默忽略 ⇒ 返回 `{"deleted":0}` 且 HTTP 200。
+  现在两处都接受，且"有 ids 却一条没删掉、又没给 scope"时回 `warning` 字段，不再假装成功。
+- **`ops/ingest-daily-logs.py` 增加 state 缺失 fail-safe**：去重完全依赖 `--state`（`seen` + `lens` 记账），
+  state 缺失时整批历史 daily 节会被当作全新导入。实测首跑后 state 未留存，此时重跑将重复入库 **2,698 节**；
+  且 LeafMem 同 kind+tags 为 UPDATE 覆盖语义，重复导入会连带改写原条目，属破坏性。
+  现行为：state 不存在且未显式传 `--force-fresh` → 打印原因并以 **exit 3** 拒绝执行。
+- **`core/memory.ts` 实例化 `RetrievalManager` 时漏传可选能力**：`vectorCache` 未透传且缓存层 fail-open ⇒
+  既不报错也不建表，功能"上线了但毫无效果"。新增可选能力后必须验证**产物存在**（表行数/计数器），不能只看类型检查通过。
 
 ## [0.3.23] - 2026-10-21
 
@@ -449,6 +527,7 @@ Initial LeafMem releases (brand replacement from upstream fork, dual-host
 installer, API-key guided setup, npm distribution). **All 0.1.x versions
 were unpublished from npm on 2026-08-09 and superseded by 0.2.0.**
 
-[Unreleased]: https://github.com/xdragonjia/leafmem/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/xdragonjia/leafmem/compare/v0.3.24...HEAD
+[0.3.24]: https://github.com/xdragonjia/leafmem/releases/tag/v0.3.24
 [0.2.0]: https://github.com/xdragonjia/leafmem/releases/tag/v0.2.0
 

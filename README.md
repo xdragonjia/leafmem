@@ -312,6 +312,51 @@ LeafMem 开箱即用（不配任何 Key 时用内置检索工作）。在此基�
 
 ---
 
+### 2.7 环境变量总表
+
+所有配置项都以 `LEAFMEM_` 前缀，读取一律走 `leafmemEnv()`（见 `src/system/env-compat.ts`）。
+
+#### 路径与作用域
+
+| 变量 | 默认 | 作用 |
+|---|---|---|
+| `LEAFMEM_HOME` | `~/.leafmem` | 数据目录（`memory.sqlite` / `agent-service.json` / `hooks.log` 都在这里） |
+| `LEAFMEM_STORAGE_PATH` | `$LEAFMEM_HOME/memory.sqlite` | 库文件路径 |
+| `LEAFMEM_SCOPE_TYPE` / `LEAFMEM_SCOPE_ID` | `agent` / 宿主名 | 默认写入作用域 |
+| `LEAFMEM_ENTITY_VOCAB` | 内置 | 实体受控词表路径（热加载，改文件不用重启） |
+| `LEAFMEM_WORKBUDDY_HOME` / `LEAFMEM_AGENT_HOME` / `LEAFMEM_HERMES_HOME` / `LEAFMEM_OPENCLAW_HOME` | — | 宿主目录覆盖（双宿主安装用） |
+
+#### 检索后端
+
+| 变量 | 默认 | 作用 |
+|---|---|---|
+| `LEAFMEM_RETRIEVAL_BACKEND` | `builtin` | `builtin`（内置打分 + 可选远程向量/重排）或 `qmd` |
+| `LEAFMEM_QMD_COMMAND` | — | `qmd` 后端的可执行命令 |
+| `LEAFMEM_EMBEDDINGS_PROVIDER` / `MODEL` / `BASE_URL` / `API_KEY` | 无 | 远程 embedding（默认建议 BGE-M3 / 硅基流动） |
+| `LEAFMEM_RERANK_URL` / `MODEL` / `API_KEY` / `TIMEOUT_MS` | 无 / — / 3000 | 交叉编码器重排（建议 bge-reranker-v2-m3） |
+
+#### 打分调优（v0.3.24 起，默认值已按实测调优）
+
+| 变量 | 默认 | 作用与依据 |
+|---|---|---|
+| `LEAFMEM_LEXICAL_LEN_NORM` | **`sqrt`** | 词法长度归一。`off` 恢复旧行为。原实现是「查询覆盖率」，长文档恒得满分（5,100 字记录 `lexical=1.000`） |
+| `LEAFMEM_PRINCIPLE_BOOST_MODE` | **`tiebreak`** | `flat`=旧行为（`kind=principle` 无条件 +0.1）/ `off`=不加 / `tiebreak`=分差 ≤0.01 时才优先 |
+| `LEAFMEM_SECTION_BOOST` | **`0.2`** | section/aliases 的 3-gram 短语命中加成；`0` 关闭 |
+| `LEAFMEM_RERANK_TOP_K` | **`20`** | 每次送入重排的候选数（原 40）。实测 20 的质量不降、p50 少 700ms |
+| `LEAFMEM_RERANK_DOC_CHARS` | **`4000`** | 送入重排的每篇文档截断长度（原先整篇送）。实测截断越狠质量越差，4000 是饱和点 |
+
+> 🔴 **升级注意**：上面 5 项默认值相对 0.3.23 有变化，检索排序会变。需要完全恢复旧行为，把前三项分别设为
+> `off` / `flat` / `0`。
+
+#### 诊断
+
+| 变量 | 默认 | 作用 |
+|---|---|---|
+| `LEAFMEM_TIMING` | 关 | `1` 时每次 recall 输出一行分阶段耗时：`palaceRecall / retrievalRecall / activeBlocks / taskWindow / navigation / statusPages / assemble` |
+| `LEAFMEM_INFERENCER` | 无 | 写入时的 LLM 推断器（去重评估/摘要），不配则走阈值去重 |
+
+---
+
 ## 📚 三、使用说明
 
 LeafMem 的使用分两类场景：**用户日常触发** 与 **Agent 自主使用**。
@@ -437,6 +482,39 @@ python3 ops/ingest-daily-logs.py --rebuild-state                # state 丢失�
 - **增量按字符偏移续写**：节尾追加只入新增区间，块尾天然落在结构/句边界；块指纹（`state.seen`）吸收回退重叠
 - **写入传 `dedupe:false`**：分块摄入按块精确幂等，服务端 0.85 模糊合并会把同节兄弟块（实测相邻块相似度均值 0.647、极值 0.917）覆盖成一条
 - 状态文件默认 `~/.leafmem/daily-ingest-state.json`，只在写入成功后才记账（失败下轮重试）；**state 缺失时脚本拒绝运行**（防整批重导），可先 `--rebuild-state` 从库内 metadata 反推
+
+### 3.7 状态页（memory status pages，v0.3.24 起）
+
+"这件事现在怎么样了"这类问题（进展/状态/跑到第几批）靠纯检索经常答不准——因为**问句的谓词与记录的谓词不同词**
+（问"有没有成功"，记录写"ok:true"）。状态页是把流水记忆压成**可检索的状态答案**的轻量机制，**不是独立的信念层**：
+它就是普通记忆，复用现有检索链。
+
+**形态**
+
+| 字段 | 值 |
+|---|---|
+| `kind` | `experience` |
+| `metadata.kindOfSnapshot` | `weekly-status`（用于识别与目录注入） |
+| `metadata.section` | **问题式标题**（如「备份有没有成功」）——实测陈述式标题命中 0/3，问题式 3/3 |
+| `metadata.aliases` | 3 个不同**措辞粒度**的问法（正式 / 口语 / 领域词）——换词才有用，换语序无用 |
+| `metadata.supports` | 支撑本结论的源记忆 id 列表（禁编造，写入前机械校验） |
+| `metadata.source_refs` | 与知识系统资产契约同构的 `[{doc_id,title,modified_at,anchor}]`，供跨系统消费 |
+| 正文 | 结论先行（正常/已完成/进行中/阻塞…）+ 关键数字 + 要不要处理 |
+
+**检索如何吃到它**：`section` 与 `aliases` 一起参与 3-gram 短语匹配（`LEAFMEM_SECTION_BOOST`）；
+另外 active 状态页的标题会作为一段短目录进入 `stableContext`（最多 8 条，60s 缓存），
+让模型即使没检索到正文也知道"有这些状态可查"。
+
+**演化（不重写旧内容）**：同一主题出新一期 → 旧一期标 `status=superseded` + `supersededBy`，
+正文一字不改（符合 invalidate-don't-delete）。同一主题的判定用**问题式标题的 3-gram 覆盖率 ≥0.6**，
+不用 topic 字符串（LLM 每期生成的 topic 名不稳定）。
+
+**写入纪律**：走 HTTP API + `dedupe:false`（状态页必须独立成条，不能被 0.85 相似度合并）；
+更新元数据带 `preserveUpdatedAt:true`（否则 recency 被抬高）。
+
+生成器见项目侧 `leafmem-productization/scripts/status_page_gen.py`（周频，挂维护任务）。
+
+---
 
 ## 📈 基准测试
 

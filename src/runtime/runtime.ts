@@ -12,6 +12,55 @@ import type {
   MemoryTurnInput,
 } from "./types.js";
 
+/**
+ * E4.4（2026-10-22）：状态页目录注入。
+ *
+ * 解决的问题：状态页只对"别名枚举得到"的问法有效。实测 5 个未预见口语问法命中 4 个，
+ * 剩下「npm 审核过没过」失败——因为别名写的是"npm包**发版成功**没"，没覆盖"**审核**"这个侧面。
+ * 侧面是开放集合，靠别名穷举不可能覆盖完。
+ *
+ * 做法：把 active 状态页的**问题标题**作为一段短目录放进 stableContext（不参与排序、
+ * 不改任何检索打分），模型即使没检索到正文，也能看到"有这些状态可查"并自行引用。
+ * 成本：约 100~150 字（8 条 × ≤28 字），状态页周频变化故用 60s 缓存，稳态零额外 IO。
+ */
+const STATUS_PAGE_TTL_MS = 60_000;
+const STATUS_PAGE_MAX = 8;
+const STATUS_PAGE_TITLE_CHARS = 28;
+let statusPageCache: { at: number; text: string } | null = null;
+
+async function buildStatusPageLayer(
+  memory: { list: (o: { scopes?: unknown[] }) => Promise<Array<Record<string, unknown>>> },
+  scopes: unknown[],
+): Promise<string> {
+  const now = Date.now();
+  if (statusPageCache && now - statusPageCache.at < STATUS_PAGE_TTL_MS) {
+    return statusPageCache.text;
+  }
+  try {
+    const all = await memory.list({ scopes });
+    const snaps = all
+      .filter((r) => {
+        const m = (r.metadata ?? {}) as Record<string, unknown>;
+        return m.kindOfSnapshot === "weekly-status" && m.status !== "superseded" && m.status !== "archived";
+      })
+      .toSorted((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")))
+      .slice(0, STATUS_PAGE_MAX);
+    const text = snaps.length === 0
+      ? ""
+      : [
+          "## 记忆状态页（可直接回答「这件事现在怎么样了」）",
+          ...snaps.map((r) => {
+            const m = (r.metadata ?? {}) as Record<string, unknown>;
+            return `- ${String(m.section ?? "").slice(0, STATUS_PAGE_TITLE_CHARS)}`;
+          }),
+        ].join("\n");
+    statusPageCache = { at: now, text };
+    return text;
+  } catch {
+    return ""; // fail-open：目录只是增强，取不到不影响主链路
+  }
+}
+
 export function createMemoryRuntime(params: {
   memory: LeafMem;
   defaultScopes?: MemoryScope[];
@@ -86,7 +135,13 @@ export function createMemoryRuntime(params: {
           : palaceRecall.injectedContext;
       const retrievalLayer =
         params.memory.retrieval.backend === "qmd" ? retrievalRecall.injectedContext : undefined;
-      const stableContext = [activeLayer, navigationLayer].filter(Boolean).join("\n\n").trim();
+      mark("statusPages");
+      const statusPageLayer = await buildStatusPageLayer(
+        params.memory as unknown as { list: (o: { scopes?: unknown[] }) => Promise<Array<Record<string, unknown>>> },
+        scopes,
+      );
+      const stableContext = [activeLayer, statusPageLayer, navigationLayer]
+        .filter(Boolean).join("\n\n").trim();
       // 🔴 2026-10-21：A-MEM 链接邻居块经 layers.linked 跨后端保留（remote-embeddings
       // 模式 palaceLayer 取 retrieval 后端，memory.recall 的 dynamicContext 被丢）——
       // 在组合层显式并入，保证链接上下文不随后端选择丢失。
