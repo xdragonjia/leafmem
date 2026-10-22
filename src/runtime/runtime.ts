@@ -27,22 +27,34 @@ export function createMemoryRuntime(params: {
     async buildRecallContext(turn: MemoryTurnInput) {
       const scopes = turn.scopes ?? [];
       const maxChars = turn.maxChars ?? options.maxRecallChars ?? 4_000;
+      // B0.7 诊断：LEAFMEM_TIMING=1 时分阶段打点。recall 是 UserPromptSubmit 每轮必付的
+      // 成本，没有分段数据就只能靠猜（实测 HTTP 1.5s 而各子调用相加只有 1.05s，
+      // 差额在哪层此前无法定位）。
+      const timing = process.env.LEAFMEM_TIMING === "1";
+      const marks: Array<[string, number]> = [];
+      const mark = (label: string): void => {
+        if (timing) marks.push([label, Date.now()]);
+      };
+      mark("start");
       const palaceRecall = await params.memory.recall({
         query: turn.userMessage,
         recentMessages: turn.recentMessages,
         scopes,
         maxChars,
       });
+      mark("palaceRecall");
       const retrievalRecall = await params.memory.retrieval.recall(turn.userMessage, {
         scopes,
         maxChars,
       });
+      mark("retrievalRecall");
       const activeBlocks = (
         await Promise.all(scopes.map(async (scope) => await params.memory.active.formatRecall(scope)))
       )
         .map((block) => block.trim())
         .filter(Boolean);
       const activeLayer = activeBlocks.join("\n\n");
+      mark("activeBlocks");
       const taskWindow = turn.taskId
         ? await params.memory.task.buildWindow({
             taskId: turn.taskId,
@@ -51,6 +63,7 @@ export function createMemoryRuntime(params: {
             maxChars: Math.max(400, Math.floor(maxChars * 0.35)),
           })
         : null;
+      mark("taskWindow");
       const shouldBuildNavigation =
         retrievalRecall.hits.length > 0 ||
         Boolean(activeLayer) ||
@@ -61,6 +74,7 @@ export function createMemoryRuntime(params: {
             maxChars: maxChars < 300 ? 0 : Math.min(1_200, Math.max(500, Math.floor(maxChars * 0.2))),
           })
         : "");
+      mark("navigation");
       const palaceLayer =
         params.memory.retrieval.backend === "builtin" &&
         params.memory.retrieval.usesRemoteEmbeddings
@@ -77,6 +91,15 @@ export function createMemoryRuntime(params: {
         .filter(Boolean)
         .join("\n\n")
         .trim();
+      if (timing) {
+        mark("assemble");
+        const stages = marks
+          .slice(1)
+          .map(([label, at], i) => `${label}=${at - marks[i][1]}`);
+        console.log(
+          `[leafmem] recall timing ${stages.join(" ")} total=${marks.at(-1)![1] - marks[0][1]}ms`,
+        );
+      }
       return {
         ...palaceRecall,
         injectedContext: [stableContext, dynamicContext].filter(Boolean).join("\n\n").trim(),

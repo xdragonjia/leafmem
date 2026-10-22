@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **rerank 参数由实测确定：`RERANK_TOP_K` 40 → 20、新增 `RERANK_DOC_CHARS`（默认 4000，原先整篇送）**。15 条标注题（答案含唯一数字/ID/路径，判据机械可验）正文覆盖 @1/@3/@8：不启用 rerank 4/5/7、topK40+全文 6/9/10 但 p50 1597ms、**topK20+全文 6/10/10 且 p50 906ms**、topK10 5/9/9。截断长度实测单调（800→4/7/9、2000→5/7/9、4000→6/9/10、不截断→6/9/10），故取 4000 作安全上界。生产端到端 recall p50 **1561ms → 1023ms（-34%）**。
+- **rerank 失败不再静默**：`CrossEncoderReranker` 记录 `lastFailure` 并在降级时输出节流警告（5 分钟一次）。此前 429/超时一律 `return null`，表现为"配了 rerank 却不生效"，只能靠 metadata 里有没有 `rerankScore` 反推。实测 siliconflow 连续约 11 次调用即 429，一次 37 条查询的探针后半段全部降级。
+
 ### Added
+- **`LEAFMEM_TIMING=1` 分阶段耗时打点**（`runtime.buildRecallContext`）：输出 `palaceRecall / retrievalRecall / activeBlocks / taskWindow / navigation / assemble`。此前只知 HTTP 端到端 1.5s，无法判断是哪层；实测稳态 retrievalRecall≈800ms、palaceRecall≈220ms、其余≈4ms。
+- **`ops/daily_chunker.py` 结构分块内核（daily 回流的 v3 分块器）**：段落 / 列表 / 表格 / fenced code 为天然边界（表格与代码块原子不切），超长块再按中文句末标点细分，目标 900 字 / 下限 350 / 硬上限 5200；纯装饰分隔行（`---`）在规范化阶段剔除。**不采用 embedding 语义分块**——NAACL 2025《Is Semantic Chunking Worth the Computational Cost?》结论是额外算力换不来稳定收益，且实测易过碎（均值 43 tokens 时准确率反而低于递归 512 tokens）。
 - **`ops/daily_chunker.py` 结构分块内核（daily 回流的 v3 分块器）**：段落 / 列表 / 表格 / fenced code 为天然边界（表格与代码块原子不切），超长块再按中文句末标点细分，目标 900 字 / 下限 350 / 硬上限 5200；纯装饰分隔行（`---`）在规范化阶段剔除。**不采用 embedding 语义分块**——NAACL 2025《Is Semantic Chunking Worth the Computational Cost?》结论是额外算力换不来稳定收益，且实测易过碎（均值 43 tokens 时准确率反而低于递归 512 tokens）。
 - **面包屑标题前缀写进正文**（`[日期·节标题·k/n]`，增量续写为 `·续N`）：向量与词法两路检索都能看到标题词，零 LLM 成本；Anthropic contextual retrieval 报告该族做法可降 top-20 失败率 35%~49%。
 - **父块锚点**：每条块 metadata 带 `source_file / section / chunk{index,segment_total,seq,chars,span,continued}`，hits 后可回读整节或原文区间（small-to-big 的最小实现）。

@@ -20,6 +20,17 @@ const BASE_FUSION_WEIGHT = 1 - RERANK_FUSION_WEIGHT;
 /** B0.5：精排候选池大小（原 512 硬编码）。见 searchBuiltin 注释。 */
 const PRERANK_POOL = 160;
 
+/**
+ * B0.7（2026-10-22）：送进 cross-encoder 的文档默认截断长度（可用
+ * LEAFMEM_RERANK_DOC_CHARS 覆盖）。
+ *
+ * 实测依据：rerank 端点（BAAI/bge-reranker-v2-m3）延迟随文档总 token 数近似线性上升，
+ * 40 篇 × ~450 字实测 620~885ms，而生产 timeout 只有 3000ms —— 真实记忆条目常有
+ * 3000~5000 字，整篇送进去会**超时降级**（静默退回原序，白付 3 秒）。
+ * 另实测 siliconflow 连续 ~11 次调用后开始 429，payload 越大越容易撞限流。
+ */
+const RERANK_DOC_CHARS_DEFAULT = 4000;
+
 export class RetrievalManager {
   /** B0.6：跨进程持久化文档向量（可选；缺失则退化为纯内存缓存） */
   private readonly vectorCache: RetrievalManagerOptions["vectorCache"] | null;
@@ -30,6 +41,7 @@ export class RetrievalManager {
   private readonly vectorStore: VectorStore | null;
   private readonly reranker: CrossEncoderReranker | null;
   private readonly rerankTopK: number;
+  private readonly rerankDocChars: number;
 
   constructor(private readonly options: RetrievalManagerOptions) {
     this.backend = options.backend ?? "builtin";
@@ -42,7 +54,8 @@ export class RetrievalManager {
     this.vectorCache = options.vectorCache ?? null;
     const rerankConfig = resolveRerankConfigFromEnv();
     this.reranker = rerankConfig ? new CrossEncoderReranker(rerankConfig) : null;
-    this.rerankTopK = rerankConfig?.topK ?? 40;
+    this.rerankTopK = rerankConfig?.topK ?? 20;
+    this.rerankDocChars = rerankConfig?.docChars ?? RERANK_DOC_CHARS_DEFAULT;
   }
 
   /**
@@ -120,8 +133,9 @@ export class RetrievalManager {
     }
     const topK = Math.min(hits.length, this.rerankerTopK());
     const pool = hits.slice(0, topK);
+    // B0.7：截断后再送 cross-encoder（原样整篇送会超时降级，见 RERANK_DOC_CHARS 注释）
     const documents = pool.map((hit) =>
-      hit.record ? buildSearchText(hit.record) : hit.snippet,
+      (hit.record ? buildSearchText(hit.record) : hit.snippet).slice(0, this.rerankDocChars),
     );
     const result = await this.reranker.rerank(query, documents);
     if (!result) {

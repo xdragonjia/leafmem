@@ -23,8 +23,10 @@ export type RerankConfig = {
   apiKey: string;
   /** Request timeout in milliseconds. Default 3000. */
   timeoutMs: number;
-  /** Max documents sent per rerank call. Default 40. */
+  /** Max documents sent per rerank call. Default 20（B0.7 实测最优）。 */
   topK: number;
+  /** 送入 cross-encoder 的每篇文档截断长度（字符）。Default 4000（B0.7 实测）。 */
+  docChars: number;
 };
 
 export type RerankResult = {
@@ -47,12 +49,32 @@ export function resolveRerankConfigFromEnv(
     model,
     apiKey,
     timeoutMs: parsePositiveInt(leafmemEnv("RERANK_TIMEOUT_MS", env), 3000),
-    topK: parsePositiveInt(leafmemEnv("RERANK_TOP_K", env), 40),
+    // B0.7 实测（15 条标注题，正文覆盖 @1/@3/@8）：
+    //   topK40+全文 6/9/10 但 p50 1597ms；topK20+全文 6/10/10 且 p50 906ms；
+    //   topK10 降至 5/9/9。故取 topK=20（质量不降、少 700ms）。
+    topK: parsePositiveInt(leafmemEnv("RERANK_TOP_K", env), 20),
+    // 截断长度实测单调：800→4/7/9、2000→5/7/9、4000→6/9/10、不截断→6/9/10。
+    // 取 4000（覆盖 p99 条目长度，同时给病态超长条目兜底）。
+    docChars: parsePositiveInt(leafmemEnv("RERANK_DOC_CHARS", env), 4000),
   };
 }
 
 export class CrossEncoderReranker {
+  /** 最近一次失败原因（null = 上一次成功）。供上层/探针判断"是否静默降级"。 */
+  lastFailure: string | null = null;
+  private lastLoggedAt = 0;
+
   constructor(private readonly config: RerankConfig) {}
+
+  private noteFailure(reason: string): void {
+    this.lastFailure = reason;
+    const now = Date.now();
+    // 节流：5 分钟内只记一次，避免限流期间刷屏
+    if (now - this.lastLoggedAt > 300_000) {
+      this.lastLoggedAt = now;
+      console.warn(`[leafmem] rerank degraded → fallback to base order: ${reason}`);
+    }
+  }
 
   /**
    * Rerank documents against a query.
@@ -83,6 +105,10 @@ export class CrossEncoderReranker {
         signal: controller.signal,
       });
       if (!response.ok) {
+        // 🔴 2026-10-22：429/5xx 以前是静默 return null，导致"rerank 明明配了却没生效"
+        // 只能靠 metadata 里有没有 rerankScore 反推。实测 siliconflow 连续 ~11 次调用后
+        // 开始 429，一次探针跑 37 条查询时后半段全部降级。此处保留原因供上层告警。
+        this.noteFailure(`HTTP ${response.status}${response.status === 429 ? " (rate limited)" : ""}`);
         return null;
       }
       const payload = (await response.json()) as {
@@ -103,8 +129,11 @@ export class CrossEncoderReranker {
           scores[result.index] = clamp01(result.relevance_score);
         }
       }
+      this.lastFailure = null;
       return { scores, model: payload.model ?? this.config.model };
-    } catch {
+    } catch (error) {
+      const aborted = (error as { name?: string })?.name === "AbortError";
+      this.noteFailure(aborted ? `timeout ${this.config.timeoutMs}ms` : String((error as Error)?.message ?? error));
       return null;
     } finally {
       clearTimeout(timer);
