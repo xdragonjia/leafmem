@@ -17,6 +17,9 @@ const DEFAULT_MAX_RESULTS = 8;
 const RERANK_FUSION_WEIGHT = 0.6;
 const BASE_FUSION_WEIGHT = 1 - RERANK_FUSION_WEIGHT;
 
+/** B0.5：精排候选池大小（原 512 硬编码）。见 searchBuiltin 注释。 */
+const PRERANK_POOL = 160;
+
 export class RetrievalManager {
   readonly backend: "builtin" | "qmd";
   readonly usesRemoteEmbeddings: boolean;
@@ -151,6 +154,22 @@ export class RetrievalManager {
     };
   }
 
+  /**
+   * B0.5（2026-10-22）：文档向量缓存。
+   *
+   * 为什么必须做：searchBuiltin 对 baseHits（最多 512 条）**每次 recall 全量重算**
+   * `provider.embedDocuments()` —— 远程 embedding 下实测单次 recall **9 秒**
+   * （core search 只占 94ms）。这是真实会话注入路径的最大瓶颈。
+   *
+   * 失效判据：`id + updatedAt + modelId`。updatedAt 由 update() 无条件刷新；
+   * modelId 变化（换 embedding 模型/维度）自动全量失效，避免混用不同向量空间。
+   */
+  private readonly docVectorCache = new Map<
+    string,
+    { updatedAt: string; modelId: string; vector: number[] }
+  >();
+  private static readonly DOC_VECTOR_CACHE_MAX = 20_000;
+
   private async searchBuiltin(
     query: string,
     options: { scopes?: MemoryScope[]; maxResults?: number; minScore?: number },
@@ -160,9 +179,12 @@ export class RetrievalManager {
       return this.searchVectorStore(query, options);
     }
 
+    // B0.5：粗排池 512→160。remote embedding 是对池内**每条**文档算向量，
+    // 512 条一次批量请求实测 4~9s；降到 160 后请求量 -69%，而 recall 最终只取 top-8，
+    // core 打分（lexical 0.45 + hash 0.35）已保证粗排质量，精排池 160 足够。
     const baseHits = await this.options.memory.search(query, {
       scopes: options.scopes,
-      maxResults: 512,
+      maxResults: PRERANK_POOL,
       minScore: 0,
     });
     if (baseHits.length === 0) {
@@ -183,10 +205,42 @@ export class RetrievalManager {
     }
 
     const queryEmbedding = await provider.embedQuery(query);
-    const documents = baseHits.map((hit) => buildSearchText(hit.record));
-    const vectors = await provider.embedDocuments(documents);
-    const combined = baseHits.map((hit, index) => {
-      const vector = vectors[index] ?? [];
+    const modelId = (provider as { id?: string }).id ?? "hash";
+    // B0.5：只对「缓存缺失 / updatedAt 变化 / 模型变化」的文档调用远程 embedding
+    const missing: Array<{ id: string; updatedAt: string; text: string }> = [];
+    for (const hit of baseHits) {
+      const cached = this.docVectorCache.get(hit.record.id);
+      if (!cached || cached.updatedAt !== hit.record.updatedAt || cached.modelId !== modelId) {
+        missing.push({
+          id: hit.record.id,
+          updatedAt: hit.record.updatedAt,
+          text: buildSearchText(hit.record),
+        });
+      }
+    }
+    if (missing.length > 0) {
+      const fresh = await provider.embedDocuments(missing.map((item) => item.text));
+      missing.forEach((item, index) => {
+        const vector = fresh[index];
+        if (vector) {
+          this.docVectorCache.set(item.id, {
+            updatedAt: item.updatedAt,
+            modelId,
+            vector: vector as number[],
+          });
+        }
+      });
+      if (this.docVectorCache.size > RetrievalManager.DOC_VECTOR_CACHE_MAX) {
+        const drop = Math.floor(RetrievalManager.DOC_VECTOR_CACHE_MAX / 5);
+        let i = 0;
+        for (const key of this.docVectorCache.keys()) {
+          if (i++ >= drop) break;
+          this.docVectorCache.delete(key);
+        }
+      }
+    }
+    const combined = baseHits.map((hit) => {
+      const vector = this.docVectorCache.get(hit.record.id)?.vector ?? [];
       const vectorScore = clamp(cosineSimilarity(queryEmbedding, vector), 0, 1);
       return {
         source: "builtin" as const,
