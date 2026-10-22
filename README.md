@@ -512,7 +512,15 @@ python3 ops/ingest-daily-logs.py --rebuild-state                # state 丢失�
 **写入纪律**：走 HTTP API + `dedupe:false`（状态页必须独立成条，不能被 0.85 相似度合并）；
 更新元数据带 `preserveUpdatedAt:true`（否则 recency 被抬高）。
 
-生成器见项目侧 `leafmem-productization/scripts/status_page_gen.py`（周频，挂维护任务）。
+生成器：`ops/status_page_gen.py`（随仓分发）。常用用法：
+
+```bash
+python3 ops/status_page_gen.py --since 7                 # dry-run，只看会生成什么
+python3 ops/status_page_gen.py --since 7 --apply         # 写入 + 自动演化旧期
+python3 ops/status_page_gen.py --evolve-only             # 只做同主题清理（不调 LLM）
+python3 ops/status_page_gen.py --backfill-refs           # 给已有状态页补 source_refs
+```
+
 
 ---
 
