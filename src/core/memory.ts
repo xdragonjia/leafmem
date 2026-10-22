@@ -1284,12 +1284,20 @@ export class LeafMem {
       // Custom (P0-3 hardening, 2026-08-07): JOIN memory_items so stale FTS rows
       // (left over from deleted records) cannot occupy the LIMIT 30 quota —
       // measured 16/30 slots wasted before this fix.
+      //
+      // 🔴 2026-10-22（E3）：再加一道 —— **已失效记录不得参与 FTS**。
+      // E3 把 2,411 条标成 superseded 后实测 6 条查询的 fts 分项漂移 0.066~0.538：
+      // 它们既占满 LIMIT 30 的名额，又通过 idf 影响全库 BM25 统计量。
+      // 语义上也说不通：**已被取代的事实不该影响"当前"答案的排序**。
       const rows = db
         .prepare(
           `SELECT fts.id, bm25(memory_items_fts) AS bm25
            FROM memory_items_fts AS fts
            JOIN memory_items AS m ON m.id = fts.id
            WHERE memory_items_fts MATCH ?${scopeFilter}
+             AND COALESCE(json_extract(m.metadata_json,'$.status'),'active')
+                 NOT IN ('superseded','archived')
+             AND COALESCE(json_extract(m.metadata_json,'$.supersededBy'),'') = ''
            ORDER BY bm25(memory_items_fts) LIMIT 30`,
         )
         .all(ftsQuery, ...scopeArgs) as { id: string; bm25: number }[];
