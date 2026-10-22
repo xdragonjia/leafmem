@@ -464,7 +464,8 @@ export class LeafMem {
       if (patch.kind !== undefined) record.kind = patch.kind;
       if (patch.scope !== undefined) record.scope = normalizeScope(patch.scope);
       if (patch.metadata !== undefined) record.metadata = patch.metadata ? { ...patch.metadata } : undefined;
-      record.updatedAt = nowIso;
+      // B3：元数据维护不得冒充实内容更新（否则 recency 被整体抬高）
+      if (patch.preserveUpdatedAt !== true) record.updatedAt = nowIso;
 
       await this.persistRecord(records, record);
       await this.syncDerivedState(record);

@@ -530,3 +530,27 @@ test("E1: 无法识别的 status 按 active 处理（宁多召回，不误杀）
   const hits = await memory.search("E1 脏值样本 状态字段", { scopes: [scope] });
   assert.ok(hits.some((hit) => hit.record.id === weird.id), "未知状态不应被当成失效");
 });
+
+test("B3: preserveUpdatedAt=true 时元数据维护不刷新 updatedAt（不污染 recency）", async () => {
+  // 固定时钟，保证两次写入的时间戳可判等
+  let tick = 0;
+  const memory = createLeafMem({
+    store: new InMemoryStore(),
+    now: () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)),
+  });
+  const scope = { type: "agent" as const, id: "workbuddy" };
+  const rec = await memory.remember({
+    scope, kind: "fact", content: "B3 回填样本：本条只做元数据维护。", dedupe: false,
+  });
+  const before = rec.updatedAt;
+
+  const kept = await memory.update(rec.id, {
+    metadata: { ...rec.metadata, eventTime: "2026-01-01", eventTimeSrc: "body" },
+    preserveUpdatedAt: true,
+  });
+  assert.equal(kept?.updatedAt, before, "回填类更新必须保持 updatedAt 不变");
+  assert.equal(kept?.metadata?.eventTime, "2026-01-01");
+
+  const touched = await memory.update(rec.id, { metadata: { ...kept!.metadata, status: "archived" } });
+  assert.notEqual(touched?.updatedAt, before, "普通更新仍然刷新 updatedAt（原有行为不变）");
+});

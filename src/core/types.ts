@@ -50,6 +50,16 @@ export type MemoryInput = {
    * 极值 0.917），走模糊合并会把不同块覆盖成一条，等于丢知识。
    */
   dedupe?: boolean;
+  /**
+   * 2026-10-22（B3）：更新时**不刷新 updatedAt**。
+   *
+   * 只用于"元数据维护"类写入（回填 eventTime、标记 superseded/archived）。
+   * 为什么必须存在：recency 打分取 max(lastRecalledAt, updatedAt)，
+   * 若回填 4,300 条把 updatedAt 全刷成 now，等于宣称"这些全部是刚更新的"，
+   * 1 年前的记录 recency 从 0.2 抬到 1.0（权重 0.08 ⇒ +0.064 分），
+   * 排序被系统性污染，且语义上是假话。
+   */
+  preserveUpdatedAt?: boolean;
 };
 
 export type MemorySearchOptions = {

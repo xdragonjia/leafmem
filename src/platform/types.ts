@@ -107,6 +107,8 @@ export type MemoryRecordRef = {
 };
 
 export type UpdateMemoryInput = {
+  /** 元数据维护类写入（回填/标记）传 true：不刷新 updatedAt，避免污染 recency */
+  preserveUpdatedAt?: boolean;
   kind?: string;
   content?: string;
   summary?: string;
