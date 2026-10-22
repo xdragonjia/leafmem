@@ -75,6 +75,15 @@ VERDICT_WORDS = (
     "暂停", "告警", "达标", "未达", "待处理", "已结束",
 )
 VERDICT_HEAD_CHARS = 24
+# 🔴 光靠词表子串匹配不行：中文状态词变体太多，第 5 轮 dry-run 又漏了「已成功发布」
+# （词表有"已发布"，但"已成功发布"不含这个连续子串）。
+# 故补两类**结构性**判据，不靠穷举：
+#   ① 结论句以状态前缀起头（已/未/待/无/暂/正/当前…）——"已成功发布""已经解决"全覆盖
+#   ② 前 12 字出现状态动词（完成/解决/发布/上线…）——覆盖"安装器已完成修复"这类主语开头
+VERDICT_PREFIXES = ("已", "未", "待", "无", "暂", "正", "当前", "目前", "整体", "一切", "现在")
+VERDICT_VERBS = ("完成", "解决", "发布", "上线", "排程", "关闭", "回滚", "恢复", "部署",
+                 "合并", "确认", "达标", "失败", "异常", "中断", "暂停", "告警", "修复", "通过")
+VERDICT_VERB_CHARS = 12
 
 
 def fail(msg: str) -> None:
@@ -346,6 +355,16 @@ def _fix_id_typo(bad: str, all_ids: set[str]) -> str | None:
     return cands[0] if len(cands) == 1 else None
 
 
+def _verdict_ok(answer: str) -> bool:
+    """状态页是否「结论先行」：读者读第一句就知道当前状态。"""
+    head = answer[:VERDICT_HEAD_CHARS]
+    if head.startswith(VERDICT_PREFIXES):
+        return True
+    if any(w in head for w in VERDICT_WORDS):
+        return True
+    return any(w in answer[:VERDICT_VERB_CHARS] for w in VERDICT_VERBS)
+
+
 def validate(pages: list[dict], valid_ids: set[str],
              prev_ids: set[str] | None = None,
              all_ids: set[str] | None = None) -> tuple[list[dict], list[str], list[str]]:
@@ -380,8 +399,8 @@ def validate(pages: list[dict], valid_ids: set[str],
             why.append(f"aliases 不足 2 个（{len(aliases)}）")
         if len(answer) < 60:
             why.append(f"answer 过短（{len(answer)} 字）")
-        if not any(w in answer[:VERDICT_HEAD_CHARS] for w in VERDICT_WORDS):
-            why.append(f"answer 前 {VERDICT_HEAD_CHARS} 字无状态词（结论不先行）：{answer[:20]}")
+        if not _verdict_ok(answer):
+            why.append(f"结论不先行（前 {VERDICT_HEAD_CHARS} 字无状态词）：{answer[:20]}")
         # id 校验：不存在 → 尝试单字符笔误纠错（唯一候选才纠）
         fixed_supports, bad_ids = [], []
         for s in supports:
