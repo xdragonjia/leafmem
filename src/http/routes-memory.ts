@@ -127,6 +127,10 @@ export async function handleMemoryRoutes(
     const context = writeContext(ctx.projectId, url, body.context, body.scope);
     const record = await ctx.platform.writeMemory({
       context: context as any,
+      // 🔴 2026-10-22：此前单条创建**没有透传 dedupe**，导致 dedupe:false 在单条路径被静默忽略
+      // （实测：恢复脚本写回一条与既有块同文的记录，被 0.85 合并进原块并返回其 id，
+      //  随后按该 id 删除，误删了真实块）。批量路径早已透传，单条漏了。
+      dedupe: body.dedupe === false ? false : undefined,
       kind: (body.kind as string) ?? "note",
       content: (body.content as string) ?? "",
       summary: body.summary as string | undefined,

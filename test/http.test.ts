@@ -228,6 +228,20 @@ describe("LeafMem HTTP API", () => {
     assert.equal(scope.id, projectId);
   });
 
+  it("单条 POST 透传 dedupe:false（2026-10-22 修复：此前只有批量路径透传）", async () => {
+    const body = { kind: "fact", content: "Dedupe single-create probe: 同一句话写两次。", dedupe: false };
+    const a = await api("/v1/memories", { method: "POST", body: JSON.stringify(body) });
+    const b = await api("/v1/memories", { method: "POST", body: JSON.stringify(body) });
+    const ra = (await a.json()) as Record<string, unknown>;
+    const rb = (await b.json()) as Record<string, unknown>;
+    assert.notEqual(ra.id, rb.id, "dedupe:false 时必须各自成条（不得被 0.85 合并）");
+
+    // 默认（不传 dedupe）仍走原有去重语义：同文再写一次会合并进既有条
+    const c = await api("/v1/memories", { method: "POST", body: JSON.stringify({ ...body, dedupe: undefined }) });
+    const rc = (await c.json()) as Record<string, unknown>;
+    assert.ok([ra.id, rb.id].includes(rc.id), "默认路径仍应合并到既有条（原有行为不变）");
+  });
+
   it("GET /v1/memories returns a list", async () => {
     // Write a memory first
     await api("/v1/memories", {
