@@ -49,6 +49,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **基准脚本按 6,000 字上限切块**（`benchmarks/longmemeval/bench.ts`）：`remember` 自 2026-09-11 起有
+  单条 6,000 字上限（防超大 blob 让上游整体 400），而 LongMemEval 数据里存在 15,058 字的会话
+  ⇒ 基准自那时起**实际已无法运行**（`memory content too long`）。现按产品真实形态切块入库
+  （优先换行、其次句号），并在 metadata 标 `part/partOf`。
+  🔴 因此 **2026-10-22 起的 LME 数字与 2026-08-11 旧数字不可直接比较**（测试方法变了）。
+- README §3.7 修正为「v0.3.24 引入、当前默认关闭」，并写明 A/B 实测结论与重新启用的条件。
 - 卫生守卫（`memory_hygiene_check.py`，项目脚本）此前只查 `supersededBy` **悬空**，查不出
   "该有却没有"——库里 superseded 指针全空时它一直报 OK。新增 `superseded_no_ptr` 判据
   （反向实测：副本库构造 1 条缺陷 → exit 1 并精确报出）。

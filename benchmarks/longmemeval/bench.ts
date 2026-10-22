@@ -192,6 +192,29 @@ function buildSessionText(session: Record<string, Turn>, date?: string): string 
   return (date ? `[Date: ${date}]\n` : "") + turns.join("\n");
 }
 
+/**
+ * 按 `remember` 的单条上限切块（2026-10-22 新增）。
+ *
+ * 背景：`MAX_MEMORY_CONTENT_CHARS = 6000`（2026-09-11 引入，防超大 blob 让上游整体 400）。
+ * LME 数据里存在 15,058 字的会话 ⇒ 不切块就跑不动，基准自那时起实际已失效。
+ * 切块优先落在换行、其次句号，避免把一轮对话从中间截断。
+ */
+function splitForStorage(text: string, max = 5800): string[] {
+  if (text.length <= max) return [text];
+  const out: string[] = [];
+  let rest = text;
+  while (rest.length > max) {
+    let cut = rest.lastIndexOf("\n", max);
+    if (cut < max * 0.5) cut = rest.lastIndexOf("。", max);
+    if (cut < max * 0.5) cut = rest.lastIndexOf(". ", max);
+    if (cut < max * 0.5) cut = max;
+    out.push(rest.slice(0, cut + 1));
+    rest = rest.slice(cut + 1);
+  }
+  if (rest) out.push(rest);
+  return out;
+}
+
 function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
 }
@@ -365,14 +388,25 @@ async function main() {
       const sid = q.haystack_session_ids[si];
       sessionTexts.push(text);
       sessionIds.push(sid);
-      await memory.remember({
-        scope: { type: "session", id: sid },
-        kind: "session",
-        content: text,
-        importance: 0.5,
-        tags: [],
-        metadata: { sessionId: sid, date: q.haystack_dates[si] },
-      });
+      // 🔴 2026-10-22：`remember` 自 2026-09-11 起有单条 6,000 字上限
+      // （过大的 blob 会让上游 embedding/存储整体 400）。实测 LME 存在 15,058 字的会话，
+      // 直接入库会抛 `memory content too long` ⇒ 基准自 09-11 起已无法复现。
+      // 这里按产品真实形态切块入库（与生产 daily_chunker 的结构分块同语义：优先段落/句边界）。
+      const parts = splitForStorage(text);
+      for (let pi = 0; pi < parts.length; pi += 1) {
+        await memory.remember({
+          scope: { type: "session", id: sid },
+          kind: "session",
+          content: parts[pi],
+          importance: 0.5,
+          tags: [],
+          metadata: {
+            sessionId: sid,
+            date: q.haystack_dates[si],
+            ...(parts.length > 1 ? { part: pi + 1, partOf: parts.length } : {}),
+          },
+        });
+      }
     }
 
     // Get base hits (larger pool for reranking, but bounded to reduce embedding cost)
