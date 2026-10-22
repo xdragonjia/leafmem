@@ -67,6 +67,11 @@ export type LeafMemOptions = {
   retrieval?: {
     backend?: "builtin" | "qmd";
     vectorStore?: VectorStore;
+    /** B0.6（2026-10-22）：文档向量持久缓存（跨进程）；缺失则纯内存缓存。 */
+    vectorCache?: {
+      getMany(ids: string[], modelId: string): Map<string, { updatedAt: string; modelId: string; vector: number[] }>;
+      putMany(entries: Array<{ id: string; updatedAt: string; modelId: string; vector: number[] }>): void;
+    };
     embeddings?: {
       provider: "openai" | "gemini" | "voyage" | "script" | "auto";
       model?: string;
@@ -210,6 +215,10 @@ export class LeafMem {
       vectorStore: options.retrieval?.vectorStore,
       embeddings: options.retrieval?.embeddings,
       qmd: options.retrieval?.qmd,
+      // 🔴 2026-10-22：新增可选能力必须在此显式透传。漏了这一行的后果是
+      // vectorCache 恒为 null，而 fail-open 让整条链路**静默降级**（既不报错也不建表），
+      // 只能靠"验证产物存在"（查 memory_vectors 行数）才发现。
+      vectorCache: options.retrieval?.vectorCache,
     });
     this.maintenance = new MaintenanceManager({
       active: this.active,

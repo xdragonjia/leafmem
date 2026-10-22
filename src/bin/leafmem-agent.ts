@@ -22,6 +22,7 @@ import { createLeafMemServer } from "../http/server.js";
 import { SqliteInspectEventStore } from "../inspect/sqlite-store.js";
 import { defaultMemoryMcpStoragePath } from "../mcp/stdio.js";
 import { LeafMemPlatformService } from "../platform/service.js";
+import { SqliteVectorCache } from "../retrieval/vector-cache.js";
 import { ProjectStore } from "../auth/project.js";
 import { SqliteEntityStore, RuleBasedEntityExtractor } from "../entity/index.js";
 import { startAgentImportScheduler } from "../agents/import-scheduler.js";
@@ -527,7 +528,12 @@ async function runServe(input: AgentServiceOptions): Promise<void> {
     },
     // Custom: wire retrieval config from env so the console recall path uses
     // the same semantic retrieval (+ cross-encoder rerank) as production MCP.
-    retrieval: buildServeRetrievalConfig(process.env),
+    // B0.6（2026-10-22）：文档向量落盘到同一个 sqlite（表 memory_vectors），
+    // 避免进程重启/扩容后每次首次 recall 重算 4~6s 远程 embedding。
+    retrieval: {
+      ...buildServeRetrievalConfig(process.env),
+      vectorCache: new SqliteVectorCache(config.storagePath),
+    },
     // Custom (2026-08-07 P0-1): entity subsystem (strict vocab, zero LLM).
     entityStore: new SqliteEntityStore(config.storagePath),
     entityExtractor: new RuleBasedEntityExtractor({ strict: true }),

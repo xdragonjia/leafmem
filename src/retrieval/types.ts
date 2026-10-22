@@ -36,4 +36,9 @@ export type RetrievalManagerOptions = {
   qmd?: MemoryQmdConfig;
   embeddingProvider?: MemoryEmbeddingProvider;
   vectorStore?: VectorStore;
+  /** B0.6（2026-10-22）：文档向量的持久缓存（跨进程）。缺失则退化为纯内存缓存。 */
+  vectorCache?: {
+    getMany(ids: string[], modelId: string): Map<string, { updatedAt: string; modelId: string; vector: number[] }>;
+    putMany(entries: Array<{ id: string; updatedAt: string; modelId: string; vector: number[] }>): void;
+  };
 };

@@ -21,6 +21,8 @@ const BASE_FUSION_WEIGHT = 1 - RERANK_FUSION_WEIGHT;
 const PRERANK_POOL = 160;
 
 export class RetrievalManager {
+  /** B0.6：跨进程持久化文档向量（可选；缺失则退化为纯内存缓存） */
+  private readonly vectorCache: RetrievalManagerOptions["vectorCache"] | null;
   readonly backend: "builtin" | "qmd";
   readonly usesRemoteEmbeddings: boolean;
   private embeddingProviderPromise: Promise<MemoryEmbeddingProvider | null> | null;
@@ -37,6 +39,7 @@ export class RetrievalManager {
       : createEmbeddingProvider(options.embeddings);
     this.qmdBackend = options.qmd?.enabled ? new QmdRetrievalBackend(options.qmd) : null;
     this.vectorStore = options.vectorStore ?? null;
+    this.vectorCache = options.vectorCache ?? null;
     const rerankConfig = resolveRerankConfigFromEnv();
     this.reranker = rerankConfig ? new CrossEncoderReranker(rerankConfig) : null;
     this.rerankTopK = rerankConfig?.topK ?? 40;
@@ -205,12 +208,46 @@ export class RetrievalManager {
     }
 
     const queryEmbedding = await provider.embedQuery(query);
-    const modelId = (provider as { id?: string }).id ?? "hash";
-    // B0.5：只对「缓存缺失 / updatedAt 变化 / 模型变化」的文档调用远程 embedding
-    const missing: Array<{ id: string; updatedAt: string; text: string }> = [];
+    // 🔴 modelId 必须含**具体模型名**：只用 provider.id（如 "openai"）时，
+    // 同一 provider 下换模型（bge-m3 → bge-large）缓存不会失效 ⇒ 混用不同向量空间，
+    // 相似度计算失去意义。取不到 model 时降级为 "default"。
+    const modelId = `${(provider as { id?: string }).id ?? "hash"}:${this.options.embeddings?.model ?? "default"}`;
+    // B0.6：三级查找 —— 进程内 Map → SQLite 持久表 → 远程 embedding。
+    // 落盘的意义：进程重启不丢、E3 扩容后命中率不退化（否则每次重启首次 recall 4~6s）。
+    const resolved = new Map<string, number[]>();
+    const needFromDb: string[] = [];
     for (const hit of baseHits) {
       const cached = this.docVectorCache.get(hit.record.id);
-      if (!cached || cached.updatedAt !== hit.record.updatedAt || cached.modelId !== modelId) {
+      if (cached && cached.updatedAt === hit.record.updatedAt && cached.modelId === modelId) {
+        resolved.set(hit.record.id, cached.vector);
+      } else {
+        needFromDb.push(hit.record.id);
+      }
+    }
+    if (needFromDb.length > 0 && this.vectorCache) {
+      try {
+        const rows = this.vectorCache.getMany(needFromDb, modelId) as Map<
+          string,
+          { updatedAt: string; modelId: string; vector: number[] }
+        >;
+        for (const hit of baseHits) {
+          const row = rows.get(hit.record.id);
+          if (row && row.updatedAt === hit.record.updatedAt) {
+            resolved.set(hit.record.id, row.vector);
+            this.docVectorCache.set(hit.record.id, {
+              updatedAt: row.updatedAt,
+              modelId,
+              vector: row.vector,
+            });
+          }
+        }
+      } catch {
+        /* fail-open：缓存不可用则走远程 */
+      }
+    }
+    const missing: Array<{ id: string; updatedAt: string; text: string }> = [];
+    for (const hit of baseHits) {
+      if (!resolved.has(hit.record.id)) {
         missing.push({
           id: hit.record.id,
           updatedAt: hit.record.updatedAt,
@@ -230,6 +267,26 @@ export class RetrievalManager {
           });
         }
       });
+      if (this.vectorCache) {
+        try {
+          this.vectorCache.putMany(
+            missing
+              .map((item) => {
+                const cachedNow = this.docVectorCache.get(item.id);
+                return cachedNow && cachedNow.updatedAt === item.updatedAt
+                  ? { id: item.id, updatedAt: item.updatedAt, modelId, vector: cachedNow.vector }
+                  : null;
+              })
+              .filter((x): x is { id: string; updatedAt: string; modelId: string; vector: number[] } => x !== null),
+          );
+          for (const item of missing) {
+            const cachedNow = this.docVectorCache.get(item.id);
+            if (cachedNow) resolved.set(item.id, cachedNow.vector);
+          }
+        } catch {
+          /* fail-open */
+        }
+      }
       if (this.docVectorCache.size > RetrievalManager.DOC_VECTOR_CACHE_MAX) {
         const drop = Math.floor(RetrievalManager.DOC_VECTOR_CACHE_MAX / 5);
         let i = 0;
@@ -240,7 +297,7 @@ export class RetrievalManager {
       }
     }
     const combined = baseHits.map((hit) => {
-      const vector = this.docVectorCache.get(hit.record.id)?.vector ?? [];
+      const vector = resolved.get(hit.record.id) ?? this.docVectorCache.get(hit.record.id)?.vector ?? [];
       const vectorScore = clamp(cosineSimilarity(queryEmbedding, vector), 0, 1);
       return {
         source: "builtin" as const,
