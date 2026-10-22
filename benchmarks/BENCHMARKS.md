@@ -20,7 +20,7 @@ LeafMem 在三个配置层级下测试（层级名定义 2026-08-11 更新）：
 |---|---|---|---|---|---|---|---|
 | **LongMemEval** (500q) | Builtin | 89.0% | 93.4% | 0.825 | 35ms/q | None | $0 |
 | **LongMemEval** (500q) | + BGE-M3 embedding | 待重测 | 待重测 | 待重测 | — | None | ~$0 |
-| **LongMemEval** (500q) | 默认配置（+ 重排） | 重测中 | 重测中 | 重测中 | — | None | ~$0 |
+| **LongMemEval** (500q) | 默认配置（+ 重排） | 96.8% | 98.2% | 0.921 | 4.0s/q | None | ~$0 |
 | **LongMemEval** (500q) | **+ Gemini embedding（历史）** | **96.2%** | **97.6%** | 0.902 | 3.6s/q | None | ~$0.24 |
 | **LoCoMo** (1986q) | Builtin | 84.2% | 92.0% | 0.734 | 2.2ms/q | None | $0 |
 | **LoCoMo** (1986q) | + BGE-M3 embedding | 88.4% | 94.9% | 0.790 | 142ms/q | None | ~$0 |
