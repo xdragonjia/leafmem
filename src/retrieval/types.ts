@@ -28,7 +28,16 @@ export interface MemoryEmbeddingProvider {
 
 export type RetrievalManagerOptions = {
   memory: {
-    search(query: string, options?: { scopes?: MemoryScope[]; maxResults?: number; minScore?: number }): Promise<MemorySearchHit[]>;
+    // 2026-10-22：把 E1/E4 的检索选项一并开放——否则 retrieval 层无法把
+    // includeInactive / asOf / freshnessBias 传给 core（漏一个就是"选项被静默丢弃"）。
+    search(query: string, options?: {
+      scopes?: MemoryScope[];
+      maxResults?: number;
+      minScore?: number;
+      includeInactive?: boolean;
+      asOf?: string;
+      freshnessBias?: boolean;
+    }): Promise<MemorySearchHit[]>;
     list(options?: { scopes?: MemoryScope[]; limit?: number }): Promise<MemoryRecord[]>;
   };
   backend?: MemoryRetrievalBackend;

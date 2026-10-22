@@ -100,6 +100,8 @@ export class RetrievalManager {
       includeInactive?: boolean;
       /** E1：as-of 切片（eventTime <= asOf） */
       asOf?: string;
+      /** E4：新鲜度通道（T2） */
+      freshnessBias?: boolean;
     } = {},
   ): Promise<RetrievalHit[]> {
     const limit = Math.max(1, options.maxResults ?? DEFAULT_MAX_RESULTS);
@@ -184,6 +186,8 @@ export class RetrievalManager {
       includeInactive?: boolean;
       /** E1：as-of 切片（eventTime <= asOf） */
       asOf?: string;
+      /** E4：新鲜度通道（T2） */
+      freshnessBias?: boolean;
     } = {},
   ): Promise<RetrievalRecallResult> {
     const hits = await this.search(query, options);
@@ -212,7 +216,14 @@ export class RetrievalManager {
 
   private async searchBuiltin(
     query: string,
-    options: { scopes?: MemoryScope[]; maxResults?: number; minScore?: number },
+    options: {
+      scopes?: MemoryScope[];
+      maxResults?: number;
+      minScore?: number;
+      includeInactive?: boolean;
+      asOf?: string;
+      freshnessBias?: boolean;
+    },
   ): Promise<RetrievalHit[]> {
     // Fast path: use vector store for ANN search if available
     if (this.vectorStore) {
@@ -226,6 +237,11 @@ export class RetrievalManager {
       scopes: options.scopes,
       maxResults: PRERANK_POOL,
       minScore: 0,
+      // 🔴 必须显式透传：漏传的后果是"选项在 retrieval 层被静默丢弃"，
+      // 表现为"开了 T2 却没效果"（与 B0.6 漏传 vectorCache 同族）。
+      includeInactive: options.includeInactive,
+      asOf: options.asOf,
+      freshnessBias: options.freshnessBias,
     });
     if (baseHits.length === 0) {
       return [];

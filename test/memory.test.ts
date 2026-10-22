@@ -554,3 +554,23 @@ test("B3: preserveUpdatedAt=true 时元数据维护不刷新 updatedAt（不污�
   const touched = await memory.update(rec.id, { metadata: { ...kept!.metadata, status: "archived" } });
   assert.notEqual(touched?.updatedAt, before, "普通更新仍然刷新 updatedAt（原有行为不变）");
 });
+
+test("E4: freshnessBias 默认关闭；开启后不改变候选集合（只可能微调顺序）", async () => {
+  const memory = createLeafMem({ store: new InMemoryStore() });
+  const scope = { type: "agent" as const, id: "workbuddy" };
+  const old = await memory.remember({
+    scope, kind: "fact", content: "E4 新鲜度样本：旧结论是备份断链未查明。",
+    metadata: { eventTime: "2026-01-05" }, dedupe: false,
+  });
+  const fresh = await memory.remember({
+    scope, kind: "fact", content: "E4 新鲜度样本：新结论是备份断链因 state 未留存。",
+    metadata: { eventTime: "2026-10-20" }, dedupe: false,
+  });
+  const base = await memory.search("E4 新鲜度样本 备份断链", { scopes: [scope], maxResults: 10 });
+  const biased = await memory.search("E4 新鲜度样本 备份断链", {
+    scopes: [scope], maxResults: 10, freshnessBias: true,
+  });
+  const ids = (hits: typeof base) => hits.map((h) => h.record.id).sort();
+  assert.deepEqual(ids(biased), ids(base), "T2 只调顺序，不增删候选");
+  assert.ok(ids(base).includes(old.id) && ids(base).includes(fresh.id));
+});

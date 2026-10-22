@@ -77,6 +77,16 @@ export type MemorySearchOptions = {
    * **eventTime 缺失的记录仍然可见**（未知时间不判为未来，否则一次查询丢掉 12.5% 记忆）。
    */
   asOf?: string;
+  /**
+   * E4（2026-10-22）：开启"新鲜度通道"（T2）。
+   *
+   * 做法：候选池 = {相关性 ≥ minScore} ∪ {按 eventTime 取最新 N 条}；
+   * 仅靠时间入场的候选加 `TIME_PRIOR_BOOST`，仍按原 score 排序。
+   * 为什么不是直接把时间塞进主分：B0.7 实测权重 0.09/0.12/0.18 会让 top-10
+   * 与基线重合度掉到 0.84/0.79/0.69，且无法证明是改善。
+   * 默认 false —— 只在"最新/进展/还剩"这类过程型查询上按需开。
+   */
+  freshnessBias?: boolean;
 };
 
 export type MemorySearchHit = {

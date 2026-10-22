@@ -11,7 +11,7 @@ import { InMemoryTaskContextStore, SqliteTaskContextStore } from "../task/store.
 import type { MemoryInferencer, MemoryStorageBackend } from "../system/types.js";
 import { cosineSimilarity, embedTextHash } from "./hash-embedding.js";
 import { buildEnrichment } from "./enrich.js";
-import { isSearchable } from "./temporal.js";
+import { isSearchable, temporalSortKey } from "./temporal.js";
 import type { MemoryEvaluator } from "./evaluator.js";
 import { InMemoryStore, SqliteMemoryStore } from "./storage.js";
 import {
@@ -127,6 +127,11 @@ export type LeafMemOptions = {
 // remember() and update() (update previously bypassed the gate). Chosen below
 // the observed bge-m3 per-item embedding failure point (5318 chars OK, 7951
 // chars -> recall 400) and above the longest legitimate record (5318).
+/** T2 新鲜度通道：时间上取最新多少条候选（B0.7 里的时间通道同为 top-20 量级） */
+const FRESHNESS_POOL = 20;
+/** T2 加成：弱于 fts 0.22 / entity 0.18 / principle 0.10——时间只表示"值得看一眼" */
+const TIME_PRIOR_BOOST = 0.06;
+
 export const MAX_MEMORY_CONTENT_CHARS = 6000;
 
 export class LeafMem {
@@ -995,16 +1000,35 @@ export class LeafMem {
           fts * FTS_MATCH_BOOST +
           principle * PRINCIPLE_BOOST) *
         validUntilPenalty;
-      if (score < (options.minScore ?? 0.18)) {
-        continue;
-      }
-      hits.push({
+      const hit: MemorySearchHit = {
         record,
         score,
         reasons: { lexical, hash, recency, importance, scope, entity, fts, principle },
         snippet: buildSnippet(record.content, queryTokens),
         evidence: buildEvidenceRef(record),
-      });
+      };
+      if (score >= (options.minScore ?? 0.18)) {
+        hits.push(hit);
+      }
+    }
+
+    // T2 新鲜度通道（E4 实测修订版）：
+    // 原设计是"让低于阈值的候选按时间入场"，但实测 minScore=0.18 **一条都切不掉**
+    // （6,101 条记录里，即使毫无词法匹配，hash 相似度 + recency + importance 的基线
+    //  就已超过 0.18，maxResults=200 时 200 条全满）⇒ 入场机制无事可做。
+    // 改为：对"时间上最新的 N 条"在**排序内**给一个小加权，再统一排序。
+    // 语义仍是"值得看一眼"，且不改变 minScore 语义。
+    if (options.freshnessBias && hits.length > 0) {
+      const topByTime = new Set(
+        scopedRecords
+          .map((r) => ({ id: r.id, key: temporalSortKey(r) }))
+          .sort((a, b) => b.key - a.key)
+          .slice(0, FRESHNESS_POOL)
+          .map((x) => x.id),
+      );
+      for (const hit of hits) {
+        if (topByTime.has(hit.record.id)) hit.score += TIME_PRIOR_BOOST;
+      }
     }
 
     return hits
