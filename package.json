@@ -128,6 +128,7 @@
     "ops/ingest-daily-logs.py",
     "ops/consolidation.js",
     "ops/build-release.sh",
+    "ops/publish-release.sh",
     "ops/status_page_gen.py"
   ],
   "scripts": {

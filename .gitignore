@@ -6,7 +6,9 @@ dist/
 benchmarks/locomo/*.json
 benchmarks/longmemeval/*.json
 benchmarks/results/
-release/
+release/*
+# 发版说明留档：每次发版的 Release notes 进仓库，下次发版可直接对照上一版格式
+!release/notes-*.md
 
 # Python 缓存（打包前剔除）
 __pycache__/
