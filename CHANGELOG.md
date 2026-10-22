@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 （暂无）
 
+## [0.3.25] - 2026-10-22
+
+### Added
+- **`ops/status_page_gen.py` 入库（随仓分发）**：状态页生成器原先放在私有项目目录，
+  而 README §3.7 直接引用了那个路径 ⇒ **对分发用户是死引用**。现随仓分发，四个模式：
+  `--since N`（dry-run）/ `--apply` / `--evolve-only`（只做同主题清理）/ `--backfill-refs`（补 `source_refs`）。
+- **`LEAFMEM_DB` 支持 + `guard_write` 写入门禁**：允许用环境变量指向副本库做**只读**验证；
+  一旦发现 DB 非默认库，**拒绝一切写入**并说明原因。
+  为什么必须拦：脚本读取用 `LEAFMEM_DB`，写入却走服务端 HTTP API（目标库由服务进程决定），
+  两者不一致时就是「算副本、改生产」——实测用副本验证演化时把生产库一条状态页误标 superseded。
+
+### Fixed
+- README §3.7 的生成器路径改为 `ops/status_page_gen.py`（原引用私有路径），并补四种用法示例。
+
 ## [0.3.24] - 2026-10-22
 
 ### Added
@@ -527,7 +541,8 @@ Initial LeafMem releases (brand replacement from upstream fork, dual-host
 installer, API-key guided setup, npm distribution). **All 0.1.x versions
 were unpublished from npm on 2026-08-09 and superseded by 0.2.0.**
 
-[Unreleased]: https://github.com/xdragonjia/leafmem/compare/v0.3.24...HEAD
+[Unreleased]: https://github.com/xdragonjia/leafmem/compare/v0.3.25...HEAD
+[0.3.25]: https://github.com/xdragonjia/leafmem/releases/tag/v0.3.25
 [0.3.24]: https://github.com/xdragonjia/leafmem/releases/tag/v0.3.24
 [0.2.0]: https://github.com/xdragonjia/leafmem/releases/tag/v0.2.0
 
