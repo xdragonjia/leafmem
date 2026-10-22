@@ -76,6 +76,14 @@ const SECTION_BOOST = Number(leafmemEnv("SECTION_BOOST") ?? "0.2");
 const SECTION_RATIO_FULL = 0.4;
 
 const PRINCIPLE_BOOST = 0.1;
+/** 把 metadata.aliases 规整为字符串数组（容忍单串/数组/脏值） */
+function aliasList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+  }
+  return typeof value === "string" && value.trim() ? [value] : [];
+}
+
 /** principle tie-break 的"打平"阈值：分差 ≤ 此值视为打平（0.1 权重的 10%） */
 const PRINCIPLE_TIE_EPSILON = 0.01;
 
@@ -995,7 +1003,13 @@ export class LeafMem {
           tokens: uniqueTokens(candidateText),
           vector: embedTextHash(candidateText, this.embeddingDimensions),
           // section 只有 v3 结构化块才有；没有就是空集（不产生 boost）
-          sectionGrams: trigrams(String(record.metadata?.section ?? "")),
+          // E4.3（2026-10-22）：**aliases 一并参与匹配**。状态页会为同一个主题写
+          // 2~3 个同义问法（"备份有没有成功" / "备份正常吗" / "昨天备份成功了吗"），
+          // 不同用户/不同时刻会换问法；只认单一 section 标题会漏。
+          // 实测依据：陈述式标题对目标查询 0/3 命中，问题式 3/3；别名是对"未预见问法"的廉价兜底。
+          sectionGrams: trigrams(
+            [String(record.metadata?.section ?? ""), ...aliasList(record.metadata?.aliases)].join(" "),
+          ),
         };
         this.searchTextCache.set(record.id, derived);
         if (this.searchTextCache.size > LeafMem.SEARCH_TEXT_CACHE_MAX) {
