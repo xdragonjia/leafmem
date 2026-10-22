@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **状态页目录注入默认关闭**（`STATUS_PAGE_MAX` 默认 0，可用 `LEAFMEM_STATUS_PAGE_MAX=12` 打开）：
+  A/B 实测（副本库把 10 条状态页全标 superseded，跑同一套 41 题 golden）——
+  core R@1 28/28、R@8 38/38、retrieval R@1 31/31、R@8 39/39、MRR 0.827 vs 0.828，
+  **逐项相同**。且 13 条状态页里 `recallCount` 仅 1 条非空（那 1 次是验收测试本身）＝从未被真实使用。
+  按「手段可以废弃」，周频生成已从自动化里撤除，目录注入默认关；状态页本体保留（零成本，未删数据）。
+  实测注入段从 640 字降到 0（stableContext 416 字）。
 - **`supports` 合法 id 集从「窗口内」放宽为「整库」**：状态页要溯源的往往是 7 天窗口外的旧记忆，
   原判据会把这类完全正确的状态页当"编造 id"整条剔除。
 - **结论先行判据改为结构性判定**（原为全文包含词表）：词表匹配对中文变体天然不足——

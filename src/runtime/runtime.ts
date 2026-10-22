@@ -24,7 +24,14 @@ import type {
  * 成本：约 100~150 字（8 条 × ≤28 字），状态页周频变化故用 60s 缓存，稳态零额外 IO。
  */
 const STATUS_PAGE_TTL_MS = 60_000;
-const STATUS_PAGE_MAX = 12;
+/**
+ * 🔴 2026-10-22 19:30 默认关闭（值改 0）。A/B 实测（副本库把 10 条状态页全标 superseded，
+ * 跑同一套 41 题 golden）：core R@1 28/28、R@8 38/38、retrieval R@1 31/31、R@8 39/39、
+ * MRR 0.827 vs 0.828 ⇒ **目录注入与状态页本体对「回答原始问题」零贡献**。
+ * 且实测 13 条状态页里 recallCount 仅 1 条非空（那 1 次是验收测试本身）＝从未被真实使用。
+ * 故按「手段可以废弃」停用；需要复验时设 LEAFMEM_STATUS_PAGE_MAX=12 打开。
+ */
+const STATUS_PAGE_MAX = Number(process.env.LEAFMEM_STATUS_PAGE_MAX ?? 0);
 const STATUS_PAGE_TITLE_CHARS = 28;
 let statusPageCache: { at: number; text: string } | null = null;
 
@@ -32,6 +39,7 @@ async function buildStatusPageLayer(
   memory: { list: (o: { scopes?: unknown[] }) => Promise<Array<Record<string, unknown>>> },
   scopes: unknown[],
 ): Promise<string> {
+  if (STATUS_PAGE_MAX <= 0) return "";
   const now = Date.now();
   if (statusPageCache && now - statusPageCache.at < STATUS_PAGE_TTL_MS) {
     return statusPageCache.text;
