@@ -60,9 +60,21 @@ MAX_INPUT_ITEMS = 120
 MAX_PAGES = 8
 MIN_PAGES = 3
 
-# 结论词：状态页必须能看出"当前是什么状态"，否则它提供不了 process 查询要的答案
-VERDICT_WORDS = ("正常", "已完成", "完成", "进行中", "失败", "待定", "无异常",
-                 "无需处理", "已收口", "绿", "红", "阻塞", "待修", "已修复")
+# 结论词：状态页必须能看出"当前是什么状态"，否则它提供不了 process 查询要的答案。
+# 🔴 2026-10-22 第三次 dry-run 教训：原来只看全文包含、且词表手工枚举不全
+# （缺「已解决/已发布/已排程/已上线」）⇒ 3 条完全正确的状态页被整条剔除。
+# 两处修正：① 词表按实测语料补齐常见结论词；② 只在**前 24 字**内判（结论先行），
+# 不允许"最后一句才说无需处理"的流水叙事蒙混过关。
+# 🔴 词表刻意**不收**宽泛动词（进行/完成/通过/待办）——它们会命中"进行了三批修复"
+# 这类流水叙事，把反例放过去（实测：加了"进行"后反例判据立即失效）。
+VERDICT_WORDS = (
+    "正常", "已完成", "进行中", "失败", "待定", "无异常", "无需处理",
+    "已收口", "绿", "红", "阻塞", "待修", "已修复", "已解决", "已发布", "已上线",
+    "已排程", "已关闭", "已归档", "已回滚", "已部署", "已合并", "已确认",
+    "已恢复", "已补齐", "未开始", "无变化", "健康", "在线", "离线", "异常", "中断",
+    "暂停", "告警", "达标", "未达", "待处理", "已结束",
+)
+VERDICT_HEAD_CHARS = 24
 
 
 def fail(msg: str) -> None:
@@ -152,24 +164,118 @@ PROMPT = """你在为「个人工作记忆库」生成**状态页**。
 5. **不许编数字**。列表里没有的数字一律不写；不确定就不写。
 6. 只输出**有状态可归纳**的主题。宁可少（3 条）也不要凑数；无主题则输出空数组。
 
+## 上一期已发布的状态页（增量模式基线）
+{prev}
+
+🔴 增量纪律（本期与上期的关系，必须遵守）：
+- 上表中某主题若**本期没有新证据**（下面的记忆列表里看不到它的新进展）→ 输出
+  `{{"reuse":"<上表 id>"}}`，**不要重写**。重写会把旧页标 superseded 却没有信息增量，
+  等于每期白刷一遍版本、把库填满过期副本。
+- 若本期确有新进展 → 输出该主题新版，并填 `"supersedes":"<上表 id>"`。
+- 上表没有的主题 → 正常新增，`supersedes` 留空或省略。
+- 上表为空（首期）→ 全部按新增处理。
+
 ## 输出格式（严格 JSON，不要 markdown 代码块）
 {{"pages":[{{"topic":"简短主题名（6~14字，陈述式，用于去重演化）",
   "question":"问题式主标题",
   "aliases":["问法2","问法3"],
   "answer":"结论先行的正文",
-  "supports":["id1","id2"]}}]}}
+  "supports":["id1","id2"],
+  "supersedes":"上期同类页 id（无则省略）",
+  "reuse":"上期 id（本期无变化时用，只填这一个字段）"}}]}}
 
 ## 记忆列表（近 {days} 天，共 {n} 条）
 {items}
 """
 
 
-def build_prompt(items: list[dict], days: int) -> str:
+def fetch_prev_pages() -> list[dict]:
+    """取当前 active 状态页，作为本期「增量基线」喂给 LLM。
+
+    🔴 为什么必须有：`--since 7` 是**滚动窗口**。第 2 期窗口（10-19 起）覆盖第 1 期的全部源记忆，
+    若不告诉 LLM「这些主题已归纳过」，它会对同一批记忆再生成一遍同样 9 条
+    ⇒ 旧版全被标 superseded、新版内容几乎相同 = 零信息增益 + 每期 9 条 superseded 累积。
+    反过来，窗口滚过头（第 3 期起看不到 10-21 的记忆）时，基线清单能让 LLM 知道
+    「这个主题存在但本期无新证据」→ 走 reuse，而不是当成新主题再造一条同义页。
+    """
+    con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=30)
+    rows = con.execute(
+        """SELECT id, content, metadata_json, updated_at FROM memory_items
+           WHERE coalesce(json_extract(metadata_json,'$.kindOfSnapshot'),'') = 'weekly-status'
+             AND coalesce(json_extract(metadata_json,'$.status'),'active') NOT IN ('superseded','archived')
+           ORDER BY updated_at DESC LIMIT 40"""
+    ).fetchall()
+    con.close()
+    out = []
+    for rid, content, meta_json, updated in rows:
+        try:
+            meta = json.loads(meta_json or "{}")
+        except Exception:
+            meta = {}
+        body = (content or "").split("\n", 1)
+        ans = (body[1] if len(body) > 1 else body[0]).strip()
+        out.append({
+            "id": rid,
+            "topic": meta.get("topic") or "",
+            "question": meta.get("section") or "",
+            "answer": ans[:120],
+            "updated": str(updated)[:19],   # 完整时间：用于判定「上期生成之后是否有新证据」
+        })
+    return out
+
+
+def drop_unchanged(pages: list[dict], items: list[dict], prev: list[dict],
+                   reuses: list[str]) -> tuple[list[dict], list[str], list[str]]:
+    """拦截「零增益重写」：新版 supports 里没有上期生成之后的新记忆 ⇒ 回落 reuse。
+
+    🔴 为什么需要机械判定：实测第 2 期模拟（2026-10-22 18:48）LLM **同时**输出 6 条 reuse
+    和 9 条重写，自相矛盾。若照单全收 `--apply`，会把 9 条旧页全标 superseded、
+    再写 9 条内容几乎相同的新页 —— 每期白刷一遍版本，正是增量模式要防的事。
+    判据用确定性信号（supports ∩ 新证据 id），不猜 LLM 意图：
+    - 有交集 → 确有新证据，允许重写（新版带 supersedes 指针）；
+    - 无交集 → 无新证据，强制沿用上期（丢弃新版，不写库）。
+    """
+    if not prev:
+        return pages, reuses, []
+    prev_gen = max(str(p["updated"]) for p in prev)
+    fresh = {it["id"] for it in items if str(it["updated"])[:19] > prev_gen}
+    prev_ids = {p["id"] for p in prev}
+    kept, dropped = [], []
+    for p in pages:
+        old_id = p.get("supersedes") or ""
+        if old_id not in prev_ids:
+            # 没显式指针：按 topic / question 3-gram 找同主题上期页
+            for q in prev:
+                if q["topic"] == p["topic"] or _gram_cov(_grams(p["question"]), _grams(q["question"])) >= SAME_TOPIC_COV:
+                    old_id = q["id"]
+                    break
+        if old_id and not (set(p["supports"]) & fresh):
+            if old_id not in reuses:
+                reuses.append(old_id)
+            dropped.append(f"{p['topic']} → 沿用（supports 无上期 {prev_gen[:16]} 之后的新记忆）")
+            continue
+        kept.append(p)
+    return kept, reuses, dropped
+
+
+def build_prompt(items: list[dict], days: int, prev_pages: list[dict] | None = None) -> str:
     lines = []
     for it in items:
         sec = f"｜section={it['section']}" if it["section"] else ""
         lines.append(f"- id={it['id']}｜kind={it['kind']}｜{it['updated'][:10]}{sec}\n  {it['body']}")
-    return PROMPT.format(max_pages=MAX_PAGES, days=days, n=len(items), items="\n".join(lines))
+    prev_pages = prev_pages or []
+    if prev_pages:
+        plines = [
+            f"- id={p['id']}｜topic={p['topic']}｜问：{p['question']}｜答：{p['answer']}｜更新于 {p['updated']}"
+            for p in prev_pages
+        ]
+        prev_txt = "\n".join(plines)
+    else:
+        prev_txt = "（无，本期为首期）"
+    return PROMPT.format(
+        max_pages=MAX_PAGES, days=days, n=len(items),
+        items="\n".join(lines), prev=prev_txt,
+    )
 
 
 def call_llm(prompt: str, key: str, model: str) -> dict:
@@ -194,14 +300,77 @@ def call_llm(prompt: str, key: str, model: str) -> dict:
 QUESTION_MARKS = ("吗", "是否", "几", "哪", "怎么样", "什么情况", "什么", "如何", "多少", "有没有", "是不是")
 
 
-def validate(pages: list[dict], valid_ids: set[str]) -> tuple[list[dict], list[str]]:
-    """机械校验：不通过的条目剔除并列原因，绝不"差不多就行"。"""
-    ok, rejected = [], []
+def all_memory_ids() -> set[str]:
+    """库里全部记忆 id（含窗口外的旧记忆）。
+
+    🔴 为什么不能用「窗口内 id」当唯一合法集：状态页要溯源的那条记忆很可能早于 7 天窗口
+    （例如"0.3.23 发版"的源记忆在 8 天前）。首版只允许窗口内 id ⇒ 会因"编造 id"整条丢掉
+    一个本来正确的状态页。判据应是「库里存在」而非「本窗口内」。
+    """
+    con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=30)
+    ids = {r[0] for r in con.execute("SELECT id FROM memory_items").fetchall()}
+    con.close()
+    return ids
+
+
+def _lev(a: str, b: str, cap: int = 3) -> int:
+    """Levenshtein 距离（带上限提前返回）。"""
+    if abs(len(a) - len(b)) > cap:
+        return cap
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i] + [0] * len(b)
+        for j, cb in enumerate(b, 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb))
+        if min(cur) > cap:
+            return cap
+        prev = cur
+    return prev[-1]
+
+
+def _fix_id_typo(bad: str, all_ids: set[str]) -> str | None:
+    """抄写笔误纠正（唯一候选才纠，编辑距离 ≤2）。
+
+    实测 2026-10-22 三例 LLM 抄 36 位 uuid 出错，都不是单纯单字符替换：
+    - `…-1e1d86a27011` → `…-1d1d86a27011`（替换 1 位，距离 1）
+    - `…-ba9a-5d9282650229` → `…-b9a9-5d9282650229`（相邻字符互换 + 位移，距离 2）
+    只纠**等长且候选唯一**的情形；有歧义一律不纠（宁缺毋滥）。
+    先用「前 8 位相同」缩小候选（uuid 前缀相同的情况占绝大多数，快且稳），
+    退化时再全量比，6123 条库量可接受。
+    """
+    if not bad:
+        return None
+    same_len = [x for x in all_ids if len(x) == len(bad)]
+    pref = [x for x in same_len if x[:8] == bad[:8]]
+    cands = [x for x in (pref or same_len) if _lev(x, bad) <= 2]
+    return cands[0] if len(cands) == 1 else None
+
+
+def validate(pages: list[dict], valid_ids: set[str],
+             prev_ids: set[str] | None = None,
+             all_ids: set[str] | None = None) -> tuple[list[dict], list[str], list[str]]:
+    """机械校验：不通过的条目剔除并列原因，绝不"差不多就行"。
+
+    返回 (可写入的新页, 剔除原因, 沿用的上期 id)。`reuse` 与 `supersedes` 的 id
+    必须真实存在于上期清单 —— LLM 编 id 是很常见的失败形态（supports 已经踩过）。
+    supports 的合法集用 `all_ids`（整库），比 `valid_ids`（窗口内）宽：窗口外旧记忆也允许溯源。
+    """
+    prev_ids = prev_ids or set()
+    universe = all_ids or valid_ids
+    ok, rejected, reuses = [], [], []
     for p in pages:
+        reuse = str(p.get("reuse") or "").strip()
+        if reuse:
+            if reuse in prev_ids:
+                reuses.append(reuse)
+            else:
+                rejected.append(f"reuse={reuse[:8]} → 不在上期清单里（编造 id）")
+            continue
         q = str(p.get("question", "")).strip()
         aliases = [str(a).strip() for a in (p.get("aliases") or []) if str(a).strip()]
         answer = str(p.get("answer", "")).strip()
         supports = [str(s) for s in (p.get("supports") or [])]
+        supersedes = str(p.get("supersedes") or "").strip()
         why = []
         if not q:
             why.append("question 为空")
@@ -211,9 +380,21 @@ def validate(pages: list[dict], valid_ids: set[str]) -> tuple[list[dict], list[s
             why.append(f"aliases 不足 2 个（{len(aliases)}）")
         if len(answer) < 60:
             why.append(f"answer 过短（{len(answer)} 字）")
-        if not any(w in answer for w in VERDICT_WORDS):
-            why.append("answer 无明确状态词（读者看不出当前是什么状态）")
-        bad_ids = [s for s in supports if s not in valid_ids]
+        if not any(w in answer[:VERDICT_HEAD_CHARS] for w in VERDICT_WORDS):
+            why.append(f"answer 前 {VERDICT_HEAD_CHARS} 字无状态词（结论不先行）：{answer[:20]}")
+        # id 校验：不存在 → 尝试单字符笔误纠错（唯一候选才纠）
+        fixed_supports, bad_ids = [], []
+        for s in supports:
+            if s in universe:
+                fixed_supports.append(s)
+                continue
+            alt = _fix_id_typo(s, universe)
+            if alt:
+                print(f"  ~ id 笔误纠正：{s} → {alt}（{q[:16]}）")
+                fixed_supports.append(alt)
+            else:
+                bad_ids.append(s)
+        supports = fixed_supports
         if bad_ids:
             why.append(f"supports 含编造 id：{bad_ids[:2]}")
         if not supports:
@@ -221,14 +402,19 @@ def validate(pages: list[dict], valid_ids: set[str]) -> tuple[list[dict], list[s
         if why:
             rejected.append(f"{q[:20] or '(无标题)'} → " + "；".join(why))
         else:
+            if supersedes and supersedes not in prev_ids:
+                # 不整条拒绝：新页本身有效，只是演化指针无效 → 丢掉指针，回落 3-gram 判据
+                rejected.append(f"{q[:20]} → supersedes={supersedes[:8]} 不在上期清单，已忽略该指针")
+                supersedes = ""
             ok.append({
                 "topic": str(p.get("topic", "")).strip() or q[:12],
                 "question": q,
                 "aliases": aliases[:3],
                 "answer": answer,
                 "supports": supports,
+                "supersedes": supersedes,
             })
-    return ok, rejected
+    return ok, rejected, reuses
 
 
 def build_source_refs(supports: list[str]) -> list[dict]:
@@ -304,6 +490,8 @@ def write_via_api(pages: list[dict], timeout: int = 90) -> list[dict]:
                 "section": p["question"],       # 主标题 = 问题式
                 "aliases": p["aliases"],        # 同义问法参与 3-gram 匹配（E4.3）
                 "supports": p["supports"],
+                # 增量演化的显式指针（旧页 id）；与旧页的 supersededBy 互为反向，可对账
+                **({"supersedes": p["supersedes"]} if p.get("supersedes") else {}),
                 # 与晶体资产契约同构（上行协同接口），见 build_source_refs 注释
                 "source_refs": build_source_refs(p["supports"]),
                 "eventTime": today,
@@ -355,8 +543,15 @@ def supersede_previous(new_pages: list[dict], exclude_ids: set[str]) -> list[str
             return json.loads(r.read() or b"{}")
 
     guard_write("演化（标 superseded）")
-    want_topics = {p["topic"] for p in new_pages}
-    want_questions = [(p["question"], _grams(p["question"])) for p in new_pages]
+    # 精确映射：旧 id → 新 id。优先用 LLM 在增量模式下给出的 supersedes，
+    # 没给才回落到 topic/3-gram 判据（兼容首期与 --evolve-only）。
+    exact: dict[str, str] = {}
+    for p in new_pages:
+        old = str(p.get("supersedes") or (p.get("metadata") or {}).get("supersedes") or "")
+        if old and p.get("id"):
+            exact[old] = p["id"]
+    want_topics = {p["topic"]: p.get("id") for p in new_pages if p.get("topic")}
+    want_questions = [(p.get("id"), _grams(p["question"])) for p in new_pages if p.get("question")]
     out = []
     listing = call("GET", f"/v1/memories?limit=9000&scope={SCOPE}").get("memories", [])
     for m in listing:
@@ -367,15 +562,25 @@ def supersede_previous(new_pages: list[dict], exclude_ids: set[str]) -> list[str
             continue
         if m["id"] in exclude_ids:      # 不把刚写入的这批当成"旧版本"
             continue
-        # 同主题判据（任一命中即可）：topic 精确相等 OR question 3-gram 覆盖率 ≥ 阈值
-        same = meta.get("topic") in want_topics
-        if not same:
-            old_q = str(meta.get("section") or "")
-            old_g = _grams(old_q)
-            same = any(_gram_cov(g, old_g) >= SAME_TOPIC_COV for _, g in want_questions)
-        if not same:
+        new_id = exact.get(m["id"])
+        if new_id is None:
+            # 同主题判据（任一命中即可）：topic 精确相等 OR question 3-gram 覆盖率 ≥ 阈值
+            if meta.get("topic") in want_topics:
+                new_id = want_topics[meta.get("topic")]
+            else:
+                old_g = _grams(str(meta.get("section") or ""))
+                for nid, g in want_questions:
+                    if _gram_cov(g, old_g) >= SAME_TOPIC_COV:
+                        new_id = nid
+                        break
+        if not new_id:
             continue
-        merged = {**meta, "status": "superseded", "supersededAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        # 🔴 supersededBy 必须写：文档承诺「superseded + supersededBy」演化链，
+        # 首版只写了 status/supersededAt ⇒ 旧页指向不明，无法回答"被哪条取代"，
+        # 也无法在反向回滚时定位。2026-10-22 实测 2 条 superseded 的 supersededBy 全为 null。
+        merged = {**meta, "status": "superseded",
+                  "supersededBy": new_id,
+                  "supersededAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
         # 🔴 PATCH metadata 是整体替换语义（memory.ts:421），必须回填全量，否则抹掉 section/aliases/supports
         call("PATCH", f"/v1/memories/{m['id']}?scope={SCOPE}",
              {"metadata": merged, "preserveUpdatedAt": True})
@@ -393,6 +598,8 @@ def main() -> int:
                     help="给已存在的状态页补 metadata.source_refs（与晶体契约同构）")
     ap.add_argument("--evolve-only", action="store_true",
                     help="只按当前 active 状态页做一次同主题清理（不调 LLM、不生成）")
+    ap.add_argument("--no-incremental", action="store_true",
+                    help="关闭增量基线（不喂上期状态页清单）。默认开启：避免滚动窗口把同一批主题每期重写一遍")
     args = ap.parse_args()
 
     if args.backfill_refs:
@@ -475,18 +682,31 @@ def main() -> int:
     if len(items) < 5:
         print(f"窗口内仅 {len(items)} 条记忆，不足以归纳出状态页（阈值 5）。本轮跳过。")
         return 0
-    print(f"输入：近 {args.since} 天 {len(items)} 条记忆（每条截前 {BODY_CHARS} 字）")
+    prev = [] if args.no_incremental else fetch_prev_pages()
+    print(f"输入：近 {args.since} 天 {len(items)} 条记忆（每条截前 {BODY_CHARS} 字）"
+          f"｜增量基线 {len(prev)} 条（{'关闭' if args.no_incremental else '开启'}）")
 
     key = load_key()
     t0 = time.time()
     try:
-        raw = call_llm(build_prompt(items, args.since), key, args.model)
+        raw = call_llm(build_prompt(items, args.since, prev), key, args.model)
     except Exception as e:
         fail(f"LLM 调用失败：{type(e).__name__} {e}")
-    print(f"LLM 返回 {round((time.time()-t0)/1000,1)}s，pages={len(raw.get('pages') or [])}")
+    print(f"LLM 返回 {round(time.time()-t0,1)}s，pages={len(raw.get('pages') or [])}")
 
     valid_ids = {it["id"] for it in items}
-    pages, rejected = validate(raw.get("pages") or [], valid_ids)
+    pages, rejected, reuses = validate(
+        raw.get("pages") or [], valid_ids, {p["id"] for p in prev}, all_memory_ids())
+    pages, reuses, unchanged = drop_unchanged(pages, items, prev, reuses)
+    if unchanged:
+        print(f"\n拦截零增益重写 {len(unchanged)} 条（无新证据 → 沿用上期，不写库）：")
+        for u in unchanged:
+            print(f"  ⊘ {u}")
+    if reuses:
+        print(f"\n沿用上期（无新证据，不重写）{len(reuses)} 条：")
+        prev_q = {p["id"]: p["question"] for p in prev}
+        for r in reuses:
+            print(f"  = {prev_q.get(r, r[:8])}")
     if rejected:
         print(f"\n剔除 {len(rejected)} 条（机械校验未过）：")
         for r in rejected:
@@ -501,6 +721,7 @@ def main() -> int:
 
     payload = {"generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                "since_days": args.since, "input_items": len(items),
+               "prev_pages": len(prev), "reused": reuses,
                "pages": pages, "rejected": rejected}
     if args.out:
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
@@ -510,17 +731,30 @@ def main() -> int:
     if not args.apply:
         print("\n[dry-run] 未写入。确认样本后用 --apply 落地。")
         return 0
-    if len(pages) < MIN_PAGES:
-        print(f"\n通过校验仅 {len(pages)} 条（<{MIN_PAGES}），本轮不写入以免污染库。")
+    if not pages:
+        # 增量模式的正常形态：本期所有主题都无新证据 ⇒ 什么都不写（旧页保持 active 即可）
+        print(f"\n无新状态可写（沿用上期 {len(reuses)} 条），本轮不写入。")
+        return 0
+    if not prev and len(pages) < MIN_PAGES:
+        # 🔴 MIN_PAGES 只约束**首期**。增量期每期只更新 1~2 条是正常形态，
+        # 若沿用首期的下限，会把真实的少量更新当成"凑数废页"拒掉。
+        print(f"\n通过校验仅 {len(pages)} 条（<{MIN_PAGES}），首期不写入以免污染库。")
         return 1
 
     written = write_via_api(pages)
     print(f"\n已写入 {len(written)} 条：")
     for w in written:
         print(f"  + {w['topic']} → {w['id'][:8]}")
+    # 把新 id 回填进 pages，供 supersede_previous 建立「旧 id → 新 id」精确映射（写 supersededBy）
+    seen: dict[str, str] = {}
+    for w in written:
+        seen.setdefault(w["topic"], w["id"])
+    for p in pages:
+        if p["topic"] in seen:
+            p["id"] = seen[p["topic"]]
     old = supersede_previous(pages, {w["id"] for w in written})
     if old:
-        print(f"演化：{len(old)} 条同 topic 旧状态页标 superseded（内容未改）")
+        print(f"演化：{len(old)} 条同主题旧状态页标 superseded（内容未改，已写 supersededBy）")
     payload["written"] = written
     payload["superseded"] = old
     if args.out:
