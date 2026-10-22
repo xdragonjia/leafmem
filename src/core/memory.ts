@@ -10,6 +10,7 @@ import { TaskContextManager } from "../task/manager.js";
 import { InMemoryTaskContextStore, SqliteTaskContextStore } from "../task/store.js";
 import type { MemoryInferencer, MemoryStorageBackend } from "../system/types.js";
 import { cosineSimilarity, embedTextHash } from "./hash-embedding.js";
+import { buildEnrichment } from "./enrich.js";
 import { isSearchable } from "./temporal.js";
 import type { MemoryEvaluator } from "./evaluator.js";
 import { InMemoryStore, SqliteMemoryStore } from "./storage.js";
@@ -369,6 +370,14 @@ export class LeafMem {
       }
 
       // --- No duplicate found: create new record ---
+      // B2（2026-10-22）：写入侧补齐 eventTime / status（只填空，不覆盖显式值）。
+      // 放在最内层，MCP / CLI / HTTP / 摄入脚本四条写入通道自动覆盖。
+      const enrichment = buildEnrichment({
+        content: input.content,
+        summary: input.summary,
+        kind: input.kind,
+        metadata: input.metadata,
+      });
       const record: MemoryRecord = {
         id: this.idFactory(),
         scope: normalizeScope(input.scope),
@@ -379,7 +388,9 @@ export class LeafMem {
         importance: clamp(input.importance ?? 0.5, 0, 1),
         source: input.source?.trim() || "manual",
         tags: [...new Set((input.tags ?? []).map((tag) => normalizeText(tag)).filter(Boolean))],
-        metadata: input.metadata ? { ...input.metadata } : undefined,
+        metadata: input.metadata || Object.keys(enrichment).length > 0
+          ? { ...(input.metadata ?? {}), ...enrichment }
+          : undefined,
         createdAt: nowIso,
         updatedAt: nowIso,
       };
