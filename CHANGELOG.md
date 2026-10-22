@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+（暂无）
+
+## [0.3.26] - 2026-10-22
+
 ### Added
 
 - **状态页增量演化（`ops/status_page_gen.py`）**：把上一期 active 状态页清单喂给模型，
@@ -46,6 +50,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   （实测两轮生成就到 10 条），旧的 8 条上限会让早期主题在目录里不可见——目录是"有这些状态可查"
   的兜底提示，看不到就等于没有。
 - **首次生成的下限校验（`MIN_PAGES`）只对首期生效**：增量期每期只更新 1~2 条属正常形态。
+
+### Docs
+
+- **2026-10-22 公开基准重测结果入表**（本批 commit `2baf552`，此前 A6 核对发现缺 CHANGELOG 条目）：
+  LongMemEval 500q 内置 **89.0 / 93.4 / 0.825**、默认配置 **96.8 / 98.2 / 0.921**；
+  LoCoMo 1986q 内置 **84.2 / 92.0 / 0.734**。
+  🔴 **LME 与 2026-08-11 的旧值不可直接比较**（切块后记录粒度变细，方法变了）；
+  LoCoMo 方法未变，与旧值 84.1 / 92.0 / 0.733 **逐项持平** —— 这条才是"本日检索打分改动无退化"的证据。
 
 ### Fixed
 
