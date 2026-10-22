@@ -24,7 +24,7 @@ import type {
  * 成本：约 100~150 字（8 条 × ≤28 字），状态页周频变化故用 60s 缓存，稳态零额外 IO。
  */
 const STATUS_PAGE_TTL_MS = 60_000;
-const STATUS_PAGE_MAX = 8;
+const STATUS_PAGE_MAX = 12;
 const STATUS_PAGE_TITLE_CHARS = 28;
 let statusPageCache: { at: number; text: string } | null = null;
 

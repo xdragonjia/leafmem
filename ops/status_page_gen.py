@@ -355,6 +355,27 @@ def _fix_id_typo(bad: str, all_ids: set[str]) -> str | None:
     return cands[0] if len(cands) == 1 else None
 
 
+def _resolve_ref(ref: str, candidates: set[str]) -> str | None:
+    """把 LLM 给的 id 引用解析成全 id：支持全 id 与**唯一前缀**（≥8 位）。
+
+    实测 2026-10-22（全链路真触发）：增量模式首跑，LLM 把上期清单里的 36 位 id
+    抄成 8 位前缀（`supersedes=ca4aada6`）⇒ 全等比较判它"编造 id"、指针被丢弃，演化静默失效。
+    前缀是模型的自然缩写习惯，不是编造，故按唯一前缀解析；有歧义才拒。
+    """
+    if not ref:
+        return None
+    if ref in candidates:
+        return ref
+    stripped = ref.strip("<>\"'`[]{} ")
+    if stripped != ref:
+        return _resolve_ref(stripped, candidates)
+    if len(stripped) >= 8:
+        hits = [c for c in candidates if c.startswith(stripped)]
+        if len(hits) == 1:
+            return hits[0]
+    return None
+
+
 def _verdict_ok(answer: str) -> bool:
     """状态页是否「结论先行」：读者读第一句就知道当前状态。"""
     head = answer[:VERDICT_HEAD_CHARS]
@@ -380,16 +401,18 @@ def validate(pages: list[dict], valid_ids: set[str],
     for p in pages:
         reuse = str(p.get("reuse") or "").strip()
         if reuse:
-            if reuse in prev_ids:
-                reuses.append(reuse)
+            rid = _resolve_ref(reuse, prev_ids)
+            if rid:
+                reuses.append(rid)
             else:
-                rejected.append(f"reuse={reuse[:8]} → 不在上期清单里（编造 id）")
+                rejected.append(f"reuse={reuse[:12]} → 不在上期清单里（编造 id）")
             continue
         q = str(p.get("question", "")).strip()
         aliases = [str(a).strip() for a in (p.get("aliases") or []) if str(a).strip()]
         answer = str(p.get("answer", "")).strip()
         supports = [str(s) for s in (p.get("supports") or [])]
-        supersedes = str(p.get("supersedes") or "").strip()
+        raw_supersedes = str(p.get("supersedes") or "").strip()
+        supersedes = _resolve_ref(raw_supersedes, prev_ids) or ""
         why = []
         if not q:
             why.append("question 为空")
@@ -421,10 +444,9 @@ def validate(pages: list[dict], valid_ids: set[str],
         if why:
             rejected.append(f"{q[:20] or '(无标题)'} → " + "；".join(why))
         else:
-            if supersedes and supersedes not in prev_ids:
+            if raw_supersedes and not supersedes:
                 # 不整条拒绝：新页本身有效，只是演化指针无效 → 丢掉指针，回落 3-gram 判据
-                rejected.append(f"{q[:20]} → supersedes={supersedes[:8]} 不在上期清单，已忽略该指针")
-                supersedes = ""
+                rejected.append(f"{q[:20]} → supersedes={raw_supersedes[:12]} 不在上期清单，已忽略该指针")
             ok.append({
                 "topic": str(p.get("topic", "")).strip() or q[:12],
                 "question": q,
@@ -562,17 +584,21 @@ def supersede_previous(new_pages: list[dict], exclude_ids: set[str]) -> list[str
             return json.loads(r.read() or b"{}")
 
     guard_write("演化（标 superseded）")
+    listing = call("GET", f"/v1/memories?limit=9000&scope={SCOPE}").get("memories", [])
+    all_snap_ids = {m["id"] for m in listing
+                    if (m.get("metadata") or {}).get("kindOfSnapshot") == "weekly-status"}
     # 精确映射：旧 id → 新 id。优先用 LLM 在增量模式下给出的 supersedes，
     # 没给才回落到 topic/3-gram 判据（兼容首期与 --evolve-only）。
+    # 引用可能是 8 位前缀（实测），故用 _resolve_ref 解析。
     exact: dict[str, str] = {}
     for p in new_pages:
-        old = str(p.get("supersedes") or (p.get("metadata") or {}).get("supersedes") or "")
+        raw = str(p.get("supersedes") or (p.get("metadata") or {}).get("supersedes") or "")
+        old = _resolve_ref(raw, all_snap_ids) if raw else None
         if old and p.get("id"):
             exact[old] = p["id"]
     want_topics = {p["topic"]: p.get("id") for p in new_pages if p.get("topic")}
     want_questions = [(p.get("id"), _grams(p["question"])) for p in new_pages if p.get("question")]
     out = []
-    listing = call("GET", f"/v1/memories?limit=9000&scope={SCOPE}").get("memories", [])
     for m in listing:
         meta = m.get("metadata") or {}
         if meta.get("kindOfSnapshot") != "weekly-status":
@@ -615,6 +641,8 @@ def main() -> int:
     ap.add_argument("--model", default="deepseek-ai/DeepSeek-V3.2")
     ap.add_argument("--backfill-refs", action="store_true",
                     help="给已存在的状态页补 metadata.source_refs（与晶体契约同构）")
+    ap.add_argument("--backfill-superseded-by", action="store_true",
+                    help="给早期 superseded 但缺 supersededBy 的状态页回填演化指针（存量自愈）")
     ap.add_argument("--evolve-only", action="store_true",
                     help="只按当前 active 状态页做一次同主题清理（不调 LLM、不生成）")
     ap.add_argument("--no-incremental", action="store_true",
@@ -661,6 +689,54 @@ def main() -> int:
             if refs and all(set(r) == {"doc_id", "title", "modified_at", "anchor"} for r in refs):
                 ok += 1
         print(f"回验：source_refs 契约字段完整的状态页 {ok} 条")
+        return 0
+
+    if args.backfill_superseded_by:
+        # 存量自愈：早期版本只写 status/supersededAt，没写 supersededBy ⇒ 演化链断裂，
+        # 无法回答"这条被谁取代"。此模式按同主题（topic 相等或 section 3-gram ≥0.6）
+        # 找当前 active 页回填指针，**只补空的、不改已有值**。
+        guard_write("回填 supersededBy")
+        cfg = json.load(open(SERVICE_CFG, encoding="utf-8"))
+        base, key = f"http://127.0.0.1:{cfg['port']}", cfg["apiKey"]
+
+        def call(method: str, path: str, body: dict | None = None) -> dict:
+            req = urllib.request.Request(
+                base + path, method=method,
+                data=json.dumps(body).encode() if body else None,
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=90) as r:
+                return json.loads(r.read() or b"{}")
+
+        listing = call("GET", f"/v1/memories?limit=9000&scope={SCOPE}").get("memories", [])
+        snaps = [m for m in listing if (m.get("metadata") or {}).get("kindOfSnapshot") == "weekly-status"]
+        active = [m for m in snaps
+                  if (m.get("metadata") or {}).get("status") not in ("superseded", "archived")]
+        todo = [m for m in snaps
+                if (m.get("metadata") or {}).get("status") == "superseded"
+                and not (m.get("metadata") or {}).get("supersededBy")]
+        print(f"状态页 {len(snaps)} 条｜active {len(active)}｜superseded 缺指针 {len(todo)}")
+        fixed = 0
+        for m in todo:
+            meta = m.get("metadata") or {}
+            cand = None
+            for a in active:
+                am = a.get("metadata") or {}
+                if am.get("topic") == meta.get("topic"):
+                    cand = a
+                    break
+                if _gram_cov(_grams(str(meta.get("section") or "")),
+                             _grams(str(am.get("section") or ""))) >= SAME_TOPIC_COV:
+                    cand = a
+                    break
+            if not cand:
+                print(f"  ⊘ {m['id'][:8]} {str(meta.get('topic'))[:24]} → 无同主题 active 页，跳过")
+                continue
+            call("PATCH", f"/v1/memories/{m['id']}?scope={SCOPE}",
+                 {"metadata": {**meta, "supersededBy": cand["id"]}, "preserveUpdatedAt": True})
+            print(f"  + {m['id'][:8]} → {cand['id'][:8]}（{(cand.get('metadata') or {}).get('topic')}）")
+            fixed += 1
+        print(f"回填 {fixed} 条")
         return 0
 
     if args.evolve_only:

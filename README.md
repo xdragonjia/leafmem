@@ -502,12 +502,19 @@ python3 ops/ingest-daily-logs.py --rebuild-state                # state 丢失�
 | 正文 | 结论先行（正常/已完成/进行中/阻塞…）+ 关键数字 + 要不要处理 |
 
 **检索如何吃到它**：`section` 与 `aliases` 一起参与 3-gram 短语匹配（`LEAFMEM_SECTION_BOOST`）；
-另外 active 状态页的标题会作为一段短目录进入 `stableContext`（最多 8 条，60s 缓存），
+另外 active 状态页的标题会作为一段短目录进入 `stableContext`（最多 12 条，60s 缓存），
 让模型即使没检索到正文也知道"有这些状态可查"。
 
 **演化（不重写旧内容）**：同一主题出新一期 → 旧一期标 `status=superseded` + `supersededBy`，
-正文一字不改（符合 invalidate-don't-delete）。同一主题的判定用**问题式标题的 3-gram 覆盖率 ≥0.6**，
+正文一字不改（符合 invalidate-don't-delete）。同一主题的判定优先用模型显式给的 `supersedes`
+（支持 8 位以上唯一前缀），否则回落到**问题式标题的 3-gram 覆盖率 ≥0.6**——
 不用 topic 字符串（LLM 每期生成的 topic 名不稳定）。
+
+**增量模式（默认开启）**：`--since N` 是滚动窗口，第 N 期的窗口会覆盖上一期的源记忆。
+若不告诉模型"这些主题已归纳过"，它会把同一批主题每期重写一遍（旧版全标 superseded、
+新版内容几乎相同）。因此生成时会把上一期 active 清单喂进 prompt，并对
+**`supports` 里没有「上期生成之后新记忆」的重写**做机械拦截（回落沿用、不写库）。
+判据用确定性信号，不信模型自述——实测它会同时给出 `reuse` 和重写（自相矛盾）。
 
 **写入纪律**：走 HTTP API + `dedupe:false`（状态页必须独立成条，不能被 0.85 相似度合并）；
 更新元数据带 `preserveUpdatedAt:true`（否则 recency 被抬高）。
@@ -516,9 +523,11 @@ python3 ops/ingest-daily-logs.py --rebuild-state                # state 丢失�
 
 ```bash
 python3 ops/status_page_gen.py --since 7                 # dry-run，只看会生成什么
-python3 ops/status_page_gen.py --since 7 --apply         # 写入 + 自动演化旧期
+python3 ops/status_page_gen.py --since 7 --apply         # 写入 + 自动演化旧期（增量模式）
+python3 ops/status_page_gen.py --since 7 --no-incremental # 关闭增量基线（全量重生成，慎用）
 python3 ops/status_page_gen.py --evolve-only             # 只做同主题清理（不调 LLM）
 python3 ops/status_page_gen.py --backfill-refs           # 给已有状态页补 source_refs
+python3 ops/status_page_gen.py --backfill-superseded-by  # 给早期缺指针的旧页补 supersededBy
 ```
 
 
