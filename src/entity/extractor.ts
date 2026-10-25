@@ -285,7 +285,7 @@ const NER_SYSTEM_PROMPT = `Extract named entities from the text. Return a JSON a
 [{"name": "...", "kind": "person|project|tech|tool|org", "aliases": ["..."]}]
 
 Definitions (follow strictly):
-- person: a real human being's name. Chinese names are 2-4 characters or contain "·" (e.g. 贾小龙, 图尔荪江·麦麦提). Never usernames, account IDs, AI assistants, or job titles.
+- person: a real human being's name. Chinese names are 2-4 characters or contain "·" (e.g. 张三, 阿依古丽·麦麦提). Never usernames, account IDs, AI assistants, or job titles.
 - org: an actual organization/company/department. Never channel names, column names, file names, or domains.
 - project: a named work item, product, handbook, or knowledge base.
 - tech: a technology/framework/protocol. tool: a software tool or service.
