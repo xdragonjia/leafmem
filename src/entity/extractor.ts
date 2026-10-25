@@ -281,21 +281,128 @@ export class RuleBasedEntityExtractor implements EntityExtractor {
 // LLM-based entity extractor
 // ---------------------------------------------------------------------------
 
-const NER_SYSTEM_PROMPT = `Extract named entities from the text. Return JSON array:
+const NER_SYSTEM_PROMPT = `Extract named entities from the text. Return a JSON array:
 [{"name": "...", "kind": "person|project|tech|tool|org", "aliases": ["..."]}]
-Only extract specific, meaningful entities. Skip generic terms. Maximum 8 entities.`;
+
+Definitions (follow strictly):
+- person: a real human being's name. Chinese names are 2-4 characters or contain "·" (e.g. 贾小龙, 图尔荪江·麦麦提). Never usernames, account IDs, AI assistants, or job titles.
+- org: an actual organization/company/department. Never channel names, column names, file names, or domains.
+- project: a named work item, product, handbook, or knowledge base.
+- tech: a technology/framework/protocol. tool: a software tool or service.
+
+Negative list — do NOT extract ANY of the following:
+- dates, times, durations, weekdays, months (周日, 2026-05-17, 3 days)
+- amounts, percentages, counts, version numbers
+- column/field/UI labels (格式, 名称, 用户名, 类型, 状态, 标题, 备注)
+- channel/section/column names (基层动态, 通知公告, 声声不息, 合规风控)
+- file names or extensions (*.md, *.json, 2026-05-17.md), domains/URLs (qq.com)
+- code identifiers (keyframes, page, path, master, earl, snake_case, camelCase)
+- generic nouns (通知, 报告, 方案, 问题, 会议, 数据, 系统)
+
+Maximum 8 entities. If unsure, omit it.`;
+
+// ---------------------------------------------------------------------------
+// LLM output sanitizer (2026-10-25)
+// ---------------------------------------------------------------------------
+// 背景：2026-10-25 小龙发现 LeafMem 图谱 person 里混入「周日」「基层动态」
+// 「keyframes」「master」「lark」「格式」「名称」「用户名」等——根因是
+// LlmEntityExtractor 把 LLM 输出的 name/kind **原样落库**，而 RuleBasedEntityExtractor
+// 早有的四件套噪声过滤器（版本号/域名/字段名/命名空间）未作用于 LLM 路径。
+// 业界做法（CORE-KG / Graphiti / bem.ai）：源头约束 + 形态门禁 + 词表覆盖，
+// 不靠"抽完再人工洗"。本函数即该门禁：确定性、可单测、不依赖 LLM 二次判断。
+const ENTITY_ALLOWED_KINDS = new Set(["person", "org", "project", "tech", "tool", "namespace"]);
+const FILE_LIKE_RE = /[.](?:md|markdown|json|txt|pdf|docx?|csv|tsv|xlsx?|pptx?|sqlite|db|log|ya?ml)$/i;
+const ASCII_LOWER_RE = /^[a-z]+$/; // lark/master/path/page/keyframes：小写英文单词≠人名
+// 中文 UI 字段词 / 栏目频道名（结构性噪声，不是领域术语，允许硬编码）
+const CHINESE_UI_WORDS = new Set([
+  "格式", "名称", "用户名", "类型", "状态", "标题", "备注", "字段", "编号",
+  "日期", "时间", "内容", "位置", "路径", "大小", "数量", "进度", "结果", "说明",
+]);
+const CHANNEL_LIKE_RE = /^(?:通知|公告)|(?:通知|公告|动态|专栏|频道|简报|周报|月报|日报|时报|周刊|风控)$/;
+// 时间词（周日/周一/周末/本月…）——LLM 常把星期几抽成 person
+const TIME_WORD_RE = /^(?:周[一二三四五六日天]|星期[一二三四五六日天]|周末|本周|下周|上周|本月|上月|下月|今天|明天|昨天|今年|去年|明年)$/;
+// 少数民族/含间隔号的姓名：图尔荪江·麦麦提
+const MINORITY_NAME_RE = /^[一-鿿]{2,}(?:[·•][一-鿿]{2,})+$/;
+
+export type RawLlmEntity = { name?: unknown; kind?: unknown; aliases?: unknown };
+
+export function sanitizeLlmEntities(items: RawLlmEntity[], vocab: VocabEntry[]): ExtractedEntity[] {
+  const vocabMap = new Map<string, ExtractedEntity["kind"]>();
+  for (const v of vocab) vocabMap.set(v.name.toLowerCase(), v.kind);
+  const out = new Map<string, ExtractedEntity>();
+
+  for (const item of items) {
+    if (typeof item?.name !== "string" || typeof item?.kind !== "string") continue;
+    const name = item.name.trim();
+    const key = name.toLowerCase();
+    let kind = item.kind.trim().toLowerCase();
+
+    if (name.length < 2 || name.length > 40) continue;
+    if (isNoiseMention(name)) continue;                       // 版本号/纯数字/泛词
+    if (NOISE_MENTIONS.has(key) || NOISE_MENTION_RE.test(name)) continue; // 字段名/时长编号
+    if (FILE_LIKE_RE.test(name)) continue;                    // 2026-05-17.md / xxx.json
+    if (isDomainLike(name)) continue;                         // qq.com / modal.clustered
+    if (KNOWN_NAMESPACES.has(key) || NAMESPACE_LIKE_RE.test(name)) {
+      kind = "namespace";
+    } else if (TOOL_PRODUCT_MENTIONS.has(key)) {
+      kind = "tool";
+    }
+
+    const vocabKind = vocabMap.get(key);
+    if (vocabKind) {
+      kind = vocabKind;                                       // 权威词表覆盖 LLM 判断
+    } else if (kind === "person") {
+      // 未入词表时，person 必须"像人名"：2-4 中文字 / 含· / 首字母大写英文；
+      // 全小写英文（lark/master/path/page）与中文通用词一律拒绝
+      if (ASCII_LOWER_RE.test(name)) continue;
+      if (CHINESE_NON_PERSON.has(name) || CHINESE_UI_WORDS.has(name)) continue;
+      if (CHANNEL_LIKE_RE.test(name)) continue;   // 基层动态/通知公告/通知给/合规风控
+      if (TIME_WORD_RE.test(name)) continue;      // 周日/周一/本月
+      if (!PERSON_LIKE_RE.test(name) && !MINORITY_NAME_RE.test(name)) continue;
+    } else if (kind === "org") {
+      // 未入词表时，org 不接受纯代码标识（小写下划线/点号串）
+      if (/^[a-z0-9._-]+$/.test(name)) continue;
+    }
+
+    if (!ENTITY_ALLOWED_KINDS.has(kind)) continue;
+    if (out.has(key)) continue;
+    out.set(key, {
+      name,
+      kind: kind as ExtractedEntity["kind"],
+      aliases: Array.isArray(item.aliases)
+        ? (item.aliases as unknown[]).filter((a): a is string => typeof a === "string")
+        : undefined,
+    });
+  }
+  return [...out.values()];
+}
 
 export class LlmEntityExtractor implements EntityExtractor {
   private readonly inferencer: MemoryInferencer;
   private readonly fallback = new RuleBasedEntityExtractor();
+  private vocab: VocabEntry[] = [];
+  private readonly vocabPath?: string;
+  private vocabMtime = -1;
 
   constructor(inferencer: MemoryInferencer) {
     this.inferencer = inferencer;
+    // 2026-10-25：LLM 路径也加载受控词表（mtime 热加载），用于覆盖 kind 与放行真人名
+    this.vocabPath = leafmemEnv("ENTITY_VOCAB") ?? defaultVocabPath();
+    this.vocab = loadControlledVocab(this.vocabPath);
+    this.vocabMtime = safeMtime(this.vocabPath);
   }
 
   async extract(text: string): Promise<ExtractedEntity[]> {
     if (text.trim().length < 10) {
       return [];
+    }
+    // 词表热加载（宿主更新 entity-vocab.json 后无需重启）
+    if (this.vocabPath) {
+      const mt = safeMtime(this.vocabPath);
+      if (mt !== this.vocabMtime) {
+        this.vocab = loadControlledVocab(this.vocabPath);
+        this.vocabMtime = mt;
+      }
     }
 
     const result = await this.inferencer({
@@ -314,18 +421,8 @@ export class LlmEntityExtractor implements EntityExtractor {
       if (!Array.isArray(parsed)) {
         return this.fallback.extract(text);
       }
-      return parsed
-        .filter(
-          (item: Record<string, unknown>) =>
-            typeof item.name === "string" && typeof item.kind === "string",
-        )
-        .map((item: Record<string, unknown>) => ({
-          name: String(item.name),
-          kind: String(item.kind) as ExtractedEntity["kind"],
-          aliases: Array.isArray(item.aliases)
-            ? (item.aliases as string[]).filter((a) => typeof a === "string")
-            : undefined,
-        }));
+      // 2026-10-25：LLM 原始输出必须过确定性净化门禁（不再原样落库）
+      return sanitizeLlmEntities(parsed as RawLlmEntity[], this.vocab);
     } catch {
       return this.fallback.extract(text);
     }
