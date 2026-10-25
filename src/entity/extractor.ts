@@ -289,6 +289,7 @@ Definitions (follow strictly):
 - org: an actual organization/company/department. Never channel names, column names, file names, or domains.
 - project: a named work item, product, handbook, or knowledge base.
 - tech: a technology/framework/protocol. tool: a software tool or service.
+- agent: a named AI assistant/agent (never a human).
 
 Negative list — do NOT extract ANY of the following:
 - dates, times, durations, weekdays, months (周日, 2026-05-17, 3 days)
@@ -310,7 +311,8 @@ Maximum 8 entities. If unsure, omit it.`;
 // 早有的四件套噪声过滤器（版本号/域名/字段名/命名空间）未作用于 LLM 路径。
 // 业界做法（CORE-KG / Graphiti / bem.ai）：源头约束 + 形态门禁 + 词表覆盖，
 // 不靠"抽完再人工洗"。本函数即该门禁：确定性、可单测、不依赖 LLM 二次判断。
-const ENTITY_ALLOWED_KINDS = new Set(["person", "org", "project", "tech", "tool", "namespace"]);
+// agent（2026-10-25）：AI 助手/智能体既非人类也非软件工具，单列一类
+const ENTITY_ALLOWED_KINDS = new Set(["person", "org", "project", "tech", "tool", "namespace", "agent"]);
 const FILE_LIKE_RE = /[.](?:md|markdown|json|txt|pdf|docx?|csv|tsv|xlsx?|pptx?|sqlite|db|log|ya?ml)$/i;
 const ASCII_LOWER_RE = /^[a-z]+$/; // lark/master/path/page/keyframes：小写英文单词≠人名
 // 中文 UI 字段词 / 栏目频道名（结构性噪声，不是领域术语，允许硬编码）
