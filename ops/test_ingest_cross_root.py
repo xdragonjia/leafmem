@@ -207,13 +207,42 @@ def main() -> int:
     ok("同文跨根仅 1 块", len(sink3.items) == 1, f"实得 {len(sink3.items)}")
     srv3.shutdown()
 
+    # ---- T7 同文件同名节必须各自记账（2026-10-26 实测 15 条 offset 虚高）
+    # 🔴 必须用【跨轮】场景：同一轮内 offset 只在发送成功后才记账，同名节不会互吞；
+    # 真实缺陷在第 2 轮 —— 首轮把第 1 个同名节的 offset 写满，第 2 轮其余同名节
+    # 算出 len(body)-offset<=0 被判「已入」而整节丢弃。
+    print("T7 同文件多个同名节（跨轮）→ 内容不得互相吞掉")
+    sink4 = _Sink()
+    srv4, port4 = start_fake_api(sink4)
+    rd = TMP / "duptitle"
+    rd.mkdir()
+    sec = ("这是同名节的正文，内容必须独立入库，不能被前一个同名节吞掉，否则就是静默丢内容。"
+           "填充长度以越过 GROW_THRESHOLD 阈值。" * 3)
+    (rd / "2026-06-30.md").write_text("## 关键教训\n" + sec + "\n", encoding="utf-8")
+    st4 = TMP / "state_dup.json"
+    # 第 1 轮：只有一个同名节
+    run_ingest([("dup", rd)], st4, port4, ["--force-fresh"])
+    first7 = len(sink4.items)
+    # 第 2 轮：文件里变成 3 个同名节，后两个是新增内容
+    (rd / "2026-06-30.md").write_text(
+        "## 关键教训\n" + sec + "\n"
+        + "## 关键教训\n" + sec.replace("这是同名节", "这是第 2 个同名节") + "\n"
+        + "## 关键教训\n" + sec.replace("这是同名节", "这是第 3 个同名节") + "\n",
+        encoding="utf-8")
+    run_ingest([("dup", rd)], st4, port4)
+    got4 = "".join(m.get("content") or "" for m in sink4.items)
+    ok("首轮入库 1 块", first7 == 1, f"实得 {first7}")
+    ok("第 2 个同名节在库（修前被吞）", "第 2 个同名节" in got4)
+    ok("第 3 个同名节在库（修前被吞）", "第 3 个同名节" in got4)
+    srv4.shutdown()
+
     srv.shutdown()
 
     print()
     if fails:
         print(f"❌ FAIL {len(fails)} 项：{fails}")
         return 1
-    print("✅ ALL PASS（T1-T6）")
+    print("✅ ALL PASS（T1-T7）")
     return 0
 
 

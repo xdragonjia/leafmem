@@ -42,6 +42,7 @@ import re
 import sqlite3
 import sys
 import urllib.request
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -247,11 +248,28 @@ def rebuild_state(db_path: str, state_path: str) -> int:
             if fname not in cache:
                 cache[fname] = list(sections(cand.read_text(encoding="utf-8", errors="replace")))
             h = k.split(":", 1)[1]
+            # 键可能带「同名节出现序号」后缀 `#N`（2026-10-26 去碰撞）。
+            # 反查时必须剥掉它，并按同名节的出现顺序取第 N 个，才能与写入侧同构。
+            occ = 0
+            if "#" in h:
+                h, _, ns = h.partition("#")
+                try:
+                    occ = int(ns)
+                except ValueError:
+                    occ = 0
+            _tc_r = Counter(t[:80] for t, _ in cache[fname])
+            _cnt_r = Counter()
             tgt = None
             for title, body in cache[fname]:
-                if hashlib.md5(title.encode()).hexdigest()[:10] == h:
-                    tgt = normalize(body)
-                    break
+                if hashlib.md5(title[:80].encode()).hexdigest()[:10] != h:
+                    continue
+                _tk_r = title[:80]
+                _o = _cnt_r[_tk_r]
+                _cnt_r[_tk_r] += 1
+                if _tc_r[_tk_r] > 1 and _o != occ:
+                    continue
+                tgt = normalize(body)
+                break
             if tgt is None:
                 continue
             cur = secs.setdefault(k, {"offset": 0, "n": 0})
@@ -390,6 +408,10 @@ def main() -> int:
               "新键独立记账；如需精确对齐请先跑 --rebuild-state。")
 
     batch: list[dict] = []
+    # 本轮内已收集块的指纹（跨源根/跨节去重）。与 seen 严格分离：
+    # seen = 已成功入库凭据；batch_fps = 本轮待发清单。发送失败时只需清 batch_fps，
+    # 不会污染 seen 导致失败块被永久跳过。
+    batch_fps: set[str] = set()
     n_sec_new = n_skip = 0
     loss_bad = 0
     for tag, d in existing:
@@ -400,12 +422,25 @@ def main() -> int:
                 continue
             date = f.stem
             text = f.read_text(encoding="utf-8", errors="replace")
-            for title, body in sections(text):
+            sec_list = list(sections(text))
+            # 🔴 同名节去碰撞（2026-10-26）：同一文件里可能有多个同名节（实测
+            # 2026-06-30.md 有 4 个「关键教训」）。凭 title 哈希做键会让它们共用一个
+            # offset，先处理的那个把 offset 推满 → 后面的同名节被判「已入」整节丢弃，
+            # 且 state 里 offset > 节长（实测 15 条虚高，最大超出 1176 字）。
+            # 修法：仅当同文件存在重名时，给键追加「出现序号」；无重名时键完全不变，
+            # 既有 state 零影响（不需要迁移）。
+            _tc = Counter(t[:80] for t, _ in sec_list)
+            _seen_title = Counter()
+            for title, body in sec_list:
                 body_n = normalize(body)
                 if len(body_n) < 30:                       # 纯指针型短节无知识量
                     n_skip += 1
                     continue
-                k = sec_key(f.name, title[:80], source_root_tag(d))
+                _tk = title[:80]
+                _occ = _seen_title[_tk]
+                _seen_title[_tk] += 1
+                _suffix = f"#{_occ}" if _tc[_tk] > 1 else ""
+                k = sec_key(f.name, title[:80], source_root_tag(d)) + _suffix
                 st = secs.setdefault(k, {"offset": 0, "n": 0})
                 off = align_boundary(body_n, int(st.get("offset", 0)))
                 if len(body_n) - off <= GROW_THRESHOLD:
@@ -435,9 +470,14 @@ def main() -> int:
                     fp = hashlib.md5(c["bare"].encode()).hexdigest()[:16]
                     if fp in seen:          # 已入过（回退重叠 / 内容未变 / 跨源根同文）
                         continue
-                    # 🔴 收集阶段就登记：同一轮里多个源根可能产出同文块，
-                    # 只在发送后写 seen 会让本轮内的第二个源根无法判重（实测跨根重复）。
-                    seen[fp] = 1
+                    # 🔴 本轮内去重用「本批指纹集」，**不写 seen**（2026-10-26 修回归）：
+                    # seen 是「已成功入库」的凭据，只能在发送成功后写。此前为了在本轮内
+                    # 拦住跨源根同文块，直接在收集阶段写 seen —— 一旦发送失败，该块会被
+                    # 永久判为已入，下一轮打印「无新增」并静默丢弃内容（实测：API 500 后
+                    # 次轮 0 块入库，与「失败项下轮自动重试」的提示完全相反）。
+                    if fp in batch_fps:
+                        continue
+                    batch_fps.add(fp)
                     emitted += 1
                     batch.append({
                         "content": c["text"][:6000],
@@ -519,8 +559,15 @@ def main() -> int:
                 except Exception:
                     fail += 1
     state_path.parent.mkdir(parents=True, exist_ok=True)
+    # 🔴 不按插入顺序截断 seen（2026-10-26 修潜伏缺陷）：原实现在超过 50,000 时取
+    # 「最后 50,000 个」，而 dict 保序 ⇒ 丢掉的是**最早**那批历史块指纹，它们下一轮
+    # 会被判「未入」而整批重导（正是本脚本最怕的事故）。且该触发点静默无告警。
+    # 现改为：超限只告警不丢数据——seen 是幂等底线，宁可文件大也不可失效；
+    # 真要瘦身必须走「按已入库 metadata 重建」（--rebuild-state），那是无损的。
     if len(seen) > 50000:
-        seen = dict(list(seen.items())[-50000:])
+        print(f"⚠️  seen 已达 {len(seen)} 条（>50,000）。**不截断**——截断会丢最早块指纹"
+              f"导致历史重导。如需瘦身请跑 --rebuild-state（按库内 metadata 无损重建）。",
+              file=sys.stderr)
     state_path.write_text(json.dumps({"version": STATE_VERSION, "secs": secs, "seen": seen},
                                      ensure_ascii=False))
     print(f"=== 回流完成：入库 {ok} 块 / 失败 {fail}（失败项下轮自动重试）"
