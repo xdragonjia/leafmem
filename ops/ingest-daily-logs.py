@@ -412,7 +412,26 @@ def main() -> int:
     # seen = 已成功入库凭据；batch_fps = 本轮待发清单。发送失败时只需清 batch_fps，
     # 不会污染 seen 导致失败块被永久跳过。
     batch_fps: set[str] = set()
-    n_sec_new = n_skip = 0
+    # 🔴 跨执行器内容级兜底（2026-11-03）：state 的 fp 只认「本执行器」记过的账。
+    # 实测同一 daily md 会被两个执行器先后回流——04:5x 语义层日更里的
+    # `ontology-semantic-layer/scripts/ingest_daily_logs.py`（自有 state 在项目 runs/ 下）
+    # 与本脚本 05:3x 各入一遍，2026-11-01/11-02 两日各产生 8/4 组逐字节相同条目。
+    # 故收集阶段额外对照「库内既有正文指纹」：与 state 无关，任何执行器写过的都不再重复入。
+    db_fps: set[str] = set()
+    _db = Path(os.path.expanduser(args.db))
+    if _db.exists():
+        try:
+            _con = sqlite3.connect(f"file:{_db}?mode=ro", uri=True, timeout=20)
+            for (c,) in _con.execute(
+                    "select content from memory_items where metadata_json like '%source_file%'"):
+                if c:
+                    db_fps.add(hashlib.md5(
+                        normalize(BREADCRUMB_RE.sub("", c)).encode()).hexdigest()[:16])
+            _con.close()
+            print(f"🛡 库内既有正文指纹 {len(db_fps)} 条（跨执行器去重基线）")
+        except Exception as e:
+            print(f"⚠️  读取库内指纹失败，降级为仅 state 去重：{e}", file=sys.stderr)
+    n_sec_new = n_skip = n_db_dup = 0
     loss_bad = 0
     for tag, d in existing:
         for f in sorted(d.glob("*.md")):
@@ -469,6 +488,9 @@ def main() -> int:
                     # 口径与 weekly_scan 的「真重复=全文哈希」一致，便于交叉验证。
                     fp = hashlib.md5(c["bare"].encode()).hexdigest()[:16]
                     if fp in seen:          # 已入过（回退重叠 / 内容未变 / 跨源根同文）
+                        continue
+                    if fp in db_fps:        # 🔴 别的执行器已写过同文（跨执行器去重，2026-11-03）
+                        n_db_dup += 1
                         continue
                     # 🔴 本轮内去重用「本批指纹集」，**不写 seen**（2026-10-26 修回归）：
                     # seen 是「已成功入库」的凭据，只能在发送成功后写。此前为了在本轮内
@@ -571,7 +593,7 @@ def main() -> int:
     state_path.write_text(json.dumps({"version": STATE_VERSION, "secs": secs, "seen": seen},
                                      ensure_ascii=False))
     print(f"=== 回流完成：入库 {ok} 块 / 失败 {fail}（失败项下轮自动重试）"
-          f"｜跳过短节 {n_skip}｜无损校验失败 {loss_bad} ===")
+          f"｜跳过短节 {n_skip}｜跨执行器已存在 {n_db_dup}｜无损校验失败 {loss_bad} ===")
     return 0 if fail == 0 else 1
 
 
