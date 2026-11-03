@@ -1,3 +1,11 @@
+## [1.8.4] - 2026-11-03
+
+- 🔴 **新增步骤 4b「双执行器同文重复」与 4c「非标准 kind 门禁」**（事故驱动：2026-11-03 哨兵转交遗留项处置）。
+  - **4b 根因**：daily md 被两个执行器回流——语义层日更 13k1c（legacy 无 `chunk.span`）与哨兵 05:30（v3 带 span），两套 state 互不可见。**全文 SHA256 判不出**（面包屑格式不同：`[日期·标题]` vs `[日期·标题·序/总]`），只能剥壳后判。上一版 SKILL 的删除动作只消费「1. 真重复」段，而这类重复落在「3. 跨日近重复」段 ⇒ **报告了却无人处置**，10-02 周整清 90 条、11-03 又长 28 组。修法＝`weekly_scan.py` 新增 `scan_executor_dups` 段（同 `source_file` + 同 `section` + 剥壳正文 md5；**限定 section 以免误伤「不同节引用同一段话」的合法情形**），自动算出 `keep_id`（带 span 的 v3）与 `drop_ids`，SKILL 明确「保留 v3、删 legacy，反向保留会丢溯源能力」。
+  - **4b 架构侧**：13k1c 已改为调用 `~/projects/leafmem/ops/ingest-daily-logs.py` 瘦封装、共用 `~/.leafmem/daily-ingest-state.json`。🔴 关键订正：仅加「库内正文指纹兜底」不够——兜底是**先到先得**，先跑的 legacy 劣质版占位会挡住后跑的 v3 优质版（**质量倒挂**）。业界幂等标准是「稳定 content hash + 在写入处约束」，**统一写入口优于兜底拦截**。
+  - **4c 判据**：允许清单六种（`lesson/preference/decision/note/experience/principle`），`BAD_KIND` 必须＝0。**不是整洁问题而是通路问题**——`kind` 决定该条走哪条数据通路：`reflect` 只从 `lesson/decision/note` 蒸馏原则（`memory.ts:708`）、`profile` 只读 `preference/identity`（:891）、`principle` 召享有固定加权（:1034）；写错 kind ＝ 永远进不了对应通道 ＝ 内容静默失效。实证：10-30 两条 S9 结论写成 `finding`，连续 3 个周整周期未处置。
+  - **验收**：终态 `executor_dups` 28→0、`exact_dups` 15→0、`BAD_KIND` 2→0；负例注入 5 例（同节同文→检出 1；异节同文→0；同节异文→0；非 daily→0；空输入→0）证明判据非恒真。存量 29 条先归档（88KB 定向备份 + 104MB 整库快照，`quick_check=ok`）后删除，验证待删 28 条零含 span。
+
 ## [1.8.3] - 2026-10-20
 
 - 🔴 **体积余量专项：正文 cl100k 9,959 → 9,429 token（−530，余量 41 → 571 token）**。1.8.2 交付后该技能距 10,000 预算仅剩 41 token，任何一次正常追加都会撞 P1——属「随时越线」而非「已越线」，本轮按渐进式披露纪律提前腾位。

@@ -1,6 +1,6 @@
 ---
 name: leafmem-maintenance
-version: "1.8.3"
+version: "1.8.4"
 agent_created: true
 author: xiaoxia
 description: >
@@ -83,17 +83,26 @@ description: >
 
 删除任何记忆前必须先导出全量 JSON 存档，作为误删回滚锚点
 
-- **动作**：`python3 scripts/archive_dump.py [输出路径]`（只读 `~/.leafmem/memory.sqlite`，默认写 `~/WorkBuddy/backups/02mem/leafmem-archive/leafmem-archive-YYYYMMDD.json`；脚本内置**回读校验**，输出 `ITEMS / ALL / FTS / SIZE / VERIFY` 五项，VERIFY=OK 即存档可用）。等价的最小实现＝Python 读全量 `memory_items`（scope=agent:workbuddy）导出 JSON。
-- **检查点**：🔴 STOP：存档文件写入且 `VERIFY=OK`（条数与库内一致）后，才允许进入删除类步骤。🔴 若 `ITEMS != ALL` 或 `VERIFY=FAIL` → 中止全部删除类步骤，只留健康检查报告（见 fallback_strategy）。
+- **动作**：`python3 scripts/archive_dump.py [输出路径]`（默认写 `~/WorkBuddy/backups/02mem/leafmem-archive/leafmem-archive-YYYYMMDD.json`，内置回读校验，输出 `ITEMS/ALL/FTS/SIZE/VERIFY` 五项）。参数细节见 `references/scripts-usage.md`。
+- **检查点**：🔴 STOP：`VERIFY=OK`（条数与库内一致）后才允许进入删除类步骤；`ITEMS != ALL` 或 `VERIFY=FAIL` → 中止全部删除类步骤，只留健康检查报告。
 
-### 步骤 4：真重复检测与删除
+### 步骤 4：真重复检测与删除（含 4b 双执行器同文、4c kind 门禁）
 
-合并完全重复的记忆
+- **动作**：🔴 先跑 `python3 scripts/weekly_scan.py`，取「1. 真重复」「1b. 双执行器同文」「3. 跨日近重复」三段——量化可复核、秒级，替代人工通读；脚本只读，删除仍在本步骤经 MCP 执行。
+- **规则**：真重复＝全文规范化 SHA256 相同（re.sub 空白后取 16 位）。🔴 **NEVER 用前缀聚类判重**——同 YAML 头的不同内容会被误判误删。
+- **动作**：每组保留 importance 最高 + updated_at 最新一条；其余 `memory_govern(action=delete)`。
+- 🔴 **真重复与 4b 必须同轮处置**：只跑「真重复」段是本步的历史缺陷（见 4b）。
 
-- **动作**：🔴 先跑 `python3 scripts/weekly_scan.py` 取「1. 真重复」段与「3. 跨日近重复」段清单——量化、可复核、秒级，替代人工通读全库；脚本只读，删除动作仍在本步骤经 MCP 执行
-- **规则**：用全文规范化后的 SHA256 哈希判定重复（re.sub 空白后取 16 位）
-- **规则**：🔴 NEVER 用前缀聚类判定重复 — 因为同一 YAML 头部的不同内容会被误判为重复导致误删；替代做法是全文规范化哈希
-- **动作**：每组保留 importance 最高 + updated_at 最新一条；其余 memory_govern(action=delete, scopeType=agent, scopeId=workbuddy)
+#### 4b. 双执行器同文重复（🔴 2026-11-03 立）
+
+- **判据**：`executor_dups`（1b 段）＝ **0**；判法＝同 `source_file`+同 `section`+剥壳正文 md5。
+- **处置**：保留带 `chunk.span` 的 v3 版、删 legacy 版（`keep_id`/`drop_ids` 已算好）；删前走步骤 2.0 存档。**只管 0，下降不算修好**。
+- 🔴 **本步历史缺陷**：只消费「真重复」段 ⇒ 这类（面包屑格式不同、全文未判同）**报而不管**。**架构已修**：统一写入口共用 state——**兜底去重先到先得，会保住劣质版挡住优质版（质量倒挂）**。
+
+#### 4c. 非标准 kind 门禁（🔴 2026-11-03 立）
+
+- **判据**：`kind NOT IN (六种)` 计数 ＝ **0**。🔴 **是通路问题不是整洁问题**——`kind` 决定 `reflect`（只看 lesson/decision/note）/`profile`（只看 preference/identity）/principle 加权，写错＝**内容静默失效**。
+- **归并**：实证裁定→`decision`、规则→`lesson`、事实→`note`。SQL、映射表、负例与回归清单见 `references/step4bc-dedup-and-kind-gates.md`。
 
 ### 步骤 5：碎片簇整合
 
@@ -130,7 +139,7 @@ description: >
 - **动作**：memory_recall(action="search", kind="lesson") 拉近 30 天 lesson；按 tags 聚类 ≥3 条同主题
 - **动作**：宿主模型归纳共性规律为 1 条 principle，证据 id 存入 metadata.supports
 - **动作**：memory_write(action="remember", kind="principle", importance=0.85, tags=[主题,principle,reflected], metadata={supports:[证据id列表], reflectedAt:当前ISO时间, reflectTag:主题, lastRefreshedAt:当前ISO时间}) —— 🔴 reflectedAt 必传：引擎据此刷新 active context 的 lastReflectAt 标记（0.3.19+），周度观察才能看到蒸馏时间戳随本通道刷新
-- **MUST**：🔴 supports 数组必须存证据 lesson 的【完整 36 位 UUID】——禁止 8 位短 id 前缀（2026-09-07 实测踩坑：3 条 principle 写短 id 致 observation.py ALERT「12 个 supports 指向不存在记忆」principle_supports_missing=12；观察脚本按完整 id 校验，短 id 全部失配。修复=CLI update 全量 metadata（PATCH 为替换语义，须连 reflectedAt/reflectTag/lastRefreshedAt/projectId 一并回填），复验 supports_missing=0）。从 lesson 取完整 UUID：存档 JSON 或 `sqlite3 ~/.leafmem/memory.sqlite "SELECT id FROM memory_items WHERE id LIKE '<8位>%'"` 反查（🔴 `get` 只认完整 UUID，传短 id 报 `Memory not found`，勿误判为条目已删）
+- **MUST**：🔴 supports 必须存证据 lesson 的【完整 36 位 UUID】，禁 8 位短 id（短 id 全失配 → `principle_supports_missing` ALERT）；PATCH 须回填全量 metadata。反查法与陷阱见 `references/scripts-usage.md`。
 - **节流**：同主题 6 天内已蒸馏（查已有 principle 的 reflectedAt）则跳过
 
 ### 步骤 7：画像刷新（profile 宿主版）
@@ -177,7 +186,7 @@ description: >
   - e. 治理时机：decay_candidates>0 → 建议执行/确认步骤 8 已覆盖
   - f. 实体词表活性：entity_count 周环比——记忆在增长但实体连续 2 周零增长 → 词表陈旧信号，转步骤 11 巡检
 - **分支**：若脚本输出 ALERT（FTS 回归/行数不一致/证据链断裂）→ 标记为需行动，在报告中最优先呈现，必要时提前单独告警
-- **规则**：🔴 **`profile_sections` 是子串计数口径，会比真值多算**（2026-10-05 实测：脚本报 28、治理接口真值 27）。**引用画像分节数以治理接口 `/v1/governance?scope=agent:workbuddy` 的 sections 数组长度为准**，脚本值只作环比趋势用；二者差 1–2 不算异常，差值突然变大才需查正文是否新插了标题字面量（根因与全症状见 `references/scripts-usage.md`）
+- **规则**：🔴 **`profile_sections` 是子串计数口径，比真值多算**——分节数须以治理接口 `/v1/governance?scope=agent:workbuddy` 的 sections 长度为准；差 1–2 属正常，突增才查正文是否插了标题字面量（详见 `references/scripts-usage.md`）
 
 **备注**：结论格式：正常 / 需关注 / 需行动 + 一句话依据；追加记录到宿主当日记忆日志（含日期，追加不覆盖）
 
@@ -273,10 +282,11 @@ description: >
 | `references/step5b-long-entry-split.md` | 长条目拆分执行序列＋判定表＋基线 | 5b |
 | `references/mcp-channels.md` | 自动化 MCP 通道／鉴权／scope 空快照 | 7、8 |
 | `references/examples.md` | 整合正例／前缀聚类反例 | 5 |
+| `references/step4bc-dedup-and-kind-gates.md` | 4b/4c 根因链＋执行器对照＋门禁命令＋负例 5 例 | 4b、4c |
 | `references/scripts-usage.md` | 脚本参数、输出字段、退出码、判读陷阱 | 2b、3、4、5、9、10、11 |
 | `scripts/stale_task_sweep.py` | 残留任务扫描（只读；exit 2＝有超龄/非法状态） | 2b |
 | `scripts/archive_dump.py` | 全量存档导出（步骤 3 检查点实现） | 3 |
-| `scripts/weekly_scan.py` | 周维护量化扫描（五类信号，只读） | 4、5、5b |
+| `scripts/weekly_scan.py` | 周维护量化扫描（六类信号，含 1b 双执行器同文，只读） | 4、5、5b |
 | `scripts/leafmem_mcp_call.py` | MCP stdio 调用（HTTP 面未暴露的动作） | 7、8 |
 | `ops/mirror-sync.js` | 镜像同步（🔴 安装目录 `~/projects/leafmem`） | 9 |
 | `ops/observation.py` | 周度观察采集（约 20 指标，零 LLM） | 10 |

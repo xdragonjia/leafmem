@@ -83,3 +83,20 @@
 ## ops/consolidation.js（历史·不可运行）
 
 ⚠️ **历史脚本**，硬依赖已移除的 `DEEPSEEK_API_KEY`，**不可运行**；仅作存档参考。去重职责已由本技能步骤 4 承担。
+## 短 id 反查完整 UUID（步骤 6 MUST 配套）
+
+🔴 `supports` 必须存【完整 36 位 UUID】，禁 8 位短前缀——观察脚本按完整 id 校验，短 id 全部失配 → `principle_supports_missing` 报 ALERT（2026-09-07 实测：3 条 principle 写短 id 致 12 个 supports 指向不存在）。
+
+反查方式（任选）：
+
+```bash
+# ① 从存档 JSON 取
+python3 -c "import json;d=json.load(open('$HOME/WorkBuddy/backups/02mem/leafmem-archive/leafmem-archive-YYYYMMDD.json'));[print(x['id']) for x in d['items'] if x['id'].startswith('<8位>')]"
+
+# ② 直接查库
+sqlite3 ~/.leafmem/memory.sqlite "SELECT id FROM memory_items WHERE id LIKE '<8位>%'"
+```
+
+🔴 `get` / `update` / `delete` 只认完整 UUID，传短 id 报 `Memory not found`——**勿误判为条目已删**。
+
+🔴 修 supports 时须用**全量 metadata**（PATCH 是替换语义，只传 supports 会丢掉 `reflectedAt`/`reflectTag`/`lastRefreshedAt`/`projectId`）。改完复验 `supports_missing=0`。

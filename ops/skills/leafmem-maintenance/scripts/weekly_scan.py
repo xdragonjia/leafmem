@@ -77,6 +77,64 @@ def scan_exact_dups(rows):
     return [v for v in groups.values() if len(v) > 1]
 
 
+# 🔴 面包屑剥离（与 ops/ingest-daily-logs.py 的 BREADCRUMB_RE 同口径）：
+# 两个回流执行器（语义层 13k1c / 哨兵 ops）给同一段正文加的面包屑格式不同——
+# legacy 写 `[日期·标题] 正文`、v3 写 `[日期·标题·序号/总] 正文`。故「全文 SHA256」
+# 永远判它们不同（这是「周整清了 90 条、次日又长出来」的机制性原因）。
+# 剥壳后再比，才看得见「同一段正文」。
+_BREADCRUMB_RE = re.compile(r"^\[(?:[^\[\]]|\[[^\]]*\]){0,200}\]\s*")
+
+
+def _bare(s):
+    """剥面包屑 + 去全部空白 → 正文指纹的材料（与 ingest 侧 normalize 同义）。"""
+    return re.sub(r"\s+", "", _BREADCRUMB_RE.sub("", s or ""))
+
+
+def scan_executor_dups(rows):
+    """🔴 双执行器同文重复（2026-11-03 立，事故驱动）。
+
+    判据：**同 source_file + 同 section + 剥壳后正文相同** ⇒ 同一段 daily 内容被两个
+    执行器各入一次。限定 section 是为了不误伤「不同节引用同一段话」的合法情形
+    （实测全库 39 组剥壳重复里，7 组属此类，不该删）。
+
+    为什么单列一段：`scan_exact_dups`（全文 SHA256）抓不到它，`scan_near_dups`
+    （3-gram Jaccard≥0.72）抓得到但**只是"近重复"，SKILL 步骤 4 的删除动作不消费该段**——
+    报告了却没人处置，故复发不止。本段把「可删」与「仅提示」分开：返回的组即为
+    可机械判定的真重复（择一保留），并要求调用方核对 v3/legacy 构成再动手。
+    """
+    groups = defaultdict(list)
+    for r in rows:
+        meta = r.get("meta") or {}
+        sf = meta.get("source_file")
+        sec = meta.get("section")
+        if not sf or not sec:
+            continue  # 非 daily 回流条目，不属本判据范围
+        # （续N）后缀归一：同一节的两个增量块在 legacy/v3 下后缀写法一致，但保险起见剥掉
+        sec_key = re.sub(r"（续\d+）$", "", sec)[:40]
+        bare = _bare(r["content"])
+        if not bare:
+            continue
+        groups[(os.path.basename(sf), sec_key,
+                hashlib.md5(bare.encode()).hexdigest()[:16])].append(r)
+    out = []
+    for (sf, sec, fp), v in groups.items():
+        if len(v) < 2:
+            continue
+        # 标注版本构成，供人工/自动择一：v3 带 chunk.span（可溯源）优于 legacy
+        for r in v:
+            r["_has_span"] = bool((r.get("meta") or {}).get("chunk", {}).get("span"))
+        keep = next((r for r in v if r["_has_span"]), v[0])
+        out.append({
+            "source_file": sf, "section": sec, "fp": fp, "n": len(v),
+            "has_span": sum(1 for r in v if r["_has_span"]),
+            "keep_id": keep["id"],
+            "drop_ids": [r["id"] for r in v if r["id"] != keep["id"]],
+            "members": [{"id": r["id"], "kind": r["kind"], "date": (r["created_at"] or "")[:10],
+                         "span": r["_has_span"]} for r in v],
+        })
+    return out
+
+
 def scan_fragments(rows):
     clusters = defaultdict(list)
     for r in rows:
@@ -198,6 +256,7 @@ def main():
         "near_dups": scan_near_dups(rows),
         "long_items": scan_long(rows),
         "distill": scan_distill(rows, args.days),
+        "executor_dups": scan_executor_dups(rows),
     }
 
     if args.json:
@@ -211,6 +270,17 @@ def main():
     for g in result["exact_dups"]:
         print(f"  n={len(g)} :: " + " | ".join(
             f"{r['id']} kind={r['kind']} imp={r['importance']} upd={r['updated_at'][:19]}" for r in g))
+
+    ed = result.get("executor_dups", [])
+    print(f"\n=== 1b. 双执行器同文重复（同 file+同 section+剥壳正文相同）: {len(ed)} 组，"
+          f"可删 {sum(g['n'] - 1 for g in ed)} 条 ===")
+    for g in ed[:20]:
+        print(f"  {g['source_file']} | {g['section'][:28]} | n={g['n']} 带span={g['has_span']}"
+              f" → 保留 {g['keep_id'][:8]}，删 {','.join(x[:8] for x in g['drop_ids'])}")
+    if len(ed) > 20:
+        print(f"  …… 共 {len(ed)} 组")
+    if ed:
+        print("  🔴 处置：保留带 span 的 v3 版；删前必须走 archive_and_purge（先归档再删）。")
 
     frags = [c for c in result["fragment_clusters"] if c["is_fragment"]]
     print(f"\n=== 2. 碎片簇: 候选 {len(result['fragment_clusters'])} 个，"
