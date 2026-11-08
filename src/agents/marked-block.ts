@@ -18,7 +18,7 @@ export const BLOCK_START = "<!-- leafmem-agent-instructions:start -->";
 export const BLOCK_END = "<!-- leafmem-agent-instructions:end -->";
 
 /** Bump when the block CONTENT contract changes (tests assert required tokens per version). */
-export const BLOCK_VERSION = 3;
+export const BLOCK_VERSION = 4;
 
 export const versionLine = (v: number = BLOCK_VERSION): string =>
   `<!-- leafmem-agent-instructions:version=${v} -->`;
