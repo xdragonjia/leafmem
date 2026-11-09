@@ -1,6 +1,7 @@
 #!/bin/zsh
 # ci-watch.sh — push 后轮询 GitHub Actions 直到 conclusion（08-16 承诺的机制化，2026-10-21）
 # 用法：ops/ci-watch.sh [超时秒，默认 600]
+# 退出码：0 绿 / 1 红 / 2 无 token / 3 轮询超时 / 4 取不到 HEAD / 5 本地 HEAD 未推送（无可等 run）
 # 纪律来源：~/.workbuddy/memory/DETAIL-ENV-TOOLS.md:43「推送后必须等 CI 转绿；CI 红当场定位修复」
 # 2026-10-21 小龙追问"你还记得以后如何监控吗"——承诺存在但无机制强制，本脚本即机制：
 #   push 后必须跑本脚本；红则输出失败作业+步骤并 exit 1（调用方可链式 && 阻断后续宣称完成）
@@ -15,6 +16,15 @@ REPO="xdragonjia/leafmem"
 HEAD_SHA="$(git rev-parse HEAD 2>/dev/null)"
 [[ -z "$TOKEN" ]] && { echo "❌ 无 github.token，无法查 CI"; exit 2; }
 [[ -z "$HEAD_SHA" ]] && { echo "❌ 取不到 git HEAD（非仓库或 git 异常），拒绝判绿"; exit 4; }
+# 🔴 2026-11-10 修复：本地 HEAD 未推送时**永不会产生 CI run**，脚本会在 120/600s 后报
+# 「❌ CI 轮询超时」exit 3，被误读成「网络不可达」或「CI 有风险」（10-31/11-02/11-09 三次误判）。
+# 判据：origin/main..HEAD 有提交 ⇒ 直接 exit 5「未推送·无 run 可等」，不轮询、不判绿也不判红。
+AHEAD="$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)"
+if [[ "${AHEAD:-0}" -gt 0 ]]; then
+  echo "⚠️ 本地 HEAD 未推送（领先 origin/main ${AHEAD} 个提交，${HEAD_SHA:0:7}）——不会产生 CI run，跳过轮询"
+  echo "   处置：git push 后重跑本脚本；本轮结果记为「未验证」，不得当绿也不得当红。"
+  exit 5
+fi
 start=$(date +%s)
 while :; do
   now=$(date +%s); (( now - start > TIMEOUT )) && { echo "❌ CI 轮询超时 ${TIMEOUT}s"; exit 3; }
