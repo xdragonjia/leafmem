@@ -100,6 +100,15 @@ def main() -> int:
             print(f"- [{it['status']}] {age} | {it['task_id']} | {it['title']}")
             if it["last_entry"]:
                 print(f"    末条: {it['last_entry']}")
+        if stale:
+            # 🔴 2026-11-09 补：超龄 ≠ 未完成。实证两次——B31 全链 Step 0-6 于 10-31 当日
+            # 完成并验收 18/18，仅因收尾未同步 task_context 而滞留 active 9 天；此前还有
+            # 「已闭环决策被重新登记为待裁定」的同类事故。故先取证再闭环，禁止直接补标完成。
+            print("\n🔴 闭环取证前置（超龄 ≠ 未完成，禁直接补标）：")
+            print("   ① 查该任务归属项目的 design/ 验收章节与 PROJECT.md，确认 Step 是否已实施+验收")
+            print("   ② 若已验收 → task-append 写「证据 + 闭环版 rollingSummary」标 completed")
+            print("   ③ 若真未做或卡在外部依赖 → 保持 active，并在 rollingSummary 写明卡点与触发条件")
+            print("   ④ 判据：闭环说明必须能指认『哪份文档/哪条验收判据证明已完成』；指不出则不闭环")
 
     return 2 if (stale or invalid) else 0
 
