@@ -95,7 +95,7 @@ description: >
 
 #### 4b. 双执行器同文重复（🔴 2026-11-03 立）
 
-- **判据**：`executor_dups`（1b 段）＝ **0**；判法＝同 `source_file`+同 `section`+剥壳正文 md5。
+- **判据**：`executor_dups`（1b 段）＝ **0**；＝同 `source_file`+同 section 主标题+剥壳 md5。🔴 11-09 加固（主标题归一/尾部 `---`/跨节同文不删）→`references/step4bc-dedup-and-kind-gates.md`。
 - **处置**：保留带 `chunk.span` 的 v3 版、删 legacy 版（`keep_id`/`drop_ids` 已算好）；删前走步骤 2.0 存档。**只管 0，下降不算修好**。
 - 🔴 **本步历史缺陷**：只消费「真重复」段 ⇒ 这类（面包屑格式不同、全文未判同）**报而不管**。**架构已修**：统一写入口共用 state——**兜底去重先到先得，会保住劣质版挡住优质版（质量倒挂）**。
 
@@ -274,7 +274,7 @@ description: >
 
 ## 参考文件（references）
 
-**📖 按需读** `references/scripts-usage.md` —— 各脚本的**完整参数、输出字段、退出码、判读陷阱**。各步骤正文已写「何时用」，此处只留职责索引：
+**📖 按需读** `references/scripts-usage.md` —— 各脚本的**完整参数、输出字段、退出码、判读陷阱**（正文只留「何时用」）：
 
 | 文件 | 职责（细节读文件） | 步骤 |
 |---|---|---|

@@ -84,10 +84,48 @@ def scan_exact_dups(rows):
 # 剥壳后再比，才看得见「同一段正文」。
 _BREADCRUMB_RE = re.compile(r"^\[(?:[^\[\]]|\[[^\]]*\]){0,200}\]\s*")
 
+# 🔴 section 时间前缀（2026-11-09 修，漏判事故驱动）：
+# 两代回流执行器给同一节起的名带不同时间写法——legacy 写 `09:02 三线周检…`、
+# v3 写 `09:02–09:40 三线周检…`。只剥「（续N）」时 sec_key 不等，判据因此放过真重复
+# （2026-11-09 实测 2 组：daily 健康哨兵 / 三线周检，靠人工归一化验 MD5 才补到）。
+# 实测写法还包括 `09:0x` / `19:0x-19:5x`（未精确到分的 x 记法）、`21:26`（单点时刻）
+# 与中文「至」分隔，一并覆盖。
+_TIME_PREFIX_RE = re.compile(
+    r"^\d{1,2}[:：]\d{1,2}[0-9xX]?"
+    r"(?:\s*[–—\-~至]\s*\d{1,2}[:：]\d{1,2}[0-9xX]?)?"
+    r"\s*"
+)
+
 
 def _bare(s):
-    """剥面包屑 + 去全部空白 → 正文指纹的材料（与 ingest 侧 normalize 同义）。"""
-    return re.sub(r"\s+", "", _BREADCRUMB_RE.sub("", s or ""))
+    """剥面包屑 + 去尾部 `---` + 去全部空白 → 正文指纹的材料（与 ingest 侧 normalize 同义）。
+
+    🔴 2026-11-09 补尾部 `---`：v3 分块器写入时本已剔除文末 `---`，legacy 写入器没剔，
+    于是同一段正文在库里差 3 个字符（2026-11-09 实证 `e0eb7468` bare=644 / `775fb01a`
+    bare=647，差异恰为尾部 `---`）。不补这一条，同节同文的 legacy 副本永远判不出来。
+    """
+    s = re.sub(r"-{3,}\s*$", "", _BREADCRUMB_RE.sub("", s or ""))
+    return re.sub(r"\s+", "", s)
+
+
+def _sec_key(sec):
+    """section 归一到「主标题」用于同节判定（2026-11-09 立，漏判事故驱动）。
+
+    两代执行器 / 同一节的多次运行给同一节起的名会带三处动态修饰：
+      ① 时间前缀：`09:02 …` vs `09:02–09:40 …`
+      ② 续块后缀：`…（续2）`
+      ③ 括号内运行编号：`…（ext-skill-weekly-check）` vs `…（ext-skill-weekly-check 第 10 次）`
+    三者任一不同，section 字面就不等，同文因此漏判（2026-11-09 实证 c8d45e24 组）。
+
+    🔴 取「首个左括号前的主干」而不是剥尾部修饰：尾部括号内容形态多（编号/耗时/口径），
+    逐个正则剥会留残括号导致仍然不等；主干比对一次覆盖全部形态。
+    🔴 不再 `[:40]` 硬截断——截断会把「第 40 字符恰好落在差异位」的长节名放大成关键差异
+    （同一事故的第二重成因）。
+    """
+    s = _TIME_PREFIX_RE.sub("", sec or "").strip()
+    s = re.sub(r"（续\d+）$", "", s).strip()
+    head = re.split(r"[（(]", s, 1)[0].strip()
+    return head or s  # 节名本身以括号开头时回退全文，避免空键把不相关节并到一起
 
 
 def scan_executor_dups(rows):
@@ -109,8 +147,9 @@ def scan_executor_dups(rows):
         sec = meta.get("section")
         if not sf or not sec:
             continue  # 非 daily 回流条目，不属本判据范围
-        # （续N）后缀归一：同一节的两个增量块在 legacy/v3 下后缀写法一致，但保险起见剥掉
-        sec_key = re.sub(r"（续\d+）$", "", sec)[:40]
+        # section 归一到「主标题」：剥时间前缀/续块后缀/括号内运行编号，不做 40 字符截断。
+        # 🔴 见 _sec_key 文档：2026-11-09 两组同文即因这三处修饰漏判。
+        sec_key = _sec_key(sec)
         bare = _bare(r["content"])
         if not bare:
             continue
