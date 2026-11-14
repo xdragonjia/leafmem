@@ -281,6 +281,50 @@ export class LeafMem {
     });
   }
 
+  /**
+   * 2026-11-14 overwrite visibility (real incident: automation tasks writing
+   * same-template daily summaries via remember() silently merged over older
+   * records for days — 11-06..11-09 entries lost, only found by manually
+   * comparing createdAt). remember() is a write-that-may-overwrite operation;
+   * callers cannot tell "created" from "merged" by looking at the record alone.
+   *
+   * This runs in core (the innermost layer) so ALL write channels are covered:
+   * MCP memory_write, HTTP POST /v1/memories (CLI), batch ingest, and any
+   * future channel — mirroring the B2 enrichment placement rule below.
+   *
+   * Effects: (1) metadata.mergedOver carries machine-readable provenance so
+   * any consumer can detect a merge; (2) console.warn goes to stderr only —
+   * stdout is JSON-RPC/HTTP payload territory and must never be polluted.
+   * Best-effort: never throws, never blocks the write.
+   */
+  private markMergedOver(
+    target: MemoryRecord,
+    input: MemoryInput,
+    mode: "evaluator-ignore" | "evaluator-update" | "evaluator-contradict" | "threshold-dedupe",
+    nowIso: string,
+  ): void {
+    try {
+      target.metadata = {
+        ...(target.metadata ?? {}),
+        mergedOver: {
+          at: nowIso,
+          mode,
+          incomingKind: input.kind,
+          incomingSource: input.source ?? "manual",
+        },
+      };
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[leafmem] OVERWRITE WARNING: remember() merged into existing record ` +
+          `id=${target.id} (createdAt=${target.createdAt}, mode=${mode}). ` +
+          `If this merge was not intended, restore the original content via update() ` +
+          `and re-write the new content as a separate record.`,
+      );
+    } catch {
+      // Visibility is best-effort; must never break the write path.
+    }
+  }
+
   async remember(input: MemoryInput): Promise<MemoryRecord> {
     // 2026-09-11 hard ceiling (all channels, real incidents 09-10 + 09-11:
     // 7951-char records passed every upstream gate and made recall embedding
@@ -350,6 +394,7 @@ export class LeafMem {
               const best = candidates[0]!.record;
               applyIncomingMarkers(best, input);
               best.updatedAt = nowIso;
+              this.markMergedOver(best, input, "evaluator-ignore", nowIso);
               await this.persistRecord(records, best);
               await this.syncDerivedState(best);
               return { ...best, scope: { ...best.scope }, tags: [...best.tags] };
@@ -364,6 +409,7 @@ export class LeafMem {
                 target.importance = clamp(Math.max(target.importance, input.importance ?? 0.5), 0, 1);
                 applyIncomingMarkers(target, input);
                 target.updatedAt = nowIso;
+                this.markMergedOver(target, input, "evaluator-update", nowIso);
                 await this.persistRecord(records, target);
                 await this.syncDerivedState(target);
                 return { ...target, scope: { ...target.scope }, tags: [...target.tags] };
@@ -395,6 +441,7 @@ export class LeafMem {
                 };
                 applyIncomingMarkers(target, input);
                 target.updatedAt = nowIso;
+                this.markMergedOver(target, input, "evaluator-contradict", nowIso);
                 await this.persistRecord(records, target);
                 await this.syncDerivedState(target);
                 return { ...target, scope: { ...target.scope }, tags: [...target.tags] };
@@ -412,6 +459,7 @@ export class LeafMem {
               existing.importance = clamp(Math.max(existing.importance, input.importance ?? 0.5), 0, 1);
               applyIncomingMarkers(existing, input);
               existing.updatedAt = nowIso;
+              this.markMergedOver(existing, input, "threshold-dedupe", nowIso);
               await this.persistRecord(records, existing);
               await this.syncDerivedState(existing);
               return { ...existing, scope: { ...existing.scope }, tags: [...existing.tags] };

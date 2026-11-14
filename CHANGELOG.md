@@ -7,7 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-（暂无）
+### Added
+
+- **core 层 remember() 覆盖可见性（最内层，全通道覆盖）**：`src/core/memory.ts` 的 `remember()`
+  四个合并分支（evaluator 的 ignore/update/contradict ＋ legacy threshold-dedupe）在写回前
+  统一调用新增的 `markMergedOver()`，给被合并记录打 `metadata.mergedOver`（`at`/`mode`/
+  `incomingKind`/`incomingSource`）并向 **stderr** 打 `OVERWRITE WARNING`。
+  为什么放最内层：MCP `memory_write`、HTTP `POST /v1/memories`（CLI）、batch、摄入脚本
+  **四条写入通道都汇聚到 core remember()**（同 §B2 enrichment 的放置原则）——只在 CLI 壳层
+  加判据会漏掉 MCP 等其余三条通道。`metadata.mergedOver` 随响应返回，客户端可机械判定
+  「新建 vs 合并」；stdout/退出码不变，best-effort 不抛异常不阻断写入。
+  为什么需要：`remember()` 是「写入即可能覆盖」的非幂等操作，服务端对同 kind + 高相似
+  content 走合并语义；自动化任务每晚同模板摘要写入会静默顶掉历史条目——实证 raw 入库任务
+  连续多晚覆盖 11-06～11-09 条目未被发现。且 mergedOver 判据能捕获「同一天内覆盖今日新建
+  条目」这种 createdAt 启发式的盲区。
+- **`ops/leafmem-cli.sh` remember 写后覆盖自动警告**：CLI 壳层解析响应，优先读 core 的
+  `metadata.mergedOver`（确定性），回退 `createdAt` 早于今日（北京时区，旧版 core 未打标时兜底），
+  命中即向 stderr 打 `LEAFMEM_OVERWRITE_WARNING`（stdout JSON 与退出码不变）。
+  与 core 层是「客户端就近提示 + 服务端权威打标」的双层防线。
+- **测试**：`test/memory.test.ts` 新增专项用例——合并时打 `mergedOver` 且 stderr 告警、
+  全新创建两者皆无；既有用例断言同步补 `mergedOver` 字段。`npm test` 339/339 全绿。
+
+### Fixed
+
+- 配套：`ops/skills/leafmem-maintenance` 升 1.8.6（正文 (b) 条一行判据＋指针，
+  事故全记录与三层防线落 `references/cli-write-channel.md` §6 ④⑤）。
 
 ## [0.3.26] - 2026-10-22
 

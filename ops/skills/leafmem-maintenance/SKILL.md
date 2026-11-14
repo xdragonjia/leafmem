@@ -1,6 +1,6 @@
 ---
 name: leafmem-maintenance
-version: "1.8.5"
+version: "1.8.6"
 agent_created: true
 author: xiaoxia
 description: >
@@ -43,13 +43,13 @@ description: >
 执行任何维护动作前，先召回历史维护教训，避免重蹈覆辙
 
 - **动作**：mcp__leafmem__memory_recall(action="recall", message="leafmem 维护 整理 误删 教训")
-- **分支**：若 MCP 不可用 → 按 CLI-first（2026-09-04 v0.3.21）：首选 `bash ~/.leafmem/leafmem-cli.sh recall "..."`（HTTP 通道，launchd 守护，自动化会话 mcp__leafmem__* 恒 absent 属预期）→ CLI 也不可达先查 `launchctl list | grep leafmem` → 最后 conversation_search；召回失败仍不阻塞，但删除动作必须更保守
+- **分支**：若 MCP 不可用 → 按 CLI-first（2026-09-04）：首选 `bash ~/.leafmem/leafmem-cli.sh recall "..."`（HTTP，launchd 守护；自动化会话 mcp__leafmem__* 恒 absent 属预期）→ 不可达先查 `launchctl list | grep leafmem` → 最后 conversation_search；召回失败仍不阻塞，但删除动作必须更保守
 
-**📖 按需读** `references/cli-write-channel.md`（写入通道 task-append 子命令 / CLI-first 降级链 / recall 返回契约与 remember 覆盖事故全记录）——**要写记忆或 recall 结果异常时必读**，只做只读观测不必读。
+**📖 按需读** `references/cli-write-channel.md`（task-append 子命令 / CLI-first 降级链 / recall 返回契约 / remember 覆盖事故全记录）——**要写记忆或 recall 结果异常时必读**，只做只读观测不必读。
 
-**🔴 四条写入硬纪律（name=remember_overwrite_hazard，severity=P0；完整事故记录见 `references/cli-write-channel.md`，纪律本体在此）**：
+**🔴 四条写入硬纪律（name=remember_overwrite_hazard，severity=P0；纪律本体在此，事故记录见上方指针）**：
 (a) **追加型教训一律用 `update --content <old + 新增>`**（先 `get` 取原文，拼接后整段回写），**不要**用 `remember` 期望它「新建一条相近记录」；
-(b) **`remember` 之后必须立刻 `get` 返回的 id 并核对 `createdAt`** —— 若早于今天即说明命中并覆盖了既有条目（`remember` 是「写入即可能覆盖」的非幂等操作，**同 kind+同 tags+同模板**即触发，与「我认为主题不同」的主观判断无关；且 `summary`/`tags`/`kind`/`importance`/`confidence` **一并被覆盖**），须立即恢复原文再决定是否拆分另建；
+(b) **`remember` 之后必须立刻 `get` 返回的 id 并核对 `createdAt`** —— 若早于今天即说明命中并覆盖了既有条目（`remember` 是「写入即可能覆盖」的非幂等操作，**同 kind+同 tags+同模板**即触发，与「我认为主题不同」的主观判断无关；且 `summary`/`tags`/`kind`/`importance`/`confidence` **一并被覆盖**），须立即恢复原文再决定是否拆分另建（core 已自动打 `mergedOver` 标记告警，见指针 §6）；
 (c) `remember` 仅在**已用正确口径 recall 确认无同主题条目**时使用；
 (d) 恢复原文的前提是**手上有原文**：写记忆前先 `get` 留存，或确认该条目内容已在当前上下文中。
 

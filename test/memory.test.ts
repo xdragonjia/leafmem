@@ -123,20 +123,72 @@ test("deduplicates similar memories instead of creating duplicates", async () =>
   assert.equal(first.id, second.id);
   assert.equal(second.importance, 0.9);
   assert.deepEqual(second.tags, ["codex", "claude"]);
-  assert.deepEqual(second.metadata, {
-    sessionId: "c1",
-    projectPath: "/repo",
-    sourceHistory: ["codex", "claude"],
-    markerHistory: [
-      {
-        source: "claude",
-        tags: ["claude"],
-        metadata: { sessionId: "c2", projectPath: "/repo" },
-      },
-    ],
-  });
+  // 2026-11-14: merged branch now stamps metadata.mergedOver (overwrite visibility,
+  // innermost layer so MCP/HTTP/CLI/batch channels all carry it).
+  const mergedOver = (second.metadata as Record<string, unknown>).mergedOver as Record<string, unknown>;
+  assert.equal(mergedOver.mode, "threshold-dedupe");
+  assert.equal(mergedOver.incomingKind, "preference");
+  assert.equal(mergedOver.incomingSource, "claude");
+  assert.equal(typeof mergedOver.at, "string");
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(second.metadata as Record<string, unknown>).filter(([k]) => k !== "mergedOver"),
+    ),
+    {
+      sessionId: "c1",
+      projectPath: "/repo",
+      sourceHistory: ["codex", "claude"],
+      markerHistory: [
+        {
+          source: "claude",
+          tags: ["claude"],
+          metadata: { sessionId: "c2", projectPath: "/repo" },
+        },
+      ],
+    },
+  );
   const all = await memory.list({ scopes: [{ type: "user", id: "alice" }] });
   assert.equal(all.length, 1);
+});
+
+test("remember merge warns on stderr and stamps mergedOver; fresh create does neither", async () => {
+  // 2026-11-14 regression for the silent-overwrite incident (automation same-template
+  // summaries merged over 11-06..11-09 records; only caught by manual createdAt diffing).
+  const memory = createLeafMem({ store: new InMemoryStore(), dedupeThreshold: 0.85 });
+  const scope = { type: "agent" as const, id: "workbuddy" };
+
+  const warnings: string[] = [];
+  const origWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map(String).join(" "));
+  };
+  try {
+    const first = await memory.remember({
+      scope,
+      kind: "note",
+      content: "Deploy checklist requires rollback plan before merge window.",
+      source: "automation",
+    });
+    // Fresh create: no warning, no mergedOver stamp.
+    assert.equal(warnings.length, 0);
+    assert.equal((first.metadata as Record<string, unknown> | undefined)?.mergedOver, undefined);
+
+    const second = await memory.remember({
+      scope,
+      kind: "note",
+      content: "Deploy checklist requires rollback plan before merge window.",
+      source: "automation",
+    });
+    // Merge: same id, warning emitted to stderr, machine-readable stamp present.
+    assert.equal(second.id, first.id);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /OVERWRITE WARNING/);
+    assert.match(warnings[0], new RegExp(first.id));
+    const stamp = (second.metadata as Record<string, unknown>).mergedOver as Record<string, unknown>;
+    assert.equal(stamp.mode, "threshold-dedupe");
+  } finally {
+    console.warn = origWarn;
+  }
 });
 
 test("dedupe:false keeps sibling chunks as separate records", async () => {

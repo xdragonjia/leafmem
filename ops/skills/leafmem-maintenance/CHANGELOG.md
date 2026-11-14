@@ -1,3 +1,11 @@
+## [1.8.6] - 2026-11-14
+
+- 🔴 **(b) 纪律机械化：下沉到 core `remember()`，四写入通道全覆盖**（事故驱动，第三次重犯后根治）。
+  - **事故**：raw 自动化任务每晚同模板摘要 `remember`，连续多晚静默覆盖 11-06（`f8ac5aec`）～11-09 条目；11-14 写后 `get` 见 `createdAt` 早于今日才暴露（lesson `77f0f740`）。损害面＝手写摘要层；日级全文由日志回流「文件头」条目独立承载、未丢。
+  - **元教训一**：纪律写在文档/SOUL/prompt 里 ≠ 会被执行（(b) 条与 SOUL 6d 早已存在仍连犯三次）。**元教训二（小龙 11-14 追问「MCP 通道会不会漏」后补）**：防线加在哪一层决定它覆盖几条通道——最初只在 CLI 壳层加 `createdAt` 判据，但 **MCP `memory_write` 不经过 CLI**（直连 `dist/bin/leafmem-mcp.js`），CLI 层判据对 MCP 完全失效。「我以为我懂」陷阱：熟悉 CLI 就在 CLI 修，没回到汇聚点。
+  - **修法（根治）**：判据下沉到最内层 `src/core/memory.ts` `remember()`——MCP / HTTP（CLI）/ batch / 摄入脚本**四条通道都汇聚于此**（同 §B2 enrichment 放置原则）。四个合并分支（evaluator ignore/update/contradict ＋ legacy threshold-dedupe）写回前统一调 `markMergedOver()`：打 `metadata.mergedOver`（`at`/`mode`/`incomingKind`/`incomingSource`）＋ stderr `OVERWRITE WARNING`。标记随响应返回，任何客户端可机械判「新建 vs 合并」，且能捕获「同日覆盖今日新建条目」这种 `createdAt` 盲区。CLI 壳层保留就近提示（优先读 `mergedOver`、回退 `createdAt`）。四层防线：**L0 core 权威打标＋警告**／L1 CLI 就近提示／L2 prompt 侧 `[leafmem]` 汇报行（M10）／L3 本技能四条纪律。
+  - **验收**：`npm run check` exit 0；`npm test` **339/339 全绿**（新增专项用例：合并打 `mergedOver`+stderr 告警、全新创建两者皆无；既有用例断言同步补字段）；`npm run build` exit 0；`launchctl kickstart` 重启服务（防运行进程持旧码）；HTTP 通道 E2E：首次全新写入 `mergedOver=None`、二次同内容写入命中同 id 且 `mergedOver={mode:threshold-dedupe}`；**同日覆盖负例**（`createdAt` 启发式盲区）仍被 `mergedOver` 判据捕获；服务端 `agent-service.err.log` 收到 `OVERWRITE WARNING`；测试条目均已删。备份 `backups/05cli/leafmem-cli.sh.bak-20261114-0855`。细节外移 `references/cli-write-channel.md` §6 ④⑤，正文 (b) 只留判据＋指针（体积 cl100k <10,000）。
+
 ## [1.8.5] - 2026-11-09
 
 - 🔴 **4b 判据加固：修「同节同文被 section 命名变异漏判」**（来源＝2026-11-09 周整实测 `executor_dups` 报 0，但库内确有 2 组同文，靠人工归一化验 MD5 才抓到）。
@@ -96,6 +104,8 @@
 
 | 版本 | 日期 | 主题 |
 |---|---|---|
+| [1.8.6](#186---2026-11-14) | 2026-11-14 | remember 写后自动核对 `createdAt`（CLI 通道级防线，第三次重犯后根治）；细节外移 `references/cli-write-channel.md` §6 |
+| [1.8.5](#185---2026-11-09) | 2026-11-09 | 4b 判据加固：修「同节同文被 section 命名变异漏判」（`_sec_key()` 归一＋`_bare()` 去尾 `---`），跨节同文不删 |
 | [1.8.4](#184) | 2026-11-03 | 新增步骤 4b「双执行器同文重复」与 4c「非标准 kind 门禁」（事故驱动：2026-11-03 哨兵转交遗留项处置）。 |
 | [1.8.3](#183---2026-10-20) | 2026-10-20 | 体积余量专项：9,959→9,429 token（余量 41→571），示例外移＋索引表压缩 |
 | [1.8.2](#182---2026-10-20) | 2026-10-20 | 步骤 5b 补「该不该拆」判据（长≠该拆／过时 runbook 不拆），基线 7 条入 reference |

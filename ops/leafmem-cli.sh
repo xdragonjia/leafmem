@@ -121,7 +121,39 @@ while i < len(a):
         i += 1
 print(json.dumps(d, ensure_ascii=False))
 ' "$CONTENT" "$SUMMARY" "$KIND" "$IMP" ${@+"$@"})
-    curl -s -m 30 -X POST "${BASE}/v1/memories?scope=agent:${AGENT}" -H "$AUTH" -H "$CT" -d "$P"; echo
+    RESP=$(curl -s -m 30 -X POST "${BASE}/v1/memories?scope=agent:${AGENT}" -H "$AUTH" -H "$CT" -d "$P")
+    echo "$RESP"
+    # 🔴 写后自动核验（2026-11-14 加，防静默覆盖；实证事故=raw 任务同模板 remember
+    #    覆盖了 11-06 条目 f8ac5aec，11-07~09 同型丢失多轮未被发现，lesson 77f0f740）。
+    #    判据优先级：① metadata.mergedOver（core 层确定性标记，2026-11-14 下沉到
+    #    src/core/memory.ts remember() 四个合并分支，MCP/HTTP/CLI/batch 全通道都带；
+    #    能捕获「同一天内覆盖今日新建条目」这种 createdAt 启发式的盲区）② 回退
+    #    createdAt 早于今天（北京时区）＝旧版 core 未打标时的兜底。
+    #    警告只走 stderr、不改 stdout JSON 与退出码，所有既有调用方零破坏。
+    printf '%s' "$RESP" | $PY -c '
+import json, sys, datetime
+try:
+    d = json.load(sys.stdin)
+    rid = str(d.get("id", "?"))[:8]
+    ca = d.get("createdAt", "")
+    merged = (d.get("metadata") or {}).get("mergedOver")
+    hit = None
+    if merged:
+        hit = "core mergedOver mode=" + str(merged.get("mode"))
+    elif ca:
+        tz8 = datetime.timezone(datetime.timedelta(hours=8))
+        created_cn = datetime.datetime.fromisoformat(ca.replace("Z", "+00:00")).astimezone(tz8).date()
+        today_cn = datetime.datetime.now(tz8).date()
+        if created_cn < today_cn:
+            hit = "createdAt=" + ca + "（北京 " + str(created_cn) + "）早于今日"
+    if hit:
+        print("🔴 LEAFMEM_OVERWRITE_WARNING: remember 未新建，命中旧条目 id=" + rid +
+              "（判据：" + hit + "）。若非有意合并＝静默覆盖事故："
+              "先 get 该条读残存信息、从当日 md 日志重建原文 update 回填，再把新内容另立条目。"
+              "判据与流程见 lesson 77f0f740 / SOUL 6d。", file=sys.stderr)
+except Exception:
+    pass
+'
     ;;
   get)
     ID="${2:?get 需要 id}"
