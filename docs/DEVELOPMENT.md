@@ -43,6 +43,11 @@
 
 ## 四、提交纪律
 
+- 🔴 **改的是「部署副本」还是「源」？改完必须回写源并提交，否则升级即回滚丢失。** 本仓库有多处运行时部署副本，**它们不是权威源**：
+  - `~/.leafmem/leafmem-cli.sh` ← 源是 `ops/leafmem-cli.sh`（`src/agents/hooks.ts` 的 `installLeafmemCli()` 每次升级**无条件 `copyFile` 覆盖**本地）；
+  - `~/.workbuddy/skills/leafmem-maintenance/` ← 是软链指向 `ops/skills/leafmem-maintenance/`（`readlink` 可验，改软链＝改源，但**仍须提交**）；
+  - `dist/**` ← build 产物，`.gitignore` 排除，不入库；源在 `src/**`。
+  - **判据（可机械检查）**：收尾 `git status` 前，凡本轮改过上述任一路径，必须确认对应**源文件**已改且已 `git add`；只改了 `~/.leafmem/` 或 `dist/` 而源文件无 diff ＝ 改动会丢，禁止收尾。
 - 技能/文档改动**当场提交**，避免"改完不提交、一周后补提交"——首次进入 CI 的内容往往已经定型，问题会延后暴露；
 - 涉及 `ops/` 下文档的改动，推送前先跑一次 `npm run audit`；
 - 一次提交只做一件事，便于回滚与定位。
