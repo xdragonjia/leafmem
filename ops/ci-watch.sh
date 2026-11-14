@@ -26,16 +26,48 @@ if [[ "${AHEAD:-0}" -gt 0 ]]; then
   exit 5
 fi
 start=$(date +%s)
+# 🔴 2026-11-15 修复：内层 curl 原先无 `-m` 超时、无 HTTP 码捕获、python 解析失败被 2>/dev/null 吞掉，
+# 导致 API 层故障（403 限流 / 隧道出口 IP 共享 / 瞬时不可达）表现为「RUN 为空 → 一直 sleep」，
+# 最终报「❌ CI 轮询超时」exit 3，被反复误读成「CI 未验证」甚至「CI 有风险」（10-31/11-02/11-09/11-10/11-15）。
+# 现在每轮记录 HTTP 码与 API message，超时信息里带出末次诊断；连续 3 轮非 200 直接快失败。
+API_FAIL=0; LAST_DIAG="(无)"
 while :; do
-  now=$(date +%s); (( now - start > TIMEOUT )) && { echo "❌ CI 轮询超时 ${TIMEOUT}s"; exit 3; }
-  RUN=$(curl -s "https://api.github.com/repos/$REPO/actions/runs?per_page=5" \
-    -H "Authorization: Bearer $TOKEN" | python3 -c "
+  now=$(date +%s); (( now - start > TIMEOUT )) && {
+    echo "❌ CI 轮询超时 ${TIMEOUT}s（末次 API 诊断：${LAST_DIAG}）"
+    echo "   ↑ 这是「无法取得 CI 结论」，不等于 CI 红，也不等于已绿；按诊断项处置后重跑。"
+    exit 3
+  }
+  RUN=$(curl -s -m 20 -w "\n%{http_code}" "https://api.github.com/repos/$REPO/actions/runs?per_page=5" \
+    -H "Authorization: Bearer $TOKEN" 2>/dev/null | python3 -c "
 import json,sys
 sha='$HEAD_SHA'
-for r in json.load(sys.stdin).get('workflow_runs',[]):
+raw=sys.stdin.read()
+body,_,code=raw.rpartition('\n')
+code=code.strip() or '000'
+if code!='200':
+    msg=''
+    try: msg=json.loads(body).get('message','')[:80]
+    except Exception: msg=body[:80].replace('\n',' ')
+    print('__APIFAIL__', code, msg); raise SystemExit
+try: runs=json.loads(body).get('workflow_runs',[])
+except Exception: print('__APIFAIL__','200','parse_error'); raise SystemExit
+for r in runs:
     if r['head_sha'].startswith(sha):
         print(r['id'], r['status'], r['conclusion'] or '-'); break
 " 2>/dev/null)
+  case "$RUN" in
+    __APIFAIL__*)
+      LAST_DIAG="HTTP $(echo "$RUN" | awk '{print $2}') $(echo "$RUN" | cut -d' ' -f3-)"
+      API_FAIL=$((API_FAIL+1))
+      if (( API_FAIL >= 3 )); then
+        echo "❌ GitHub API 连续 3 轮非 200（${LAST_DIAG}）——无法取得 CI 结论"
+        echo "   性质：未验证（非红非绿）。常见因：token 失效(tok 只剩 40 位以下/过期)、"
+        echo "   出口 IP 共享触发 403 限流、Proxifier 隧道上游断开。处置后重跑本脚本。"
+        exit 3
+      fi
+      sleep 5; continue ;;
+  esac
+  API_FAIL=0
   [[ -z "$RUN" ]] && { sleep 15; continue; }
   rid=$(echo "$RUN" | awk '{print $1}'); st=$(echo "$RUN" | awk '{print $2}'); cc=$(echo "$RUN" | awk '{print $3}')
   if [[ "$st" == "completed" ]]; then
