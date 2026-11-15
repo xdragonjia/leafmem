@@ -67,4 +67,10 @@ bash ~/.leafmem/leafmem-cli.sh task-append <taskId> <content> [rollingSummary] [
   **根治＝下沉到最内层 `src/core/memory.ts` 的 `remember()`**：MCP / HTTP（CLI）/ batch / 摄入脚本**四条写入通道都汇聚到 core remember()**（同 §B2 enrichment 的放置原则，见 memory.ts 内注释）。在四个合并分支（evaluator 的 ignore/update/contradict ＋ legacy threshold-dedupe）写回前统一调 `markMergedOver()`：给被合并记录打 `metadata.mergedOver`（`at`/`mode`/`incomingKind`/`incomingSource`）并向 stderr 打 `OVERWRITE WARNING`。`mergedOver` 随响应返回，**任何客户端（含 MCP）都能机械判定「新建 vs 合并」**；且它能捕获「同一天内覆盖今日新建条目」这种 `createdAt` 启发式的盲区。
 - ⑤ **分层防线（三层，缺一不可）**：**L0（权威）core 层 `metadata.mergedOver` + stderr 警告**——最内层、四通道全覆盖、确定性判据，是真正的防线；**L1 CLI 就近提示**——壳层解析响应，优先读 L0 的 `mergedOver`、回退 `createdAt` 早于今日，命中即向 stderr 打 `LEAFMEM_OVERWRITE_WARNING`（客户端就近可见，不改 stdout/退出码）；**L2 自动化 prompt 侧**「摘要必须输出 `[leafmem] id=<前8位> createdAt=<日期>` 行」＝产物侧可 grep 的汇报判据（M10，缺行＝漏核，raw 任务 prompt ①b 已固化）；**L3 本技能四条写入纪律（a-d）**。恢复流程：先从 `~/.workbuddy/memory/<被覆盖日期>.md` 重建原文 `update` 回填（`createdAt` 不变、不重生），再把新内容差异化措辞＋唯一日期 tags 另立新条目。
 
-> 四条机械纪律（🔴 MUST）见 SKILL.md 步骤 1 正文，此处不重复。
+> 四条机械纪律（🔴 MUST）见 SKILL.md 步骤 1 正文，此处不重复。## CLI 通道：长文本引号陷阱（2026-09-06 实测修复，🔴 数据损坏级）
+
+`~/.leafmem/leafmem-cli.sh` 曾有 4 处未加引号的 `${@:-}`（recall/remember/list/update 向 Python 传参），shell 词分割会拆碎 `--content "长文本 含空格"`，Python 只取首词 → **含空格长文本静默截断，无报错**。
+
+- 修法＝`${@+"$@"}`（保引号语义 + 兼容 bash 3.2 + `set -u`）
+- 🔴 **两处都要改**：本地 `~/.leafmem/leafmem-cli.sh` ＋ 上游模板 `projects/leafmem/ops/leafmem-cli.sh`——`dist/agents/hooks.js` 的 `installLeafmemCli()` 每次升级会**无条件覆盖本地**，只改本地必被回滚
+- CLI 写完**回读校验字段长度**；CLI 出问题可用 MCP 直连兜底（两通道互为备份）

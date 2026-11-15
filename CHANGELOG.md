@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- `remember()` 模糊合并吞掉同模板日志节（2026-11-16，数据损坏级）：
+  - 现象：`dedupeThreshold`（默认 0.85）以上把新内容合并进既有记录——content 被替换、`createdAt`/`ingested_at` 保留、tags 并集污染，呈现「正文日期 ≠ 溯源日期」。日志「📌 今日一览」「（文件头）」「今日执行摘要」跨日相似度天然 >0.85，调用方漏传 `dedupe:false` 即触发；10-21 批量回填日一次产生 77 条，窗口内累计 82 条。
+  - 修复：新增 `looksStructuralChunk()`，带 `chunk`／`schema`／`source_file+section` 溯源的记录**在汇聚点一律跳过模糊合并**，不再依赖调用方自觉传参。
+  - 回归：`test/memory.test.ts` 新增 2 例（结构性分块不合并 / 普通记忆仍合并），全量 341/341；负例注入（删去判定）有 1 例变红。
+
 ### Changed
 - console 记忆工作台设计优化五项（2026-11-15，ui-design+web-graphics 方法论轮）：
   - 仪表盘中行 grid-areas 重构：用户画像卡横排入左两列、最近活动卡纵向跨两行，消除 160px 背景空白带（零内容损失零拉伸）。

@@ -345,7 +345,13 @@ export class LeafMem {
       // --- Evaluate: use evaluator or fallback to threshold-based dedup ---
       // input.dedupe === false：调用方已自己做精确幂等（如分块摄入按 chunk 指纹），
       // 跳过模糊合并——否则同节兄弟块会被 0.85 阈值覆盖成一条（2026-10-22）。
-      if (input.dedupe !== false && (this.evaluator || this.dedupeThreshold < 1)) {
+      // 2026-11-16：**结构性分块一律跳过模糊合并**，不再依赖调用方记得传 dedupe:false。
+      // 实证（10-21 批量回填日一次产生 77 条）：带 source_file/section/schema 溯源的日志分块
+      // 天然同模板（「📌 今日一览」「（文件头）」跨日相似度 >0.85），一旦漏传 dedupe:false，
+      // 后一日的节会被并进前一日记录——旧记录 content 被替换、createdAt 保留、tags 被并集污染，
+      // 呈现为「正文日期 ≠ metadata 日期」的静默数据损坏。此处按输入形态兜底，属汇聚点判定。
+      const structuralChunk = looksStructuralChunk(input.metadata);
+      if (input.dedupe !== false && !structuralChunk && (this.evaluator || this.dedupeThreshold < 1)) {
         const inputText = buildSearchText({
           kind: input.kind,
           content: input.content,
@@ -1617,6 +1623,27 @@ function resolveScopeWeight(recordScope: MemoryScope, requestedScopes?: MemorySc
     return 0;
   }
   return clamp(match.weight ?? 1, 0, 1.5) / 1.5;
+}
+
+/**
+ * 2026-11-16：识别「结构性分块」——带 chunk 溯源信息的记录。
+ *
+ * 为什么必须由形态判定而非调用方传参：分块摄入是批量脚本，任何新脚本漏传
+ * `dedupe:false` 都会让同模板节（「📌 今日一览」「（文件头）」「今日执行摘要」）
+ * 因跨日相似度 >0.85 而互相覆盖，表现为「正文日期 ≠ metadata 日期」且 createdAt 停在旧值。
+ * 该缺陷 10-21 批量回填日一次产生 77 条不可见损坏（无报错、无告警）。
+ *
+ * 判定口径（命中任一即视为结构性分块，禁止模糊合并）：
+ * ① metadata.chunk（v3 分块器写入的 index/span/seq）；
+ * ② metadata.schema（分块器版本标记，如 v3-structural）；
+ * ③ metadata.source_file 且 metadata.section 同时存在（旧版分块器的溯源组合）。
+ */
+function looksStructuralChunk(metadata: Record<string, unknown> | undefined): boolean {
+  if (!metadata) return false;
+  if (metadata.chunk && typeof metadata.chunk === "object") return true;
+  if (typeof metadata.schema === "string" && metadata.schema.length > 0) return true;
+  if (typeof metadata.source_file === "string" && typeof metadata.section === "string") return true;
+  return false;
 }
 
 function buildSearchText(record: MemoryRecord): string {

@@ -186,3 +186,41 @@ cd /Users/dragon/projects/leafmem
 ```
 
 两者须全绿。改动 `ops/ingest-daily-logs.py` 或 `weekly_scan.py` 后必跑。
+---
+
+## §4d 覆盖走样残留（2026-11-16 立，事故驱动）
+
+### 判据
+
+记录同时满足：① metadata 有 `source_file` 与 `section`（分块回流）；② 正文以 `[YYYY-MM-DD·` 开头；③ 该日期 ≠ `doc_date`（缺则取 `source_file` 文件名日期）。命中数须为 **0**。
+
+### 根因链（已闭环）
+
+1. `core/memory.ts` 的 `remember()` 在 `dedupeThreshold`（默认 0.85）以上**合并进既有记录**：替换 `content`、保留 `createdAt`/`ingested_at`、`tags` 并集、写 `markerHistory`。
+2. 日志分块天然同模板：「📌 今日一览」「（文件头）」「今日执行摘要」跨日相似度 >0.85。
+3. 调用方漏传 `dedupe:false`（v3 分块器已传，旧导入器未传）→ 后一日内容并进前一日记录。
+4. 结果：**无报错、无告警、FTS 一致、条数正常**，只有「正文自称日期 vs 溯源日期」比对可见。
+5. 实证：2026-10-21 旧导入器批量回填一次产生 77 条；10-21～11-03 窗口累计 82 条；legacy 写入于 11-03 后停止（日期分布为证），所以「每周仍复发」的旧结论属**归因错误**——是存量残留，不是活着的写入者。
+
+### 增量拦截（汇聚点，不靠调用方自觉）
+
+`src/core/memory.ts` → `looksStructuralChunk(metadata)`：命中 `metadata.chunk` / `metadata.schema` / (`source_file` 且 `section`) 任一条 ⇒ 跳过模糊合并。位置在 `remember()` 的去重门内，**所有通道（CLI/MCP/HTTP 单条/batch）共用**，属于必经汇聚点。
+回归：`npm test`（341 例）；负例注入方法＝把 `!structuralChunk` 从条件里删掉，`structural chunks skip fuzzy merge` 必须变红，恢复后全绿。
+
+### 存量处置（正文内容权威）
+
+```
+# 1) 修前存档
+python3 scripts/archive_dump.py <备份路径>
+# 2) PATCH 元数据（必须带 scope，否则 404；preserveUpdatedAt 防污染 recency）
+PATCH /v1/memories/<id>?scope=agent:workbuddy  {"metadata":{...},"preserveUpdatedAt":true}
+```
+
+- `doc_date` 一律改为正文日期。
+- `source_file`：能按磁盘包含核验就补正（样本要**先剥面包屑前缀** `^\[[^\]]*\]`，否则永远失配——面包屑是分块器加的，原文没有）；不能核验的按日期约定推定并写 `metadata_repaired.note='source_file_by_date_convention'` + `unverified_reason`。
+- 删除仅限「存在配对正确孪生」的记录；无孪生禁删（会丢内容）。
+- 回读三断言：内容 md5 不变 / `doc_date` 已生效 / `updatedAt` 未变。
+
+### 读数字的坑（同批实证）
+
+`weekly_scan.py --json` 的碎片簇字段是 `max_jac` 与 `is_fragment`。写成 `maxJac` 时 Python 取不到键、`dict.get(...,0)` 静默返回 0 ⇒ 报告里出现「真碎片簇 0 个」的**权威假阴性**，连续四周无人发现（真实值 28）。凡从 JSON 取判据字段，先打印 `list(d.keys())` 断言键存在，再取值。

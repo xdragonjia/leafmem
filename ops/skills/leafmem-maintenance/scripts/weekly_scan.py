@@ -174,6 +174,62 @@ def scan_executor_dups(rows):
     return out
 
 
+def scan_overwrite_residue(rows):
+    """🔴 覆盖走样残留（2026-11-16 立，事故驱动）：正文日期 ≠ 溯源日期。
+
+    判据：记录带 chunk 溯源（source_file/section），正文以 `[YYYY-MM-DD·` 开头，
+    而该日期与 metadata 的 doc_date（或 source_file 文件名日期）不一致。
+
+    为什么单列：这是 `remember()` 0.85 模糊合并的破坏痕迹——同模板节（「📌 今日一览」
+    「（文件头）」「今日执行摘要」）跨日相似度天然 >0.85，后一日的节被并进前一日记录，
+    旧记录 content 被替换、createdAt 与 ingested_at 保留、tags 被并集污染。
+    该损坏**无报错、无告警、FTS 一致、条数正常**，只有比对「正文自称日期 vs 溯源日期」
+    才看得见；`exact_dups`（全同）与 `near_dups`（近重复）都抓不到它。
+    实证：2026-10-21 旧导入器批量回填漏传 dedupe:false，一次产生 77 条。
+
+    处置：存量按「有配对正确孪生 → 删残影；无孪生 → 只修 metadata（内容权威）」处理；
+    增量由 core/memory.ts looksStructuralChunk() 在汇聚点拦截，本段只做回归看门狗。
+    """
+    pat = re.compile(r"^\s*\[(\d{4}-\d{2}-\d{2})·")
+    out = []
+    for r in rows:
+        meta = r.get("meta") or {}
+        sec = meta.get("section")
+        sf = meta.get("source_file")
+        if not sec or not sf:
+            continue  # 非分块回流条目，不属本判据范围
+        m = pat.match(r.get("content") or "")
+        if not m:
+            continue
+        body_date = m.group(1)
+        ref = meta.get("doc_date") or ""
+        if not ref:
+            fm = re.search(r"(\d{4}-\d{2}-\d{2})\.md$", str(sf))
+            ref = fm.group(1) if fm else ""
+        if not ref or body_date == ref:
+            continue
+        try:
+            from datetime import date as _d
+
+            gap = abs((_d.fromisoformat(body_date) - _d.fromisoformat(ref)).days)
+        except Exception:
+            gap = None
+        out.append({
+            "id": r["id"],
+            "kind": r["kind"],
+            "body_date": body_date,
+            "meta_date": ref,
+            "gap_days": gap,
+            "span": bool((meta.get("chunk") or {}).get("span")),
+            "ingested_at": (meta.get("ingested_at") or "")[:10],
+            "section": sec[:40],
+            "source_file": os.path.basename(str(sf)),
+            "head": (r.get("content") or "")[:50].replace("\n", " "),
+        })
+    out.sort(key=lambda x: (x["ingested_at"], x["id"]))
+    return out
+
+
 def scan_fragments(rows):
     clusters = defaultdict(list)
     for r in rows:
@@ -296,6 +352,7 @@ def main():
         "long_items": scan_long(rows),
         "distill": scan_distill(rows, args.days),
         "executor_dups": scan_executor_dups(rows),
+        "overwrite_residue": scan_overwrite_residue(rows),
     }
 
     if args.json:
@@ -322,6 +379,16 @@ def main():
         print("  🔴 处置：保留带 span 的 v3 版；删前必须走 archive_and_purge（先归档再删）。")
 
     frags = [c for c in result["fragment_clusters"] if c["is_fragment"]]
+    orr = result.get("overwrite_residue", [])
+    print(f"\n=== 1c. 覆盖走样残留（正文日期 ≠ 溯源日期）: {len(orr)} 条 ===")
+    if orr:
+        for r in orr[:12]:
+            print(f"  {r['id'][:8]} 正文{r['body_date']} vs 溯源{r['meta_date']} "
+                  f"gap={r['gap_days']} span={r['span']} ing={r['ingested_at']} :: {r['section']}")
+        if len(orr) > 12:
+            print(f"  …… 共 {len(orr)} 条")
+        print("  🔴 处置：正文内容权威，只修 metadata；有配对正确孪生才可删残影。")
+
     print(f"\n=== 2. 碎片簇: 候选 {len(result['fragment_clusters'])} 个，"
           f"其中真碎片簇 {len(frags)} 个（maxJac>={COHESION_THRESHOLD}） ===")
     for c in result["fragment_clusters"][:15]:

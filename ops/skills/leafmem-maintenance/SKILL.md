@@ -1,6 +1,6 @@
 ---
 name: leafmem-maintenance
-version: "1.8.6"
+version: "1.8.8"
 agent_created: true
 author: xiaoxia
 description: >
@@ -104,13 +104,18 @@ description: >
 - **判据**：`kind NOT IN (六种)` 计数 ＝ **0**。🔴 **是通路问题不是整洁问题**——`kind` 决定 `reflect`（只看 lesson/decision/note）/`profile`（只看 preference/identity）/principle 加权，写错＝**内容静默失效**。
 - **归并**：实证裁定→`decision`、规则→`lesson`、事实→`note`。SQL、映射表、负例与回归清单见 `references/step4bc-dedup-and-kind-gates.md`。
 
+#### 4d. 覆盖走样残留门禁（🔴 2026-11-16 立）
+
+- **判据**：`weekly_scan.py`「1c」段 ＝ **0**（记录带 `source_file`+`section` 溯源，且正文 `[YYYY-MM-DD·` ≠ `doc_date`／文件名日期）。
+- **性质**：`remember()` 0.85 模糊合并吞同模板日志节的痕迹，无报错/告警且 `exact_dups`/`near_dups` 均抓不到。处置＝正文权威只修 metadata、无孪生禁删；增量已由 `looksStructuralChunk()` 汇聚点拦截。根因链/SQL/PATCH 必带 `?scope=` → `references/step4bc-dedup-and-kind-gates.md` §4d。
+
 ### 步骤 5：碎片簇整合
 
 把同日期+同 context 的 ≥3 条碎片整合为 1-2 条高质量记忆
 
-- **检测**：用 `python3 scripts/weekly_scan.py` 的「2. 碎片簇」段：按 (日期, 主tag) 聚类 ≥3 条成候选簇，并同时给出**簇内 3-gram 凝聚度 maxJac**
-- **规则**：🔴 只有 maxJac ≥ 0.55 的候选簇才算「真碎片簇」值得整合。同日同 tag 但主题各异的独立记忆会被机械聚类误并成一簇——2026-09-21 实证：98 个候选簇中 97 簇 maxJac < 0.55（多为时序流水与独立事件），仅 1 簇 0.610，且经内容审查属「版本演进链」而非碎片。禁止凭「同日期同 tag」直接整合
-- **规则**：版本演进链（同一决策的旧版与纠正版、同一会话的多次 commit 且 taskId 不同）不属碎片：按 PRESERVE HISTORY 保留全部，仅确认旧条已自带「已被替代 / 已纠正」标记（保留替代链本身即历史证据）
+- **检测**：用 `python3 scripts/weekly_scan.py` 的「2. 碎片簇」段：按 (日期, 主tag) 聚类 ≥3 条成候选簇，并同时给出**簇内 3-gram 凝聚度 `max_jac`**
+- **规则**：🔴 只有 **`is_fragment=True`**（`max_jac ≥ 0.55`）的簇才值得核验，禁凭「同日期同 tag」整合（→ `references/fragment-cluster-evidence.md`）。🔴 读 JSON 必用 `max_jac`／`is_fragment`：写 `maxJac` 会静默取 0，产出权威假阴性（11-16 实证）。
+- **规则**：版本演进链（同一决策的旧版与纠正版、同一会话的多次 commit 且 taskId 不同）不属碎片：按 PRESERVE HISTORY 保留全部，仅确认旧条已自带「已被替代 / 已纠正」标记
 - **合并**：宿主模型按「整合九规则」整合（见 constraints）
 - **写入**：memory_write(action="remember", kind="lesson", importance=0.7, tags=[主题], content=模板文本)
 - **删除**：写入成功后才逐条删除原碎片
@@ -239,13 +244,9 @@ description: >
 
 **📖 按需读** `references/examples.md` —— 碎片整合正例、前缀聚类误删反例。执行只需记一句：**先存档 → 写入成功 → 再删原条**。
 
-## CLI 通道：长文本引号陷阱（2026-09-06 实测修复，🔴 数据损坏级）
+## CLI 通道：长文本引号陷阱（🔴 数据损坏级）
 
-`~/.leafmem/leafmem-cli.sh` 曾有 4 处未加引号的 `${@:-}`（recall/remember/list/update 向 Python 传参），shell 词分割会拆碎 `--content "长文本 含空格"`，Python 只取首词 → **含空格长文本静默截断，无报错**。
-
-- 修法＝`${@+"$@"}`（保引号语义 + 兼容 bash 3.2 + `set -u`）
-- 🔴 **两处都要改**：本地 `~/.leafmem/leafmem-cli.sh` ＋ 上游模板 `projects/leafmem/ops/leafmem-cli.sh`——`dist/agents/hooks.js` 的 `installLeafmemCli()` 每次升级会**无条件覆盖本地**，只改本地必被回滚
-- CLI 写完**回读校验字段长度**；CLI 出问题可用 MCP 直连兜底（两通道互为备份）
+含空格长文本静默截断的成因、`${@+"$@"}` 修法、两处必改位置与回读校验 → `references/cli-write-channel.md` §引号陷阱。
 
 ## `<error_handling>` 异常处理
 
@@ -271,6 +272,10 @@ description: >
 
 - **启用**：true
 - **备注**：步骤 3 存档为强制检查点（🔴 STOP）；中断恢复时从最近完成的步骤续跑，删除类步骤前重新确认存档新鲜
+
+## console 设计（2026-11-15）
+
+改 console 界面前必读 `references/console-design-notes.md`。
 
 ## 参考文件（references）
 

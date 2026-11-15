@@ -1,3 +1,16 @@
+## [1.8.8] - 2026-11-16（覆盖走样门禁 4d + 碎片簇读数字口径）
+
+- 新增步骤 **4d 覆盖走样残留门禁**：判据＝`weekly_scan.py`「1c」段命中数为 0（正文 `[YYYY-MM-DD·` ≠ `doc_date`/文件名日期）。根因＝`remember()` 0.85 模糊合并吞同模板日志节，增量已在 `core/memory.ts` `looksStructuralChunk()` 汇聚点拦截。
+- `weekly_scan.py` 新增 `scan_overwrite_residue()` 与 1c 输出段（正例命中/三负例不命中自检）。
+- 步骤 5 更正：碎片簇判据字段为 `max_jac`／`is_fragment`，禁用 `maxJac`（缺失键静默取 0，产出权威假阴性，连续四周读数被污染）。
+- 实证：82 条存量按正文日期权威修完（1c 归零），76 条 source_file 磁盘核验补正；leafmem 341/341 测试通过 + 负例注入变红。
+
+## [1.8.7] - 2026-11-15（console 设计优化经验节+碎片实证外置）
+
+- 新增「console 设计优化经验」节（后外置 references/console-design-notes.md）：dist 静态同步 md5 纪律/备份提交/布局两铁律（背景空白带=行高差非卡内 gap；卡内空白禁 stretch 硬拉）/空态披露危险操作三判据//v1/stats 裸调用假 0 陷阱/验收三通道。
+- 步骤 5 碎片簇实证外置 references/fragment-cluster-evidence.md（正文 token 回预算内）。
+- 实证源：11-15 console 五处优化轮（339/339 测试+ego 真实画面）。
+
 ## [1.8.6] - 2026-11-14
 
 - 🔴 **(b) 纪律机械化：下沉到 core `remember()`，四写入通道全覆盖**（事故驱动，第三次重犯后根治）。

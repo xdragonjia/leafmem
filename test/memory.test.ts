@@ -214,6 +214,52 @@ test("dedupe:false keeps sibling chunks as separate records", async () => {
   assert.equal(all.length, 2);
 });
 
+test("structural chunks skip fuzzy merge even without dedupe:false", async () => {
+  // 2026-11-16：旧导入器漏传 dedupe:false 时，「📌 今日一览」「（文件头）」这类同模板节
+  // 跨日相似度 >0.85，后一日内容会被并进前一日记录（content 被替换、createdAt 停在旧值、
+  // tags 被并集污染），10-21 回填日一次产生 77 条不可见损坏。现按输入形态兜底。
+  // 负例注入：删掉 looksStructuralChunk 判定后本测试必失败（两个写入合为一条）。
+  const memory = createLeafMem({ store: new InMemoryStore(), dedupeThreshold: 0.85 });
+  const content = "## 今日一览\n- raw 入库 17 | OCR 0 新增 | 门禁 4/4 PASS | 快照 14592(+29)";
+  const legacyShape = {
+    source_file: "/Users/dragon/.workbuddy/memory/2026-10-21.md",
+    section: "今日一览",
+    ingested_at: "2026-10-21T05:03:50",
+  };
+  const scene = { type: "agent" as const, id: "workbuddy" };
+
+  const first = await memory.remember({
+    scope: scene,
+    kind: "experience",
+    content,
+    tags: ["daily-log", "user-daily", "2026-10-21"],
+    metadata: legacyShape,
+  });
+  const second = await memory.remember({
+    scope: scene,
+    kind: "experience",
+    content,
+    tags: ["daily-log", "user-daily", "2026-10-22"],
+    metadata: { ...legacyShape, source_file: "/Users/dragon/.workbuddy/memory/2026-10-22.md" },
+  });
+
+  assert.notEqual(first.id, second.id);
+  assert.equal(first.content, content);
+  const all = await memory.list({ scopes: [{ type: "agent", id: "workbuddy" }] });
+  assert.equal(all.length, 2);
+});
+
+test("non-structural near-duplicates still merge (fuzzy dedupe preserved)", async () => {
+  // 护栏：形态兜底不得扩大化——普通对话式记忆的模糊去重必须保持原行为。
+  const memory = createLeafMem({ store: new InMemoryStore(), dedupeThreshold: 0.85 });
+  const scope = { type: "agent" as const, id: "workbuddy" };
+  const content = "用户偏好：结论先行，不要寒暄。";
+  const first = await memory.remember({ scope, kind: "note", content });
+  const second = await memory.remember({ scope, kind: "note", content });
+  assert.equal(first.id, second.id);
+  assert.equal((await memory.list({ scopes: [scope] })).length, 1);
+});
+
 test("sqlite stores concurrent writes from separate instances without clobbering", async () => {
   const root = await mkdtemp(join(tmpdir(), "leafmem-sqlite-concurrent-"));
   const path = join(root, "memory.sqlite");
