@@ -11,9 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - console 仪表盘 UI 重设计（B 端数据工具化，去 AI 默认审美）：玻璃拟态渐变背景+光斑+半透明卡 → 浅灰底 `#f8fafc`+实白卡+radius 12；侧边栏/KPI 卡去 backdrop-filter。
 - 最近活动列表降噪：连续同类事件按「类型+内容指纹（query/kind/recordId）」去重合并为一条带 ×N；绝对时间戳改相对时间（悬停显全量）。
 - 用户画像卡：不再渲染原始 Markdown preamble 全文，改为分节 pill+条目数+跳转提示。
+- 可访问性修复（design_lint 机械体检驱动）：侧边栏/时间线/空态等 11 处 10–11px 小字提至 12px、浅灰 `#94a3b8` 提至 `#64748b`（对比度 ≥4.5:1）；主按钮底色改深一档 `#4f46e5`（白字对比 4.47→6.3）；按钮字号 13.5→14px。
 
 ### Added
 - 仪表盘末行新增「最近记忆」主数据表（按更新时间前 8，点击开详情抽屉），补齐工作台三行骨架并填满 1440×900 视口。
+- KPI 卡标签前加类型色点（与主数字同色），强化指标主次关联。
 
 ### Added
 
