@@ -26,19 +26,31 @@ if [[ "${AHEAD:-0}" -gt 0 ]]; then
   exit 5
 fi
 start=$(date +%s)
-# 🔴 2026-11-15 修复：内层 curl 原先无 `-m` 超时、无 HTTP 码捕获、python 解析失败被 2>/dev/null 吞掉，
-# 导致 API 层故障（403 限流 / 隧道出口 IP 共享 / 瞬时不可达）表现为「RUN 为空 → 一直 sleep」，
-# 最终报「❌ CI 轮询超时」exit 3，被反复误读成「CI 未验证」甚至「CI 有风险」（10-31/11-02/11-09/11-10/11-15）。
-# 现在每轮记录 HTTP 码与 API message，超时信息里带出末次诊断；连续 3 轮非 200 直接快失败。
-API_FAIL=0; LAST_DIAG="(无)"
+# 🔴 2026-11-15 修复（第二条，通道层）：
+# 实测本机 DNS/代理把 github 解析到保留段假地址（api.github.com → 0.0.79.4 / fd00:696e::ffff:…，属 Proxifier
+# 隧道劫持），HTTP/2 走该假段时随机 403 或直接挂死（curl 000 超时），`git ls-remote` 直接报
+# "Recv failure: Network is down"。三通道各 5 次实测：默认 0/5 成功、强制 -4 0/5、-6 0/5 全 000；
+# 而 `--http1.1` + DoH 解析（--doh-url）3/3 返回 200。⇒ 判据：CI 取不到结论的**首选因是通道，不是限流**。
+# 故本脚本改为：强制 HTTP/1.1；系统 DNS 失败即自动切 DoH 通道；并按 HTTP 码给出可执行诊断。
+# 纪律来源：ui-design/SKILL.md「GitHub 访问」+ market-search Step2 0b（11-14 实证，禁归因沙箱/限流）。
+DOH_URL="https://223.5.5.5/dns-query"
+CH="sysdns"; CH_FAIL=0; API_FAIL=0; LAST_DIAG="(无)"
 while :; do
   now=$(date +%s); (( now - start > TIMEOUT )) && {
     echo "❌ CI 轮询超时 ${TIMEOUT}s（末次 API 诊断：${LAST_DIAG}）"
     echo "   ↑ 这是「无法取得 CI 结论」，不等于 CI 红，也不等于已绿；按诊断项处置后重跑。"
     exit 3
   }
-  RUN=$(curl -s -m 20 -w "\n%{http_code}" "https://api.github.com/repos/$REPO/actions/runs?per_page=5" \
-    -H "Authorization: Bearer $TOKEN" 2>/dev/null | python3 -c "
+  if [[ "$CH" == "doh" ]]; then
+    RAW=$(curl -s -m 20 --http1.1 --doh-url "$DOH_URL" -w "\n%{http_code}" \
+      "https://api.github.com/repos/$REPO/actions/runs?per_page=5" \
+      -H "Authorization: Bearer $TOKEN" 2>/dev/null)
+  else
+    RAW=$(curl -s -m 20 --http1.1 -4 -w "\n%{http_code}" \
+      "https://api.github.com/repos/$REPO/actions/runs?per_page=5" \
+      -H "Authorization: Bearer $TOKEN" 2>/dev/null)
+  fi
+  RUN=$(printf '%s' "$RAW" | python3 -c "
 import json,sys
 sha='$HEAD_SHA'
 raw=sys.stdin.read()
@@ -46,8 +58,8 @@ body,_,code=raw.rpartition('\n')
 code=code.strip() or '000'
 if code!='200':
     msg=''
-    try: msg=json.loads(body).get('message','')[:80]
-    except Exception: msg=body[:80].replace('\n',' ')
+    try: msg=json.loads(body).get('message','')[:90]
+    except Exception: msg=body[:90].replace('\n',' ')
     print('__APIFAIL__', code, msg); raise SystemExit
 try: runs=json.loads(body).get('workflow_runs',[])
 except Exception: print('__APIFAIL__','200','parse_error'); raise SystemExit
@@ -57,17 +69,41 @@ for r in runs:
 " 2>/dev/null)
   case "$RUN" in
     __APIFAIL__*)
-      LAST_DIAG="HTTP $(echo "$RUN" | awk '{print $2}') $(echo "$RUN" | cut -d' ' -f3-)"
+      CODE=$(echo "$RUN" | awk '{print $2}'); MSG=$(echo "$RUN" | cut -d' ' -f3-)
+      LAST_DIAG="[${CH}] HTTP ${CODE} ${MSG}"
       API_FAIL=$((API_FAIL+1))
-      if (( API_FAIL >= 3 )); then
-        echo "❌ GitHub API 连续 3 轮非 200（${LAST_DIAG}）——无法取得 CI 结论"
-        echo "   性质：未验证（非红非绿）。常见因：token 失效(tok 只剩 40 位以下/过期)、"
-        echo "   出口 IP 共享触发 403 限流、Proxifier 隧道上游断开。处置后重跑本脚本。"
+      # 只把「连不上/超时（000）」与「TLS/代理异常」计为通道故障；4xx 是 API 已达但被拒，不是通道问题
+      if [[ "$CODE" == "000" || "$CODE" == "parse_error" ]]; then
+        CH_FAIL=$((CH_FAIL+1))
+        if (( CH_FAIL >= 2 )) && [[ "$CH" == "sysdns" ]]; then
+          echo "  ⚠ 系统 DNS 通道连续失败（${LAST_DIAG}）——切 DoH 通道重试"
+          CH="doh"; CH_FAIL=0; sleep 2; continue
+        fi
+        if (( CH_FAIL >= 2 )) && [[ "$CH" == "doh" ]]; then
+          echo "❌ GitHub 双通道均不可达（系统 DNS + DoH 各失败 ≥2 次，末次：${LAST_DIAG}）"
+          echo "   性质：未验证（非红非绿），且**不是 CI 结论**。"
+          echo "   判据：本机 DNS 把 github 解析到 0.0.x.x 保留段假址（Proxifier 隧道），"
+          echo "         HTTP/2 通道随机 403/挂死，git 会报 'Recv failure: Network is down'。"
+          echo "   处置：① 检查 Proxifier 隧道上游节点（重连/换节点）② 直接验 git："
+          echo "         git -c http.version=HTTP/1.1 ls-remote --heads origin main"
+          echo "         ③ 仍不行改用真实浏览器（ego-browser）看 Actions 页，勿判 CI 红。"
+          exit 3
+        fi
+      elif [[ "$CODE" == "401" ]]; then
+        echo "❌ GitHub 鉴权失败（HTTP 401 Bad credentials）——与 CI 无关"
+        echo "   处置：更新 $HOME/.workbuddy/secrets/github.token 后重跑；性质：未验证。"
+        exit 3
+      elif [[ "$CODE" == "403" ]]; then
+        echo "  ⚠ HTTP 403（${MSG}）——代理出口 IP 共享被限流/被拦，非 CI 红；稍后重试"
+      fi
+      if (( API_FAIL >= 8 )); then
+        echo "❌ GitHub API 连续 8 轮异常（末次：${LAST_DIAG}）"
+        echo "   性质：未验证（非红非绿）。按码分因：401=token ／ 403含 rate limit=出口限流 ／ 000=通道故障"
         exit 3
       fi
-      sleep 5; continue ;;
+      sleep 3; continue ;;
   esac
-  API_FAIL=0
+  API_FAIL=0; CH_FAIL=0
   [[ -z "$RUN" ]] && { sleep 15; continue; }
   rid=$(echo "$RUN" | awk '{print $1}'); st=$(echo "$RUN" | awk '{print $2}'); cc=$(echo "$RUN" | awk '{print $3}')
   if [[ "$st" == "completed" ]]; then
