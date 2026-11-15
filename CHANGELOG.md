@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- console 仪表盘 UI 重设计（B 端数据工具化，去 AI 默认审美）：玻璃拟态渐变背景+光斑+半透明卡 → 浅灰底 `#f8fafc`+实白卡+radius 12；侧边栏/KPI 卡去 backdrop-filter。
+- 最近活动列表降噪：连续同类事件按「类型+内容指纹（query/kind/recordId）」去重合并为一条带 ×N；绝对时间戳改相对时间（悬停显全量）。
+- 用户画像卡：不再渲染原始 Markdown preamble 全文，改为分节 pill+条目数+跳转提示。
+
+### Added
+- 仪表盘末行新增「最近记忆」主数据表（按更新时间前 8，点击开详情抽屉），补齐工作台三行骨架并填满 1440×900 视口。
+
 ### Added
 
 - **core 层 remember() 覆盖可见性（最内层，全通道覆盖）**：`src/core/memory.ts` 的 `remember()`
