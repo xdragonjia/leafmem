@@ -50,6 +50,6 @@
   - **判据（可机械检查）**：收尾 `git status` 前，凡本轮改过上述任一路径，必须确认对应**源文件**已改且已 `git add`；只改了 `~/.leafmem/` 或 `dist/` 而源文件无 diff ＝ 改动会丢，禁止收尾。
 - 技能/文档改动**当场提交**，避免"改完不提交、一周后补提交"——首次进入 CI 的内容往往已经定型，问题会延后暴露；
 - 🔴 **push 也是当场动作，不等指令**（2026-11-15 补：lesson 616e3457 说"已固化"但本条此前缺失，导致当轮把 push 当"待小龙指令"悬挂）：commit 后**同一轮内** `git push origin main`＋`git ls-remote origin main` 比对 HEAD sha 远端验证一致才算收尾。**发版才是独立动作**（小龙说「发版/releases」才打 tag+GitHub Release，npm 明确说才发）；「提交 GitHub」≠发版，两者禁混同。
-- 🔴 **push 网络失败降级**（2026-11-15 实证）：`Broken pipe`/`000`＝Proxifier 上游间歇抖动，先同 URL 退避重试 2-3 次；仍败则 `git -c http.version=HTTP/1.1 push origin main`（本轮实测一次成功）；push 是写操作**无镜像降级通道**（jsDelivr/gh-proxy 只读），禁因网络失败把提交悬挂为待办。
+- 🔴 **push 网络失败降级**：统一权威在 infra-ops 技能 `references/github-connectivity.md` §3E（退避重试→HTTP/1.1→ls-remote 验 sha；禁悬挂为待办），本文件不复制细则防漂移。
 - 涉及 `ops/` 下文档的改动，推送前先跑一次 `npm run audit`；
 - 一次提交只做一件事，便于回滚与定位。
