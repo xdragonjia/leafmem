@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- console 记忆工作台设计优化五项（2026-11-15，ui-design+web-graphics 方法论轮）：
+  - 仪表盘中行 grid-areas 重构：用户画像卡横排入左两列、最近活动卡纵向跨两行，消除 160px 背景空白带（零内容损失零拉伸）。
+  - 知识图谱图例独立成行（带「图例（点击过滤）」标签，absolute+z-index 防 canvas 覆盖）。
+  - 图谱边隐藏量实时披露（CHI U2.13.3：过滤/稀疏化必须公开排除量）：顶栏显示「当前显示 X 边，隐藏 Y 弱边」，随弱边开关/选中节点更新；隐藏为 0 时不显示。
+  - 召回检查空状态引导卡：用法说明+4 个示例问题（点击即检索）+当前范围记忆规模；修复 `/v1/stats` 裸调用（无 scope 参数）返回 0 的缺陷，改带 scopeQuery。
+  - 记忆浏览行内删除按钮 hover 才显（.row-del opacity 0→1，破坏性操作降视觉权重防误触）。
 - console 仪表盘 UI 重设计（B 端数据工具化，去 AI 默认审美）：玻璃拟态渐变背景+光斑+半透明卡 → 浅灰底 `#f8fafc`+实白卡+radius 12；侧边栏/KPI 卡去 backdrop-filter。
 - 最近活动列表降噪：连续同类事件按「类型+内容指纹（query/kind/recordId）」去重合并为一条带 ×N；绝对时间戳改相对时间（悬停显全量）。
 - 用户画像卡：不再渲染原始 Markdown preamble 全文，改为分节 pill+条目数+跳转提示。
