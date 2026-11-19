@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { ActiveMemoryManager } from "../active/manager.js";
 import { InMemoryActiveMemoryStore, SqliteActiveMemoryStore } from "../active/store.js";
 import type { EntityExtractor, EntityStore } from "../entity/types.js";
@@ -212,6 +213,35 @@ export class LeafMem {
   //   只解决了 memory_vectors，没解决这一层。加 textVersion 失配即重算，
   //   与 memory_vectors 的 etv2 同版本号，保证两层缓存同步升级。
   private static readonly SEARCH_TEXT_VERSION = "etv2-pattern";
+
+  /**
+   * 🔴 2026-11-19：**同义词典查询扩展**（成熟方案，非自造 trigger_context 扩展）。
+   *   调研依据：SinoVec（LLM 查询扩展生成同义词）、nautilus-compass
+   *   （query_synonyms.json 命中同义词追加 ≤8 token）、claude-memory-lancedb-pro
+   *   （DEFAULT_EXPANSION_MAP 口语触发词→技术同义词拼进查询）。
+   *   中文按单字切分，同义不同词（「后台进程」vs「长任务」）零共享单字 ⇒
+   *   词面重叠≈0 ⇒ 防错记忆在 baseHits 阶段漏掉。同义词典把查询扩展为
+   *   「原词＋同义词」，建立词面重叠，让防错记忆被命中。
+   *   同义词典来源：src/core/synonyms.json（可维护，新增场景词只改它不改码）。
+   */
+  private static readonly SYNONYMS: Record<string, string[]> = (() => {
+    try {
+      return JSON.parse(readFileSync(new URL("./synonyms.json", import.meta.url), "utf-8"));
+    } catch {
+      return {}; // 词典缺失时静默降级为不扩展，不阻断检索
+    }
+  })();
+
+  private expandQueryWithSynonyms(query: string): string {
+    const extras = new Set<string>();
+    for (const [key, values] of Object.entries(LeafMem.SYNONYMS)) {
+      if (query.includes(key)) {
+        for (const v of values) extras.add(v);
+      }
+    }
+    if (extras.size === 0) return query;
+    return `${query} ${[...extras].join(" ")}`.trim();
+  }
   private static readonly SEARCH_TEXT_CACHE_MAX = 50_000;
   readonly active: ActiveMemoryManager;
   readonly task: TaskContextManager;
@@ -1040,9 +1070,10 @@ export class LeafMem {
       return [];
     }
 
-    const queryTokens = uniqueTokens(normalizedQuery);
-    const queryVector = embedTextHash(normalizedQuery, this.embeddingDimensions);
-    const queryGrams = trigrams(normalizedQuery);
+    const expandedQuery = this.expandQueryWithSynonyms(normalizedQuery);
+    const queryTokens = uniqueTokens(expandedQuery);
+    const queryVector = embedTextHash(expandedQuery, this.embeddingDimensions);
+    const queryGrams = trigrams(expandedQuery);
     const records = await this.store.load();
     // E1（2026-10-22）：先剔除非当前事实（superseded/archived）与 as-of 之后才成立的事实，
     // 再进入打分循环。放在这里而不是打分后，是为了让 rerank / FTS / entity 的配额都
