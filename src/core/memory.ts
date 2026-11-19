@@ -202,8 +202,16 @@ export class LeafMem {
 
   private readonly searchTextCache = new Map<
     string,
-    { updatedAt: string; tokens: string[]; vector: number[]; sectionGrams: Set<string> }
+    { updatedAt: string; tokens: string[]; vector: number[]; sectionGrams: Set<string>; textVersion?: string }
   >();
+
+  // 🔴 2026-11-19：derived 缓存追加**文本构造函数版本戳**。
+  //   背景：buildSearchText 并入「模式三件套」后，searchTextCache 只按
+  //   updatedAt 失效——未 update 的 ~7,344 条的 derived.tokens/vector 永远停在
+  //   旧版（不含 pattern），lexical/hash 两路都吃不到 pattern 词，版本戳 etv2
+  //   只解决了 memory_vectors，没解决这一层。加 textVersion 失配即重算，
+  //   与 memory_vectors 的 etv2 同版本号，保证两层缓存同步升级。
+  private static readonly SEARCH_TEXT_VERSION = "etv2-pattern";
   private static readonly SEARCH_TEXT_CACHE_MAX = 50_000;
   readonly active: ActiveMemoryManager;
   readonly task: TaskContextManager;
@@ -1050,10 +1058,12 @@ export class LeafMem {
     for (const record of scopedRecords) {
       // B0：命中缓存则跳过 buildSearchText + 分词 + 128 维哈希（原占单次检索 ~87% 耗时）
       let derived = this.searchTextCache.get(record.id);
-      if (!derived || derived.updatedAt !== record.updatedAt) {
+      if (!derived || derived.updatedAt !== record.updatedAt
+          || derived.textVersion !== LeafMem.SEARCH_TEXT_VERSION) {
         const candidateText = buildSearchText(record);
         derived = {
           updatedAt: record.updatedAt,
+          textVersion: LeafMem.SEARCH_TEXT_VERSION,
           tokens: uniqueTokens(candidateText),
           vector: embedTextHash(candidateText, this.embeddingDimensions),
           // section 只有 v3 结构化块才有；没有就是空集（不产生 boost）
