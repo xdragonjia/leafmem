@@ -104,7 +104,7 @@ description: >
 ### 步骤 4d：🔴 模式三件套巡检（2026-11-19 小龙「该去完善记忆系统」后新增）
 
 **判据**：principle/lesson 须备**命名模式**（可迁移短语非实例描述）＋ `metadata.trigger_context`（功能结构关键词＝检索锚）＋ `metadata.applicability`（适用边界）；缺任一项＝不可联想。
-**动作（已实跑化 2026-11-19）**：`python3 scripts/pattern_compliance.py --out runs/pattern_compliance_<date>.json`（判据命令，自检 5/5）。能反推的 govern(update) 补 metadata、推不出的列「待提炼」交日终复盘，禁留裸 principle。基线 2026-11-19 完备率 **0.1%**（缺命名 1226/情境 1694/边界 1527）。存量按重要性分批（importance≥0.85 且近 90 天优先＝112 条 principle 主战场，复盘每轮 ≤10 条），lesson 多为过程记录不强求。首批已做（2026-11-19）：6 条高价值 principle 补三件套，完备率 0.1%→0.4%，recall 实证命中。📖 判据展开与示例→`references/pattern-triad.md`。
+**动作（已实跑化 2026-11-19）**：`python3 scripts/pattern_compliance.py --out runs/pattern_compliance_<date>.json`（判据命令，自检 5/5）。能反推的 govern(update) 补 metadata、推不出的列「待提炼」交日终复盘，禁留裸 principle。🔴 **补 metadata 必须先 get 读全量合并后再写**（update --metadata 是破坏性覆盖：2026-11-19 两次事故——冲掉 eventTime/recallCount＋冲掉 35 条 reflect 蒸馏的 supports 证据链，已从备份库恢复）；supports/reflectTag/eventTime 等既有字段必须保留合并。基线 2026-11-19 完备率 **0.1%**（缺命名 1226/情境 1694/边界 1527）。存量按重要性分批（importance≥0.85 且近 90 天优先＝112 条 principle 主战场，复盘每轮 ≤10 条），lesson 多为过程记录不强求。首批已做（2026-11-19）：6 条高价值 principle 补三件套，完备率 0.1%→0.4%，recall 实证命中。📖 判据展开与示例→`references/pattern-triad.md`。
 
 ### 步骤 5：碎片簇整合
 
