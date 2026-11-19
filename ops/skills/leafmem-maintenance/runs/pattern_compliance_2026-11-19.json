@@ -1,0 +1,485 @@
+{
+ "total": 1695,
+ "complete": 1,
+ "rate": "0.1%",
+ "missing_named": 1226,
+ "missing_context": 1694,
+ "missing_boundary": 1527,
+ "pending_items": [
+  {
+   "id": "243e13cb",
+   "kind": "lesson",
+   "summary": "2026-04-15 | 系统初始化与工具链搭建",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "75a5a650",
+   "kind": "lesson",
+   "summary": "2026-04-16 | 微信文章截图OCR入库（流程验证与优化）",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "12583409",
+   "kind": "lesson",
+   "summary": "2026-04-16 | SkillHub 商店安装",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "7536a35f",
+   "kind": "lesson",
+   "summary": "2026-04-16 | Web Access CDP 微信文章读取验证",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "0d47f808",
+   "kind": "lesson",
+   "summary": "# Outputs 目录索引漂移（已过时，2026-07-11 更新） ## 原始问题 2026-05-14 小龙主动检",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "fabe7562",
+   "kind": "lesson",
+   "summary": "Lesson：技能边界混淆 + 文件输出路径违规",
+   "missing": [
+    "trigger_context"
+   ]
+  },
+  {
+   "id": "3dda0af9",
+   "kind": "lesson",
+   "summary": "Lesson: WeKnora 知识迁移必须先导出再删除",
+   "missing": [
+    "trigger_context"
+   ]
+  },
+  {
+   "id": "9106857d",
+   "kind": "lesson",
+   "summary": "knowledge_sync.py → WeKnora 直接入库桥接",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "d3029eab",
+   "kind": "lesson",
+   "summary": "公众号配图生成全流程 SOP",
+   "missing": [
+    "pattern",
+    "trigger_context"
+   ]
+  },
+  {
+   "id": "2145fc0b",
+   "kind": "lesson",
+   "summary": "日志写入层级纪律",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "aafcbf26",
+   "kind": "lesson",
+   "summary": "Lesson: 新 Agent 飞书群 Onboarding 流程",
+   "missing": [
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "8bf69e4a",
+   "kind": "lesson",
+   "summary": "Lesson: knowledge_sync 全方位防污染 + 防复发体系",
+   "missing": [
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "43857da8",
+   "kind": "lesson",
+   "summary": "Lesson: 有方案不执行等于没方案",
+   "missing": [
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "edb2f9ce",
+   "kind": "lesson",
+   "summary": "Lesson: lark-cli 多 Bot 身份隔离 + cli-skills 同步",
+   "missing": [
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "e7907f4c",
+   "kind": "lesson",
+   "summary": "Lesson: 入口技能冲突导致绕过统一入口",
+   "missing": [
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "778be83b",
+   "kind": "lesson",
+   "summary": "Lesson: Skill references 不能依赖外部路径/软链接",
+   "missing": [
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "4a6574de",
+   "kind": "lesson",
+   "summary": "Lesson: WeKnora 看门狗假阳性与自卸故障修复",
+   "missing": [
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "543ee4b2",
+   "kind": "lesson",
+   "summary": "# 长任务超时：nohup+disown 是唯一方案（P0 强制纪律） **日期**: 2026-05-22（确立），2",
+   "missing": [
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "c3f4476a",
+   "kind": "lesson",
+   "summary": "knowledge_sync_ocr.py 两连 bug 修复",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "6be21ac8",
+   "kind": "lesson",
+   "summary": "2026-05-24 KEPA记忆重复入库根因与修复",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "5d881932",
+   "kind": "lesson",
+   "summary": "Lesson: PDF解析必须用PaddleOCR Async，禁止自研方案",
+   "missing": [
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "d87518c4",
+   "kind": "lesson",
+   "summary": "Lesson: WeKnora API URL 构造错误导致删除失效",
+   "missing": [
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "5f408923",
+   "kind": "lesson",
+   "summary": "Lesson: Python 大版本升级后全量路径修复",
+   "missing": [
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "78b2934b",
+   "kind": "lesson",
+   "summary": "Lesson: 技能创建不规范导致 agent_created 缺失和格式混乱",
+   "missing": [
+    "trigger_context"
+   ]
+  },
+  {
+   "id": "88e3d758",
+   "kind": "lesson",
+   "summary": "IMA 同步失败：last_update_check 无写权限",
+   "missing": [
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "13c70084",
+   "kind": "lesson",
+   "summary": "吸收已有 Skill 时必须检查是否吸全——含优化流程和依赖措辞消除",
+   "missing": [
+    "pattern",
+    "trigger_context"
+   ]
+  },
+  {
+   "id": "38b35c14",
+   "kind": "lesson",
+   "summary": "MiniMax Image-01 提示词迭代经验",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "8997d15f",
+   "kind": "lesson",
+   "summary": "教训：公文写作知识库 v2.0 多源策略 + 防污染重构——2026-06-01 综合治理",
+   "missing": [
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "bd7f451f",
+   "kind": "lesson",
+   "summary": "v0.7.0 认证真因确认 + marvmem/技能全部纠正",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "0f622417",
+   "kind": "lesson",
+   "summary": "教训：网页编码损坏时严禁\"脑补提炼\"——2026-06-01 昆仑数智污染事件",
+   "missing": [
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "a47e21f2",
+   "kind": "lesson",
+   "summary": "2026-06-02_KEPA记忆提取JSON解析失败修复",
+   "missing": [
+    "pattern",
+    "trigger_context"
+   ]
+  },
+  {
+   "id": "0b1e5263",
+   "kind": "lesson",
+   "summary": "MiniMax VLM 视觉检查不可靠 — 必须人工复核",
+   "missing": [
+    "pattern",
+    "trigger_context"
+   ]
+  },
+  {
+   "id": "82b445e0",
+   "kind": "lesson",
+   "summary": "Lesson: klzl-login 无 refresh 能力，token过期必须快速失败",
+   "missing": [
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "41cb734b",
+   "kind": "lesson",
+   "summary": "2026-06-03_绕过weknora-rag技能直接用curl导致系统性错误",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "c3c100cd",
+   "kind": "lesson",
+   "summary": "KEPA 记忆提取 Bash 超时失控与修复",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "2dd246ed",
+   "kind": "lesson",
+   "summary": "raw 自动化执行偷停：tail 截断 + 记忆写入不完成",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "0ac8e98a",
+   "kind": "lesson",
+   "summary": "2026-06-06 公众号周末发布复盘",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "e30a0f5d",
+   "kind": "lesson",
+   "summary": "自动化记忆文件路径污染：.workbuddy/automations/ 落到错误层级",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "36cab58b",
+   "kind": "lesson",
+   "summary": "系统性替换 AI 服务商全流程复盘",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "910b02f4",
+   "kind": "lesson",
+   "summary": "2026-06-08-踩坑-1",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "f0f3c4ed",
+   "kind": "lesson",
+   "summary": "2026-06-10-踩坑-1",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "03031ce8",
+   "kind": "lesson",
+   "summary": "IP角色做GIF表情包：四版迭代得出的方案决策框架",
+   "missing": [
+    "pattern",
+    "trigger_context"
+   ]
+  },
+  {
+   "id": "c6962f3f",
+   "kind": "lesson",
+   "summary": "分页 inferencer rebuild 跨批次无法去重整合——每轮只看到50条碎片+800chars上轮摘要，前N-",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "3de4abd0",
+   "kind": "lesson",
+   "summary": "DeepSeek V4 Flash 默认启用 reasoning 模式。当请求不带 thinking:{type:dis",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "aa868ae4",
+   "kind": "principle",
+   "summary": "marvmem inferencer 优化策略（ljg表达密度哲学版）：六条红线约束inferencer行为。①信息密度",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "89ec78e3",
+   "kind": "principle",
+   "summary": "marvmem consolidation v8 保护规则：仅两条——①kind=preference或principl",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "8dc2b28b",
+   "kind": "lesson",
+   "summary": "SOUL.md中的\"执行任何任务前必调marvmem recall\"是硬纪律而非建议。系统提示中的recall触发条件（",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "daf48143",
+   "kind": "lesson",
+   "summary": "Phase 3 结项执行教训：全量自动化扫描遗漏了 automation-16 中的 KEPA 残留（brain/scr",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "0c69b8f8",
+   "kind": "lesson",
+   "summary": "neat-freak 执行纪律：遇到能处理的问题必须直接处理，不得列为'未处理'等待用户或自动化。'未处理'仅用于：需用",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  },
+  {
+   "id": "8d7fea01",
+   "kind": "lesson",
+   "summary": "WeKnora 真实部署定位教训：不能将 /Users/dragon/private-knowledge/weknora",
+   "missing": [
+    "pattern",
+    "trigger_context",
+    "applicability"
+   ]
+  }
+ ],
+ "generated_at": "2026-11-19T20:01:21+08:00"
+}

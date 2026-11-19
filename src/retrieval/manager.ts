@@ -463,7 +463,12 @@ export function formatRetrievalContext(hits: RetrievalHit[], maxChars: number): 
 }
 
 function buildSearchText(record: MemoryRecord): string {
-  return [record.kind, record.summary ?? "", record.content, record.tags.join(" ")].filter(Boolean).join("\n");
+  // 🔴 2026-11-19：与 vector-store.buildEmbeddingText 同步并入模式三件套，
+  //   保证检索侧（重排/QMD 拼接）与向量侧同口径，否则锚只在一侧生效。
+  const meta = (record.metadata ?? {}) as Record<string, unknown>;
+  const patternBits = [meta.pattern, meta.trigger_context, meta.applicability]
+    .filter((x): x is string => typeof x === "string" && x.length > 0);
+  return [record.kind, record.summary ?? "", ...patternBits, record.content, record.tags.join(" ")].filter(Boolean).join("\n");
 }
 
 function clamp(value: number, min: number, max: number): number {

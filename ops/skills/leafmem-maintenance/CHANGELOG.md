@@ -1,3 +1,16 @@
+## [1.9.0] - 2026-11-19（模式三件套：从「记忆存储」到「可联想的记忆」——小龙指出记忆系统层缺陷后新增）
+
+### Added
+- **步骤 4d 模式三件套巡检**：principle/lesson 的「可联想起性」验收——命名模式／`metadata.trigger_context`（功能结构关键词）／`metadata.applicability`（适用边界）；缺项当场补写或列「待提炼」交日终复盘；产物 `runs/pattern_compliance_<date>.json` 含完备率（分母守卫 total=0 标 N/A）。
+- **步骤 6 蒸馏产出形态强制**：principle 必须带 `metadata.pattern`＋`trigger_context`＋`applicability`，summary 首句「<模式名>：<规律>」格式——防「蒸馏出大号流水账」。
+- **步骤 11b 模式复用观察**：周度统计 `pattern_reuse_count`（新任务显式引用既往命名模式次数）＝提炼有效性**最终证据**；连续两周为 0 ⇒ 改提炼方式非加复盘时长；与日终复盘「模式提炼率」对账（过程 vs 结果）。
+
+### 教训溯源
+- 小龙：「既然你已经提到 LeafMem 记忆系统在这方面的缺陷，那就该去完善呀」——此前诊断到存储层缺陷（principle 仅 1.8%）却只在复盘技能补动作，没修存储层。
+- 本机实证：8,001 条记忆 principle 147（1.8%）；fail_tracker 建成时未命名「QA 闭环」未标触发情境 ⇒ 11-19 漏复用。**命名模式＋触发情境＝新情境激活锚**，缺之即检索不到。
+- 与 10-22「不做独立 L2 信念层」决策的关系：**兼容不推翻**——本步是「M1 条目级最小有效形态」（给既有 principle/lesson 挂模式字段），不是新建 L2 层；三件套与既有 `supports`/`reflectTag` 并存。
+- 与 memory_promotion 通道的关系：带 `pattern` 字段的 principle 晋升知识层时**携带触发情境**，使知识层也能按功能结构检索（待晋升消费侧支持，登记非本轮）。
+
 ## [1.8.8] - 2026-11-16（覆盖走样门禁 4d + 碎片簇读数字口径）
 
 - 新增步骤 **4d 覆盖走样残留门禁**：判据＝`weekly_scan.py`「1c」段命中数为 0（正文 `[YYYY-MM-DD·` ≠ `doc_date`/文件名日期）。根因＝`remember()` 0.85 模糊合并吞同模板日志节，增量已在 `core/memory.ts` `looksStructuralChunk()` 汇聚点拦截。

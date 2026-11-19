@@ -1,6 +1,6 @@
 ---
 name: leafmem-maintenance
-version: "1.8.8"
+version: "1.9.0"
 agent_created: true
 author: xiaoxia
 description: >
@@ -68,16 +68,8 @@ description: >
 - sqlite3 统计 scope=agent:workbuddy 的 memory_items 总数与 FTS 行数，二者应一致
 - memory_recall(action="recall", message="leafmem scope 纪律") canary 验证应命中已知条目
 
-### 步骤 2b：残留任务闭环清扫（2026-10-02 新增）
-
-检出并闭环滞留在非 completed 状态的任务上下文——闭环依赖会话收尾显式 task_append(status=completed)，会话中断/超时/收尾被跳过会让任务永久滞留 active
-
-- **检测**：python3 scripts/stale_task_sweep.py（只读；exit 2 = 有超龄未闭环或非法状态值；默认阈值 24h，--hours 可调）
-- **规则**：🔴 闭环判据（逐条人工/宿主判定，禁止无脑批量关）：末条 entry 表明主流程已完成 且 超阈值无更新 → 用 `leafmem-cli task-append <taskId> <闭环说明> <闭环版 rollingSummary> completed` 补标；rollingSummary 必须写成闭环版表述（清除「待办/待回写」类措辞，尾项未回写的如实标注「按主流程完成闭环归档」）
-- **规则**：🔴 主流程证据不足的任务不得强关——列入报告标注待复核，宁可滞留不可误判完成
-- **规则**：🔴 状态合法枚举仅 active/paused/completed/archived（0.3.22+ handler 已运行时校验，非法值直接报错 -32602）；脚本检出非法值（如历史遗留 "done"）→ 按闭环判据修正为 completed 或归档
-
-**备注**：根因修复（2026-10-02，leafmem commit aba363b）：handler.ts 的 status 原为裸类型断言无运行时校验，"done" 被原样写库；已加枚举校验 + 回归测试（8/8）。残留 active 属流程性问题（收尾步骤被跳过），本步骤是其常态化兜底
+### 步骤 2b：残留任务闭环清扫
+判定与动作全文→`references/step2b-residual-tasks.md`。🔴 判据：`task_window` 里 `status=active` 且 ≥7 天未动的任务＝残留，逐条裁定（完成/转 BACKLOG/显式放弃）；禁让 active 任务无限挂账。
 
 ### 步骤 3：全量存档（强制，不可跳过）
 
@@ -108,6 +100,11 @@ description: >
 
 - **判据**：`weekly_scan.py`「1c」段 ＝ **0**（记录带 `source_file`+`section` 溯源，且正文 `[YYYY-MM-DD·` ≠ `doc_date`／文件名日期）。
 - **性质**：`remember()` 0.85 模糊合并吞同模板日志节的痕迹，无报错/告警且 `exact_dups`/`near_dups` 均抓不到。处置＝正文权威只修 metadata、无孪生禁删；增量已由 `looksStructuralChunk()` 汇聚点拦截。根因链/SQL/PATCH 必带 `?scope=` → `references/step4bc-dedup-and-kind-gates.md` §4d。
+
+### 步骤 4d：🔴 模式三件套巡检（2026-11-19 小龙「该去完善记忆系统」后新增）
+
+**判据**：principle/lesson 须备**命名模式**（可迁移短语非实例描述）＋ `metadata.trigger_context`（功能结构关键词＝检索锚）＋ `metadata.applicability`（适用边界）；缺任一项＝不可联想。
+**动作（已实跑化 2026-11-19）**：`python3 scripts/pattern_compliance.py --out runs/pattern_compliance_<date>.json`（判据命令，自检 5/5）。能反推的 govern(update) 补 metadata、推不出的列「待提炼」交日终复盘，禁留裸 principle。基线 2026-11-19 完备率 **0.1%**（缺命名 1226/情境 1694/边界 1527）。存量按重要性分批（importance≥0.85 且近 90 天优先，复盘每轮 ≤10 条），1,548 条 lesson 多为过程记录不强求。📖 判据展开与示例→`references/pattern-triad.md`。
 
 ### 步骤 5：碎片簇整合
 
@@ -143,8 +140,9 @@ description: >
 
 - **动作**：memory_recall(action="search", kind="lesson") 拉近 30 天 lesson；按 tags 聚类 ≥3 条同主题
 - **动作**：宿主模型归纳共性规律为 1 条 principle，证据 id 存入 metadata.supports
-- **动作**：memory_write(action="remember", kind="principle", importance=0.85, tags=[主题,principle,reflected], metadata={supports:[证据id列表], reflectedAt:当前ISO时间, reflectTag:主题, lastRefreshedAt:当前ISO时间}) —— 🔴 reflectedAt 必传：引擎据此刷新 active context 的 lastReflectAt 标记（0.3.19+），周度观察才能看到蒸馏时间戳随本通道刷新
-- **MUST**：🔴 supports 必须存证据 lesson 的【完整 36 位 UUID】，禁 8 位短 id（短 id 全失配 → `principle_supports_missing` ALERT）；PATCH 须回填全量 metadata。反查法与陷阱见 `references/scripts-usage.md`。
+- 🔴 **产出形态＝模式三件套（2026-11-19，防「蒸馏出大号流水账」）**：必带 `metadata.pattern`（可迁移短语非实例名）＋ `trigger_context`（功能结构关键词）＋ `applicability`（边界），summary 首句「<模式名>：<规律>」格式，缺任一项＝未完成蒸馏（判据展开→`references/pattern-triad.md`）。
+- **动作**：memory_write(remember, kind=principle, importance=0.85, tags=[主题,principle,reflected], metadata={supports, pattern, trigger_context, applicability, reflectedAt:当前ISO, reflectTag:主题, lastRefreshedAt:当前ISO})——🔴 reflectedAt 必传（引擎据此刷 lastReflectAt，周度观察方可见本通道刷新）
+- **MUST**：🔴 supports 存证据 lesson 的**完整 36 位 UUID**（8 位短 id 全失配→`principle_supports_missing` ALERT）；PATCH 回填全量 metadata。反查法→`references/scripts-usage.md`。
 - **节流**：同主题 6 天内已蒸馏（查已有 principle 的 reflectedAt）则跳过
 
 ### 步骤 7：画像刷新（profile 宿主版）
@@ -153,13 +151,13 @@ description: >
 
 - **动作**：memory_recall(action="search", kind="preference") 拉全部 preference；memory_recall(action="active_get", kind="profile") 读当前画像
 - **动作**：宿主模型比对差异，**只输出需要更新的分节**（"## 分节标题\n新内容" markdown）；memory_write(action="active_distill", kind="profile", content=更新分节)
-- **动作**：🔴 通道（2026-09-14 实测打通）：自动化会话（`mcp__leafmem__*` 恒 absent）用 `scripts/leafmem_mcp_call.py memory_write '{"action":"active_distill","kind":"profile","content":"..."}'` —— `active_distill` 只在 `src/mcp/handler.ts` 实现，HTTP 面不暴露；该脚本拉临时 stdio 进程与常驻服务共享同一 sqlite。
-- **动作**：🔴 **scope 必须走查询串 `?scope=agent:workbuddy`**（2026-10-05 实测）：传 `?scopeType=agent&scopeId=workbuddy` 或省略 scope，服务端**不报错**而是返回**空快照**（`profile.present=false` / `sections=[]` / `principles=0`）。症状酷似**数据丢失**，实为口径错。🔴 判据：`stats.principleCount` 与步骤 2 的 `kind='principle'` 计数不一致，即先怀疑 scope 参数形态。
+- **动作**：🔴 通道：自动化会话用 `scripts/leafmem_mcp_call.py memory_write '{"action":"active_distill","kind":"profile","content":"..."}'`（`active_distill` 仅 `src/mcp/handler.ts` 实现，HTTP 不暴露；该脚本拉临时 stdio 与常驻服务共享 sqlite）。
+- **动作**：🔴 **scope 必须走查询串 `?scope=agent:workbuddy`**：传 `?scopeType=agent&scopeId=workbuddy` 或省略会返回**空快照**（`profile.present=false`/`principles=0`，酷似数据丢失实为口径错）。判据：`stats.principleCount` 与步骤 2 计数不一致即先怀疑 scope 形态。
 - **动作**：🔴 节奏：周度观察的 [WARN]「画像超过 14 天未刷新」即本步骤的触发信号（2026-09-14 实测命中）。周维护时先跑 observation（步骤 10），再据此决定是否刷新画像。
 
 **🔴 分节合并语义**：引擎按分节标题合并——同名分节被替换、新分节追加、**未提到的分节原样保留**。宿主永远不要输出全文覆写，避免误删其他分节。
 
-**备注（2026-08-19）**：🔴 console 洞察页"用户画像"卡片=profile 快照，**memory_govern update 修改 preference 记录不会自动反映到画像卡片**；`memory_organize(action=profile)` 需付费 inferencer（本机返回 no_inferencer）。用户反馈"画像没更新"时走本步骤宿主版 active_distill（2026-08-19 实测成功：sectionsBefore/After 13、merged 1）。
+**备注**：console「用户画像」卡片=profile 快照，govern(update) 改 preference **不自动反映**；`memory_organize(action=profile)` 需付费 inferencer（本机 no_inferencer）⇒「画像没更新」走本步骤宿主版 active_distill。
 
 **📖 按需读** `references/mcp-channels.md`（通道调用器用法 / HTTP `Bearer` 鉴权与 `X-API-Key` 失效 / governance 返回结构 / scope 静默空快照全症状表 / console 卡片刷新路径）——**在自动化会话执行本步骤或步骤 8 时必读**。
 
@@ -168,7 +166,7 @@ description: >
 陈旧且未被召回的低重要性记忆降权（不删除，pinned 豁免）
 
 - **动作**：mcp__leafmem__memory_organize(action="decay", scopeType="agent", scopeId="workbuddy", dryRun=false) —— 纯规则，不需要 LLM
-- **动作**：🔴 通道（2026-09-14 实测打通）：decay 同样不在 HTTP 暴露面 → 自动化会话用 `scripts/leafmem_mcp_call.py memory_organize '{"action":"decay","dryRun":false}'`；返回 {scanned, decayed[]}，scanned 应等于库内总条数（2026-09-14 实测 scanned=1601 / decayed=0，与 observation 的 decay_candidates=0 互相印证）。可先 --dryRun:true 预演。
+- **动作**：🔴 通道：decay 不在 HTTP 暴露面 → 自动化会话用 `scripts/leafmem_mcp_call.py memory_organize '{"action":"decay","dryRun":false}'`；返回 {scanned, decayed[]}，scanned 应等于库内总条数；可先 --dryRun:true 预演。
 
 ### 步骤 9：镜像同步
 
@@ -206,6 +204,11 @@ description: >
 
 **备注**：🔴 只加确有所指的专名，不加通用词； MCP stdio 进程的词表在进程启动时加载，宿主重启后生效，launchd 后台服务可 launchctl kickstart -k 即时生效
 
+### 步骤 11b：🔴 模式复用观察（2026-11-19 新增，周度「提炼有效性」最终证据）
+
+- **动作**：grep 当周对话日志与任务 memory.md 中模式短语出现次数，得 **pattern_reuse_count**（新任务显式引用既往命名模式次数）。
+- **判据**：连续两周为 0 ⇒ 提炼空转，改提炼方式（命名过抽象/情境词漂移）**禁加复盘时长**；报告写「本周模式复用 N 次」，当周无新任务标 N/A。与日终复盘「模式提炼率」对账：那边管过程（命名率/归族率），这边管结果（复用），过程高而结果 0 ⇒ 命名不可检索。
+
 ### 步骤 12：报告与留痕
 
 每周固定推送周报（含观察结论）；无整理动作且观察全绿时可简化为仅日志
@@ -214,7 +217,7 @@ description: >
   - 若有删除/整合/蒸馏动作，或周度观察出现需关注/需行动项 → 通过宿主可用的消息渠道发送周报：规模变化/真重复删除数/碎片整合数/新 principle 数/画像 section 数/decay 降权数 + 本周观察结论与关键环比（memories/principle/recall/profile/一致性）
   - 否则 → 仅写宿主当日记忆日志，不推送
 
-- **产物落点**：🔴 写 `outputs/` 前必读 `~/WorkBuddy/outputs/CLASSIFICATION_RULES.md`。周报固定落 `~/WorkBuddy/outputs/报告/leafmem-weekly-report-{YYYYMMDD}.md`。**禁写**：`outputs/` 根目录、`outputs/项目/leafmem-productization/runs/observation/`（2026-09 起失效）。**判据**：写后 `find ~/WorkBuddy/outputs -maxdepth 1 -type f` 只应见 `CLASSIFICATION_RULES.md`。全绿且无动作 → 不落盘。
+- **产物落点**：🔴 写 `outputs/` 前必读 `~/WorkBuddy/outputs/CLASSIFICATION_RULES.md`；周报落 `outputs/报告/leafmem-weekly-report-{YYYYMMDD}.md`（禁 outputs 根目录与 leafmem-productization/runs/observation/）。全绿且无动作→不落盘。
 
 **备注**：推送渠道由宿主环境决定；无配置渠道时退化为仅日志，不报错
 
