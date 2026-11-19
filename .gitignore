@@ -13,3 +13,6 @@ release/*
 # Python 缓存（打包前剔除）
 __pycache__/
 *.pyc
+
+# 运行产物（含历史摘要可能命中 marvmem 残留，不入库）
+ops/skills/leafmem-maintenance/runs/
