@@ -227,8 +227,10 @@ export class LeafMem {
   private static readonly SYNONYMS: Record<string, string[]> = (() => {
     try {
       return JSON.parse(readFileSync(new URL("./synonyms.json", import.meta.url), "utf-8"));
-    } catch {
-      return {}; // 词典缺失时静默降级为不扩展，不阻断检索
+    } catch (error) {
+      // 不阻断基础检索，但资源缺失/损坏必须可见；构建阶段另有硬校验。
+      console.error("[leafmem] synonyms unavailable; synonym expansion disabled", error);
+      return {};
     }
   })();
 

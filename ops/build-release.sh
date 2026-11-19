@@ -51,6 +51,7 @@ find "$STAGE" -name "*.pyc" -delete 2>/dev/null || true
 for f in \
   "$STAGE/dist/bin/leafmem-mcp.js" \
   "$STAGE/dist/bin/leafmem-agent.js" \
+  "$STAGE/dist/core/synonyms.json" \
   "$STAGE/dist/agents/hooks.js" \
   "$STAGE/ops/hooks/leafmem-hooks.mjs" \
   "$STAGE/ops/skills/leafmem-maintenance/SKILL.md" \

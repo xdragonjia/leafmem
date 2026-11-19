@@ -99,6 +99,11 @@ describe("buildEmbeddingText", () => {
       importance: 1,
       source: "test",
       tags: ["esm", "modules"],
+      metadata: {
+        pattern: "输入输出版本同步",
+        trigger_context: "修改派生文本与缓存时",
+        applicability: "只适用于同一向量空间",
+      },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -108,6 +113,9 @@ describe("buildEmbeddingText", () => {
     assert.ok(text.includes("ESM only"));
     assert.ok(text.includes("Use ESM modules"));
     assert.ok(text.includes("esm"));
+    assert.ok(text.includes("输入输出版本同步"));
+    assert.ok(text.includes("修改派生文本与缓存时"));
+    assert.ok(text.includes("只适用于同一向量空间"));
   });
 });
 

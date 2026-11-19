@@ -32,6 +32,24 @@ test("remembers and searches scoped memories", async () => {
   assert.match(hits[0]!.record.content, /Alice prefers concise Chinese replies/);
 });
 
+test("synonym expansion finds a semantically equivalent but lexically disjoint lesson", async () => {
+  const memory = createLeafMem({ store: new InMemoryStore() });
+  const scope = { type: "agent" as const, id: "workbuddy" };
+  await memory.remember({
+    scope,
+    kind: "lesson",
+    content: "长任务超时应使用 nohup 并验证断线后的持久运行。",
+    importance: 0.9,
+  });
+  await memory.remember({
+    scope,
+    kind: "note",
+    content: "这是一段与运行方式无关的普通记录。",
+  });
+  const hits = await memory.search("后台进程 断线 持久运行", { scopes: [scope] });
+  assert.ok(hits.some((hit) => hit.record.content.includes("nohup")));
+});
+
 test("search hits expose evidence refs for exact follow-up reads", async () => {
   const memory = createLeafMem({ store: new InMemoryStore() });
 

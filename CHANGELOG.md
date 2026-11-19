@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- **模式三件套真正进入检索与向量缓存（2026-11-19）**：`pattern` / `trigger_context` / `applicability` 并入 `buildSearchText` 与 `buildEmbeddingText`；持久向量缓存与进程内 `searchTextCache` 均增加 `etv2-pattern` 文本版本戳，存量未 update 的记忆也会渐进重算，不再由旧向量/旧派生文本遮蔽。
+- **同义不同词召回与发布资源（2026-11-19）**：调研同义词典查询扩展后新增 `src/core/synonyms.json`；构建必须复制并解析校验 `dist/core/synonyms.json`。中断审计复现：手工复制的旧 dist 曾掩盖 build 未携带词典的问题，重新打包会静默失去扩展能力。
+
+### Changed
+- `leafmem-maintenance` 增加模式三件套生产、完备率巡检与复用观察；`pattern_compliance.py` 自检 7/7。
 - `remember()` 模糊合并吞掉同模板日志节（2026-11-16，数据损坏级）：
   - 现象：`dedupeThreshold`（默认 0.85）以上把新内容合并进既有记录——content 被替换、`createdAt`/`ingested_at` 保留、tags 并集污染，呈现「正文日期 ≠ 溯源日期」。日志「📌 今日一览」「（文件头）」「今日执行摘要」跨日相似度天然 >0.85，调用方漏传 `dedupe:false` 即触发；10-21 批量回填日一次产生 77 条，窗口内累计 82 条。
   - 修复：新增 `looksStructuralChunk()`，带 `chunk`／`schema`／`source_file+section` 溯源的记录**在汇聚点一律跳过模糊合并**，不再依赖调用方自觉传参。
