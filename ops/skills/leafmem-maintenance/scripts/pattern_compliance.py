@@ -36,7 +36,12 @@ DB = Path.home() / '.leafmem/memory.sqlite'
 CST = timezone(timedelta(hours=8))
 
 PATTERN_SUFFIX = re.compile(r'闭环|形态|唤起|注入|走查|脱节|归类|提炼|守卫|闸门|对账|闭环')
-SUMMARY_NAMED = re.compile(r'^[^，。；：:]{2,10}[：:]')   # 「<短语>：」起首
+# 🔴 2026-11-19 自查修正：通用前缀（「原则：」「# 原则：」「🔴」「【发现·」等）
+#   不算命名模式——35 条以「原则：」开头的条目若按旧正则会被误判为已命名。
+#   命名模式须是**可迁移的具体短语**（如「QA 闭环」「判据形态」），
+#   通用前缀剥离后才判「<短语>：」形态。
+GENERIC_PREFIX = re.compile(r'^(?:[#\s]*原则[：:]|[#\s]*发现[·：:]|🔴+|【[^】]{0,20}】)\s*')
+SUMMARY_NAMED = re.compile(r'^[^，。；：:]{2,10}[：:]')   # 「<短语>：」起首（剥前缀后）
 BOUNDARY_WORD = re.compile(r'适用|不适用|边界|禁用于|仅当|限于|不适用于')
 
 
@@ -48,8 +53,9 @@ def classify(row: dict) -> dict:
         meta = {}
     summary = row.get('summary') or ''
     content = row.get('content') or ''
-    has_pattern = bool(meta.get('pattern')) or bool(SUMMARY_NAMED.match(summary)) \
-        or bool(PATTERN_SUFFIX.search(summary))
+    stripped = GENERIC_PREFIX.sub('', summary).lstrip('# \t')
+    has_pattern = bool(meta.get('pattern')) or bool(SUMMARY_NAMED.match(stripped)) \
+        or bool(PATTERN_SUFFIX.search(stripped))
     has_ctx = bool(meta.get('trigger_context'))
     has_bound = bool(meta.get('applicability')) or bool(BOUNDARY_WORD.search(content))
     return {'pattern': has_pattern, 'trigger_context': has_ctx, 'applicability': has_bound,
@@ -98,6 +104,10 @@ def self_test() -> int:
          'content': '', 'metadata_json': json.dumps({'pattern': 'QA闭环'})}, False),
         ('负例3 实例名不算命名模式', {'summary': 'fail_tracker.py 机制上线',
          'content': '', 'metadata_json': '{}'}, False),
+        ('负例4 通用前缀「原则：」不算命名模式', {'summary': '原则：聚合列表页门禁多层防御',
+         'content': '', 'metadata_json': '{}'}, False),
+        ('正例3 剥通用前缀后的真命名算', {'summary': '原则：QA 闭环：采集管道必配',
+         'content': '', 'metadata_json': json.dumps({'trigger_context': 'x', 'applicability': 'y'})}, True),
     ]
     ok = 0
     for name, row, expect in cases:
