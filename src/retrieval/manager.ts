@@ -264,7 +264,14 @@ export class RetrievalManager {
     // 🔴 modelId 必须含**具体模型名**：只用 provider.id（如 "openai"）时，
     // 同一 provider 下换模型（bge-m3 → bge-large）缓存不会失效 ⇒ 混用不同向量空间，
     // 相似度计算失去意义。取不到 model 时降级为 "default"。
-    const modelId = `${(provider as { id?: string }).id ?? "hash"}:${this.options.embeddings?.model ?? "default"}`;
+    // 🔴 2026-11-19：modelId 追加**embedding 文本构造函数版本戳**（etv2）。
+    //   背景：buildEmbeddingText/buildSearchText 并入「模式三件套」后，文本与向量的
+    //   同一份输入定义变了——缓存按 updatedAt 命中时，未 update 的 ~7,850 条会继续
+    //   用旧函数算的向量（不含 pattern/trigger_context），而召回文本用新函数 ⇒
+    //   文本与向量不一致、新机制对存量失效。版本戳使旧向量**整批失配**，
+    //   下次召回自动按新函数重算（与 modelId 换模型失配同机制，渐进回填）。
+    const EMBED_TEXT_VERSION = "etv2-pattern";
+    const modelId = `${(provider as { id?: string }).id ?? "hash"}:${this.options.embeddings?.model ?? "default"}:${EMBED_TEXT_VERSION}`;
     // B0.6：三级查找 —— 进程内 Map → SQLite 持久表 → 远程 embedding。
     // 落盘的意义：进程重启不丢、E3 扩容后命中率不退化（否则每次重启首次 recall 4~6s）。
     const resolved = new Map<string, number[]>();
