@@ -60,6 +60,13 @@ export type MemoryInput = {
    * 排序被系统性污染，且语义上是假话。
    */
   preserveUpdatedAt?: boolean;
+  /**
+   * 2026-11-20：update() 的 metadata 写入模式。默认 "merge"（浅合并既有键，
+   * patch 里值为 null 的键被删除）。传 "replace" 才整包替换——仅用于确有
+   * 「清掉全部旧键」语义的通道，正常维护一律 merge。背景：两次裸写覆盖
+   * 冲掉 supports/eventTime/recallCount 事故，安全默认下沉到引擎层。
+   */
+  metadataMode?: "merge" | "replace";
 };
 
 export type MemorySearchOptions = {

@@ -343,6 +343,7 @@ export class LeafMemPlatformService implements PlatformMemoryService {
       source: input.patch.source,
       tags: input.patch.tags,
       metadata: input.patch.metadata,
+      metadataMode: input.patch.metadataMode,
       preserveUpdatedAt: input.patch.preserveUpdatedAt,
     });
 

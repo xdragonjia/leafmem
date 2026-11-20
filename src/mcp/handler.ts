@@ -667,6 +667,7 @@ export function createMemoryToolSet(params: {
           source: { type: "string" },
           tags: { type: "array", items: { type: "string" } },
           metadata: { type: "object", additionalProperties: true },
+          metadataMode: { type: "string", enum: ["merge", "replace"] },
           recordIds: { type: "array", items: { type: "string" }, maxItems: 20 },
           response: { type: "string" },
           outcome: { type: "string", enum: ["positive", "neutral", "negative"] },
@@ -716,9 +717,11 @@ export function createMemoryToolSet(params: {
             if (args.importance !== undefined) patch.importance = args.importance;
             if (args.source !== undefined) patch.source = args.source;
             if (args.tags !== undefined) patch.tags = args.tags;
-            // asRecord() 可能返回 null；memory.update 对 metadata 是整包替换
-            // （memory.ts:364），传 null 会清空 metadata。null 时改为不传（0.2.0 审查 m2）。
+            // 2026-11-20：memory.update 的 metadata 默认浅合并（裸写不再冲掉
+            // supports/eventTime 等既有键）；键值为 null＝删除该键；确需整包
+            // 替换显式传 metadataMode:"replace"。asRecord() 返回 null 时不传。
             if (args.metadata !== undefined) patch.metadata = asRecord(args.metadata) ?? undefined;
+            if (args.metadataMode === "replace") patch.metadataMode = "replace";
           }
           const record = await params.memory.update(id, patch);
           if (record) {

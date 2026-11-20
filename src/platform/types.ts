@@ -117,6 +117,8 @@ export type UpdateMemoryInput = {
   source?: string;
   tags?: string[];
   metadata?: Record<string, unknown>;
+  /** 2026-11-20：默认 merge（防裸写冲掉既有键）；显式整包替换传 "replace" */
+  metadataMode?: "merge" | "replace";
 };
 
 // ---------------------------------------------------------------------------

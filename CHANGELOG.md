@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **update() metadata 默认合并，杜绝裸写覆盖（2026-11-20，事故驱动·安全语义下沉汇聚点）**：宿主两次 `update --metadata` 整包替换冲掉 `supports`/`eventTime`/`recallCount`（35 条 principle 证据链清零靠备份恢复）。原防线是纪律「先 get 合并再写」——对执行者自觉性的依赖被两次同型事故证伪。修法：`memory.update()` 默认浅合并既有键；键值 `null`＝删除该键；确需整包替换显式传 `metadataMode:"replace"`（该路径行为与改造前逐字一致）。MCP `memory_govern`、HTTP PATCH、platform、CLI（`--metadata-mode`）四通道全部透传；hermes/session-import 等自带 spread 的调用方幂等兼容。回归 `test/metadata-merge.test.ts` 10 例（含 replace 逃生门/null 删键/MCP 端到端），全量 352/352；真实服务三语义 curl 实证。
+
 ### Fixed
 - **模式三件套真正进入检索与向量缓存（2026-11-19）**：`pattern` / `trigger_context` / `applicability` 并入 `buildSearchText` 与 `buildEmbeddingText`；持久向量缓存与进程内 `searchTextCache` 均增加 `etv2-pattern` 文本版本戳，存量未 update 的记忆也会渐进重算，不再由旧向量/旧派生文本遮蔽。
 - **同义不同词召回与发布资源（2026-11-19）**：调研同义词典查询扩展后新增 `src/core/synonyms.json`；构建必须复制并解析校验 `dist/core/synonyms.json`。中断审计复现：手工复制的旧 dist 曾掩盖 build 未携带词典的问题，重新打包会静默失去扩展能力。

@@ -212,6 +212,8 @@ export async function handleMemoryRoutes(
         source: patch.source as string | undefined,
         tags: patch.tags as string[] | undefined,
         metadata: patch.metadata as Record<string, unknown> | undefined,
+        // 2026-11-20：metadata 默认合并；显式整包替换须传 metadataMode:"replace"
+        metadataMode: patch.metadataMode === "replace" ? "replace" : undefined,
         // 2026-10-22（B3）：回填/标记类更新传 true，保持 updatedAt 不变
         preserveUpdatedAt: patch.preserveUpdatedAt === true,
       },

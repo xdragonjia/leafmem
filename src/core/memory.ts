@@ -608,7 +608,24 @@ export class LeafMem {
       }
       if (patch.kind !== undefined) record.kind = patch.kind;
       if (patch.scope !== undefined) record.scope = normalizeScope(patch.scope);
-      if (patch.metadata !== undefined) record.metadata = patch.metadata ? { ...patch.metadata } : undefined;
+      // 2026-11-20：metadata 默认合并而非整包替换。事故背景：宿主两次
+      // `update --metadata` 裸写冲掉 supports/eventTime/recallCount（35 条
+      // principle 证据链清零，靠备份恢复）。纪律「先 get 合并再写」防不住
+      // 忘做——把安全语义下沉到本汇聚点：所有 update 通道（MCP govern /
+      // platform / adapters / session-import）默认 merge；显式删除某个键传
+      // null 值；确需整包替换传 metadataMode:"replace"。
+      if (patch.metadata !== undefined) {
+        if (patch.metadata === null || patch.metadataMode === "replace") {
+          record.metadata = patch.metadata ? { ...patch.metadata } : undefined;
+        } else {
+          const merged: Record<string, unknown> = { ...(record.metadata ?? {}) };
+          for (const [key, value] of Object.entries(patch.metadata)) {
+            if (value === null) delete merged[key];
+            else merged[key] = value;
+          }
+          record.metadata = Object.keys(merged).length > 0 ? merged : undefined;
+        }
+      }
       // B3：元数据维护不得冒充实内容更新（否则 recency 被整体抬高）
       if (patch.preserveUpdatedAt !== true) record.updatedAt = nowIso;
 

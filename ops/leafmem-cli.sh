@@ -16,7 +16,8 @@
 #   leafmem-cli list [limit] [kinds] [--tags "a,b"] [--cursor c]
 #   leafmem-cli update <id> [--summary s] [--content c] [--kind k]
 #                       [--importance n] [--confidence n] [--source s]
-#                       [--tags "a,b"] [--metadata JSON]
+#                       [--tags "a,b"] [--metadata JSON] [--metadata-mode replace]
+#                       metadata 默认浅合并（键值 null=删该键）；replace 才整包替换
 #   leafmem-cli delete <id>                          删除单条
 #   leafmem-cli stats                                统计快照（agent:workbuddy）
 #   leafmem-cli scopes                               非空 scope 分布
@@ -199,6 +200,8 @@ while i < len(a):
         d["tags"] = [t for t in a[i+1].split(",") if t]; i += 2
     elif k == "--metadata" and i + 1 < len(a):
         d["metadata"] = json.loads(a[i+1]); i += 2
+    elif k == "--metadata-mode" and i + 1 < len(a):
+        d["metadataMode"] = a[i+1]; i += 2
     else:
         i += 1
 print(json.dumps(d, ensure_ascii=False))
