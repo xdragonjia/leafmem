@@ -1,6 +1,6 @@
 ---
 name: leafmem-maintenance
-version: "1.9.0"
+version: "1.9.1"
 agent_created: true
 author: xiaoxia
 description: >
@@ -102,7 +102,7 @@ description: >
 - **性质**：`remember()` 0.85 模糊合并吞同模板日志节的痕迹，无报错/告警且 `exact_dups`/`near_dups` 均抓不到。处置＝正文权威只修 metadata、无孪生禁删；增量已由 `looksStructuralChunk()` 汇聚点拦截。根因链/SQL/PATCH 必带 `?scope=` → `references/step4bc-dedup-and-kind-gates.md` §4d。
 
 ### 步骤 4d：🔴 模式三件套巡检
-`python3 scripts/pattern_compliance.py --out runs/pattern_compliance_<date>.json`（自检 5/5）。补 metadata **必须先 get 合并**（update 破坏性覆盖：11-19 两次冲掉 eventTime/supports）。全库 principle 149 条已覆盖＋聚类新提炼 2 条。判据展开/三件套定义/存量处置→`references/pattern-triad.md`。
+`python3 scripts/pattern_compliance.py --out runs/pattern_compliance_<date>.json`（自检 5/5）。补 metadata 直接 govern(update) 即可——**引擎 ≥0.3.27 默认浅合并**（键值 null=删键；整包替换须显式 `metadataMode:"replace"`，维护场景禁用），11-19 裸写覆盖事故已在引擎层根治，不再依赖「先 get 合并」自觉。全库 principle 149 条已覆盖＋聚类新提炼 2 条。判据展开/三件套定义/存量处置→`references/pattern-triad.md`。
 
 ### 步骤 5：碎片簇整合
 
@@ -127,7 +127,7 @@ description: >
 **🔴 四条硬门禁（纪律本体在此，执行细节在 reference）**：
 1. **覆盖度扫描前置**：原文每个语义段取 1–2 个特征串跑全库 `SELECT id ... WHERE content LIKE '%串%'`；命中**只含本条** ⇒ 必须外置，命中**含他人** ⇒ 索引指向既有 id **不复制**（复制＝制造重复）。
 2. **`parentId` 必须取完整 36 位 UUID**，🔴 禁用 8 位短前缀 —— 10-11 首跑写错一组（记成 `62d1`，真值 `c6d1`，仅一字之差），与步骤 6 的 supports 短 id 事故同源。
-3. **写后必核 `createdAt` 为当日**：早于今日 ⇒ 命中覆盖了既有条目，立即按步骤 3 存档恢复原文。**父条目回写不传 `--metadata`**（PATCH 替换语义会波及 `recallCount`/`lastRecalledAt`），`--tags` 传原 tags 并集。
+3. **写后必核 `createdAt` 为当日**：早于今日 ⇒ 命中覆盖了既有条目，立即按步骤 3 存档恢复原文。父条目回写 `--metadata` 自引擎 0.3.27 起默认浅合并（`recallCount`/`lastRecalledAt` 不再被冲掉），但**只传要改的键**仍是最稳做法；`--tags` 传原 tags 并集（tags 仍是整体替换语义）。
 4. **零丢失硬门禁**：回写后对原文每个语义段做**全库** `LIKE` 复扫，`ORPHANS` 必须 = 0；出现孤儿 ⇒ 回补进对应子条目后再复验，**不得只改父条目**。🔴 **判据：只查索引池不算取证，必须全库扫描** —— 10-11 首跑只查索引池判了 4 个孤儿，全库扫描确认是**真丢失**（`史/理/硬/路`、`歷/處/網`、`is ambiguous`、`29/29` 全库 0 命中），回补后才归零。
 
 - **收尾**：拆分属写入动作 ⇒ 完成后必须重跑步骤 9 镜像同步，并核三源一致（DB = FTS = Mirror）。
@@ -140,7 +140,7 @@ description: >
 - **动作**：宿主模型归纳共性规律为 1 条 principle，证据 id 存入 metadata.supports
 - 🔴 **产出形态＝模式三件套（2026-11-19，防「蒸馏出大号流水账」）**：必带 `metadata.pattern`（可迁移短语非实例名）＋ `trigger_context`（功能结构关键词）＋ `applicability`（边界），summary 首句「<模式名>：<规律>」格式，缺任一项＝未完成蒸馏（判据展开→`references/pattern-triad.md`）。
 - **动作**：memory_write(remember, kind=principle, importance=0.85, tags=[主题,principle,reflected], metadata={supports, pattern, trigger_context, applicability, reflectedAt:当前ISO, reflectTag:主题, lastRefreshedAt:当前ISO})——🔴 reflectedAt 必传（引擎据此刷 lastReflectAt，周度观察方可见本通道刷新）
-- **MUST**：🔴 supports 存证据 lesson 的**完整 36 位 UUID**（8 位短 id 全失配→`principle_supports_missing` ALERT）；PATCH 回填全量 metadata。反查法→`references/scripts-usage.md`。
+- **MUST**：🔴 supports 存证据 lesson 的**完整 36 位 UUID**（8 位短 id 全失配→`principle_supports_missing` ALERT）；PATCH 只传需更新的键（引擎 ≥0.3.27 默认合并，无需回填全量）。反查法→`references/scripts-usage.md`。
 - **节流**：同主题 6 天内已蒸馏（查已有 principle 的 reflectedAt）则跳过
 
 ### 步骤 7：画像刷新（profile 宿主版）

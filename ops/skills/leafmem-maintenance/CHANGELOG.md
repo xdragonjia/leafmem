@@ -1,3 +1,9 @@
+## [1.9.1] - 2026-11-20（update metadata 引擎层根治后的纪律改写）
+
+### Changed
+- 引擎 0.3.27 起 `update()` metadata 默认浅合并（null=删键，`metadataMode:"replace"` 才整包替换），三处「先 get 合并/不传 --metadata/回填全量」纪律改为新语义（SKILL.md 步骤4d/5b/6＋references/pattern-triad.md）；旧引擎(<0.3.27)仍须先 get 合并。
+- 事故方法论：「纪律下沉汇聚点」——同型人为失误第二次发生即修工具默认语义，不再加纪律（小龙 11-20 裁定：当前模型靠自觉必复发）。详见 `~/.workbuddy/memory/DETAIL-LEAFMEM-REMEMBER.md`。
+
 ## [1.9.0] - 2026-11-19（模式三件套：从「记忆存储」到「可联想的记忆」——小龙指出记忆系统层缺陷后新增）
 
 ### Added
