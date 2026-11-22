@@ -100,3 +100,19 @@ sqlite3 ~/.leafmem/memory.sqlite "SELECT id FROM memory_items WHERE id LIKE '<8�
 🔴 `get` / `update` / `delete` 只认完整 UUID，传短 id 报 `Memory not found`——**勿误判为条目已删**。
 
 🔴 修 supports 时须用**全量 metadata**（PATCH 是替换语义，只传 supports 会丢掉 `reflectedAt`/`reflectTag`/`lastRefreshedAt`/`projectId`）。改完复验 `supports_missing=0`。
+
+## 🔴 FTS 一致性判据必须用业务 id，禁用 rowid（2026-11-23 实测）
+
+`memory_items_fts` 是**独立 FTS5 虚拟表**（`CREATE VIRTUAL TABLE ... USING fts5(id UNINDEXED, kind, content, summary, tags, scope)`），其 rowid 自成一套（实测 mi rowid 102–12147、fts rowid 109–42222，交集仅 390）。
+
+错误判据（会产出假警报）：`SELECT COUNT(*) FROM memory_items_fts WHERE rowid NOT IN (SELECT rowid FROM memory_items)` → 实测 **7800**，纯属判据形态错。
+
+正确判据：
+
+```sql
+SELECT COUNT(*) FROM memory_items_fts WHERE id NOT IN (SELECT id FROM memory_items);   -- FTS 孤儿，须 0
+SELECT COUNT(*) FROM memory_items WHERE id NOT IN (SELECT id FROM memory_items_fts);   -- 主表缺 FTS 索引，须 0
+SELECT (SELECT COUNT(*) FROM memory_items) = (SELECT COUNT(*) FROM memory_items_fts);  -- 行数相等
+```
+
+2026-11-23 周检按 id 口径复算：`fts_orphan_by_id=0`、`mi_missing_in_fts=0`、两侧 8190 一致。

@@ -1,3 +1,9 @@
+## [1.9.2] - 2026-11-23（两处静默失效判据固化：画像分节前缀 / FTS 关联口径）
+
+### Fixed
+- **步骤 7 `active_distill` 的 content 必须以 `## ` 开头**：缺前缀时引擎返回 HTTP 200 + `merged.merged=0` + `sectionsAfter` 不变，但 `updatedAt` 照常刷新 ⇒ 症状酷似「已刷新」，实为静默未写入（本轮实测两次，第一次误判为成功）。判据＝回读 `/v1/governance` 该 section 长度与尾部文本是否变化。→ `references/mcp-channels.md` §2
+- **FTS 一致性判据必须用业务 `id`，禁用 `rowid`**：`memory_items_fts` 是独立 FTS5 虚拟表（`id UNINDEXED`），rowid 自成一套（实测主表 102–12147 / FTS 109–42222，交集仅 390）。用 rowid 反连接实测产出 **STALE=7800** 假警报；按 id 口径复算 `fts_orphan_by_id=0`、`mi_missing_in_fts=0`。→ `references/scripts-usage.md` 末节
+
 ## [1.9.1] - 2026-11-20（update metadata 引擎层根治后的纪律改写）
 
 ### Changed

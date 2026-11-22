@@ -1,6 +1,6 @@
 ---
 name: leafmem-maintenance
-version: "1.9.1"
+version: "1.9.2"
 agent_created: true
 author: xiaoxia
 description: >
