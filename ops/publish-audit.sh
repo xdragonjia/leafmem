@@ -17,16 +17,32 @@ ok()  { echo "${GRN}✅ $1${NC}"; }
 
 echo "═══ LeafMem 发布卫生审计 ═══"
 
+# ---- 0. 判定域过滤：只审「会进仓库或会发布」的内容 ----
+# 2026-11-23 修复：原各项直接 grep 磁盘全量，会把 .gitignore 排除的运行产物
+# （如 ops/skills/*/runs/*.json）当成品牌残留而阻断推送（实测 runs 跟踪数=0，
+# 属判据假阳性）。审计对象应为「git 跟踪的文件 ∪ dist/ 构建产物」。
+# 非常规输出行（如 "Binary file ... matches"，取不到真实路径）一律保留，宁误报不漏报。
+shippable_only() {
+  local line f
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    f="${line%%:*}"
+    if [[ ! -e "$f" ]]; then echo "$line"; continue; fi
+    if [[ "$f" == dist/* ]]; then echo "$line"; continue; fi
+    git ls-files --error-unmatch -- "$f" >/dev/null 2>&1 && echo "$line"
+  done
+}
+
 # ---- 1. 密钥/凭据（真实 SiliconFlow key + 常见 key 形态）----
 KEYS=$(grep -rn "sk-[a-zA-Z0-9]\{25,\}" dist/ src/ ops/ docs/ README.md package.json 2>/dev/null \
-  | grep -v "mermaid" | grep -v "node_modules")
+  | grep -v "mermaid" | grep -v "node_modules" | shippable_only)
 if [[ -n "$KEYS" ]]; then bad "源码/产物中发现疑似 API Key:\n$KEYS"; else ok "无明文 API Key"; fi
-NPM_TOKEN=$(grep -rn "npm_[a-zA-Z0-9]\{30,\}" dist/ src/ ops/ package.json 2>/dev/null)
+NPM_TOKEN=$(grep -rn "npm_[a-zA-Z0-9]\{30,\}" dist/ src/ ops/ package.json 2>/dev/null | shippable_only)
 if [[ -n "$NPM_TOKEN" ]]; then bad "发现 npm token"; else ok "无 npm token"; fi
 
 # ---- 2. 个人数据（姓名/真实邮箱/工作内容）----
 PRIV=$(grep -rn "贾小龙\|xdragonjia@hotmail\|巡察\|昆仑数智\|党委\|玉门" \
-  dist/ src/ docs/ README.md package.json 2>/dev/null | grep -v "node_modules")
+  dist/ src/ docs/ README.md package.json 2>/dev/null | grep -v "node_modules" | shippable_only)
 if [[ -n "$PRIV" ]]; then bad "发现个人/工作敏感信息:\n$PRIV"; else ok "无个人敏感信息"; fi
 
 # ---- 3. 数据文件（记忆库/镜像不该被打包发布）----
@@ -45,8 +61,9 @@ if git ls-files | grep -q "^node_modules"; then bad "node_modules 被 git 追踪
 # ---- 5. marvmem 品牌残留（产品化完整性）----
 # ops/ 也在检测范围内（0.2.0 审查 M2），但排除审计脚本自身，
 # 否则会命中本规则自己的检测正则。
+# 2026-11-23：加 shippable_only 过滤，运行产物（gitignore）不计入品牌残留。
 MARV=$(grep -rn "marvmem" dist/ src/ ops/ docs/ README.md package.json 2>/dev/null \
-  | grep -v "mermaid" | grep -v node_modules | grep -v "publish-audit.sh")
+  | grep -v "mermaid" | grep -v node_modules | grep -v "publish-audit.sh" | shippable_only)
 if [[ -n "$MARV" ]]; then bad "发现 marvmem 品牌残留:\n$MARV"; else ok "无 marvmem 残留"; fi
 
 # ---- 6. dist 是否存在且为最新构建 ----
