@@ -1092,12 +1092,26 @@ function startD3Graph(canvas, nodes, edges) {
   const gRoot = svg.append('g');
   // 🔴 2026-10-21 语义缩放（neo4j/sigma 标准手法）：标签/描边屏幕尺寸恒定——
   // fit 主分量后 k≈3，标签若随 zoom 等比放大将糊成一团；除以 k 保持 10px 屏显。
-  const zoomB = d3.zoom().scaleExtent([0.25, 4]).on('zoom', e => {
+  // 🔴 2026-11-23：上限 4→12——fit 常顶到上限（400 节点主簇 k=4），原上限下
+  // 用户无法再放大看细节（渐进标签档永不触发）；12 给真放大留 3 倍空间
+  const zoomB = d3.zoom().scaleExtent([0.25, 12]).on('zoom', e => {
     gRoot.attr('transform', e.transform);
     const k = e.transform.k;
     zoomK = k;
-    labelSel.attr('font-size', 10 / k).attr('stroke-width', 2.5 / k);
+    labelSel.attr('font-size', 10 / k).attr('stroke-width', 2.5 / k)
+      // 🔴 2026-11-23：标签 dy 随屏显半径（radius/√k）+恒定屏显偏移 11/k，
+      // 原 dy=radius+11 未补偿 ⇒ k=4 时标签距节点中心 2.75 倍屏显半径，名字飘离节点
+      .attr('dy', n => radius(n) / Math.sqrt(k) + 11 / k);
     nodeSel.attr('stroke-width', 1.2 / k).attr('r', n => radius(n) / Math.sqrt(k));
+    // 🔴 2026-11-23 小龙截图：箭头/线宽不随语义缩放补偿——markerUnits=userSpaceOnUse
+    // 的 marker 与 line stroke-width 都随 gRoot transform 等比放大，fit k=4 时
+    // 箭头屏显 36px（比节点直径还大）、高权重边 11.6px＝「线很粗箭头很大」根因。
+    // 与标签/描边同手法：除以 k 保持屏显恒定（箭头 9px、边宽 0.5–2.9px）。
+    defs.selectAll('marker').attr('markerWidth', 9 / k).attr('markerHeight', 5.5 / k);
+    linkSel.attr('stroke-width', l => (0.5 + Math.min(2.4, (l.w || 1) * 0.35)) / k);
+    // 🔴 zoom 改变标签可见档（zoomK>1.6 渐进显示）⇒ 必须重算透明度，
+    // 否则 fit/滚轮后标签停留在旧档（初始 applyStates 在 fit 前跑，zoomK=1）。
+    applyStates();
   });
   svg.call(zoomB).on('dblclick.zoom', null);
 
@@ -1197,9 +1211,14 @@ function startD3Graph(canvas, nodes, edges) {
   // 🔴 弱边开关（默认关）：w=1 边占 1102/2967，是灰雾主因；隐藏后结构清晰
   let weakOn = false;
   let zoomK = 1; // 语义缩放当前倍率（标签渐进显示用）
+  // 🔴 2026-11-23：fit 基准倍率——标签渐进档相对它判（绝对阈值被 fit k=4 击穿）
+  let baseK = 1;
   // top-degree 标签白名单（前 45 个，约 27%——稠密图再低就失去导航性）
   const topLabelIdx = new Set(nodes.map((n, i) => [i, deg[i]]).sort((a, b) => b[1] - a[1]).slice(0, 45).map(x => x[0]));
   nodes.forEach((n, i) => { n._labelTop = topLabelIdx.has(i); });
+  // 🔴 2026-11-23 中档白名单（top 135≈34%）：zoomK>1.6 渐进档用，替代原「>1.6 全显」
+  const midLabelIdx = new Set(nodes.map((n, i) => [i, deg[i]]).sort((a, b) => b[1] - a[1]).slice(0, 135).map(x => x[0]));
+  nodes.forEach((n, i) => { n._labelMid = midLabelIdx.has(i); });
   // 🔴 2026-10-21 per-node top-k 边（visualcomplexity 航空图惯例：每节点只留最强 k 条边）——
   // 全局阈值救不了稠密图（158 节点 w≥3 仍 1408 边=hairball）；top-k 保每节点最强关系+
   // 连通性，边数从 1408 降到 ~600，结构不失真。k=5。
@@ -1232,10 +1251,14 @@ function startD3Graph(canvas, nodes, edges) {
         ? (n === active ? 1 : nbrs.has(n) ? (visible(n) ? 1 : 0.62) : (visible(n) ? 0.13 : 0.06))
         : (visible(n) ? 0.92 : 0.06))
       .attr('stroke', n => n === selected ? '#1e293b' : n === active ? '#1e293b' : (nbrs && nbrs.has(n)) ? '#6366f1' : 'rgba(255,255,255,.9)')
-      .attr('stroke-width', n => n === selected || n === active ? 2.6 : (nbrs && nbrs.has(n)) ? 2 : 1.2);
+      // 🔴 2026-11-23：节点描边同样除 zoomK 保屏显恒定（防 applyStates 冲掉 zoom 补偿）
+      .attr('stroke-width', n => (n === selected || n === active ? 2.6 : (nbrs && nbrs.has(n)) ? 2 : 1.2) / zoomK);
     linkSel
       // 🔴 hover/选中节点的弱边临时显示（邻域探索不被过滤挡）；其余 w=1 默认隐藏
       .attr('display', l => (!weakOn && !l._topk && !(active && (l.source === active || l.target === active))) ? 'none' : null)
+      // 🔴 2026-11-23：线宽屏显恒定（除以 zoomK），与 zoom handler 同口径——
+      // applyStates 会在 hover/过滤时重设 stroke-width，不除 k 会把 zoom 补偿冲掉
+      .attr('stroke-width', l => (0.5 + Math.min(2.4, (l.w || 1) * 0.35)) / zoomK)
       .attr('stroke', l => (active && (l.source === active || l.target === active)) ? '#16a34a' : '#94a3b8')
       // 🔴 2026-10-21 hairball 修复（调研共识）：无 active 时透明度按权重分级编码
       // （w1=.12/w2=.22/w3-9=.32/w≥10=.5）——均匀 0.35 叠 2967 边=灰雾；分级后强路径自浮现
@@ -1256,9 +1279,17 @@ function startD3Graph(canvas, nodes, edges) {
       // hover/选中邻域全显；放大 k>1.6 渐进显示更多（语义缩放联动）
       // 🔴 2026-10-21 小龙指出：类别筛选时该类节点应全显名字+保底——person 仅 ~30 个，
       // 全显不致雾；可见节点≤60 时全部显示（保底），默认全图 169 个才走 top-degree
+      // 🔴 2026-11-23 小龙截图「一下把所有点名字都显示出来」根因订正：
+      // ① 保底阈值 60 是 169 节点时代定的，现 400 节点 person=132，「该类全显」
+      //    前提（小类不致雾）已不成立 ⇒ 类别全显收紧为 visibleCount≤60；
+      // ② zoomK>1.6 全显在 fit k=4 默认视图下恒真 ⇒ 400 标签全开＝灰雾。
+      //    🔴 绝对 zoom 阈值不可靠：fit 自动把 k 顶到 scaleExtent 上限 4，
+      //    「放大才全显」在默认视图即触发。改**相对基准**：记录 fit 完成时的
+      //    baseK，用户真放大（k>baseK×1.5）才进中档（top135），×2.5 才全显。
       .attr('opacity', n => (active && (n === active || (nbrs && nbrs.has(n)))) ? 1
         : !visible(n) ? 0
-        : (graphFilter.kind || visibleCount <= 60 || n._labelTop || zoomK > 1.6) ? 1 : 0);
+        : (visibleCount <= 60 || n._labelTop
+           || zoomK > baseK * 2.5 || (zoomK > baseK * 1.5 && n._labelMid)) ? 1 : 0);
   }
   window.__graphRedraw = applyStates;
 
@@ -1299,7 +1330,9 @@ function startD3Graph(canvas, nodes, edges) {
     linkSel.each(function (l) {
       const dx = l.target.x - l.source.x, dy = l.target.y - l.source.y;
       const dist = Math.hypot(dx, dy) || 1;
-      const cut = (radius(l.target) + 4) / dist;
+      // 🔴 2026-11-23：截断半径用**屏显半径** radius/√k（zoom handler 同口径），
+      // 原 radius(l.target) 未除 √k ⇒ k=4 时截断过深，箭头离节点边缘远、悬在边中段
+      const cut = (radius(l.target) / Math.sqrt(zoomK) + 4 / zoomK) / dist;
       d3.select(this)
         .attr('x1', l.source.x).attr('y1', l.source.y)
         .attr('x2', l.target.x - dx * cut).attr('y2', l.target.y - dy * cut);
@@ -1341,9 +1374,11 @@ function startD3Graph(canvas, nodes, edges) {
     const x0 = xs[lo], x1 = xs[hi], y0 = ys[lo], y1 = ys[hi];
     const bw = Math.max(x1 - x0, 80), bh = Math.max(y1 - y0, 80), pad = 70;
     const k = Math.min(4, Math.max(0.25, Math.min((w - pad * 2) / bw, (h - pad * 2) / bh)));
+    baseK = k; // 🔴 2026-11-23：fit 完成即更新基准（标签渐进档相对它判）
     const t = d3.zoomIdentity.translate(w / 2 - (x0 + x1) / 2 * k, h / 2 - (y0 + y1) / 2 * k).scale(k);
     if (animate) svg.transition().duration(500).call(zoomB.transform, t);
     else svg.call(zoomB.transform, t);
+    applyStates(); // fit 后按新 baseK/zoomK 重算标签档（zoom handler 也会调，幂等）
   }
 
   // 工具按钮：适应屏幕 / 箭头开关 / 重新布局
