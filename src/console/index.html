@@ -55,6 +55,15 @@
   .graph-main{flex:1;min-width:0;position:relative;background:rgba(255,255,255,.28)}
   .graph-toolbar{position:absolute;top:12px;left:14px;right:14px;z-index:3;display:flex;gap:8px;align-items:center;flex-wrap:wrap;pointer-events:none}
   .graph-toolbar>*{pointer-events:auto}
+  /* 🔴 2026-11-23 二轮（小龙截图5：窄宽度下工具栏换行与图例重叠）：
+     原图例行硬编码 top:52px，假定工具栏恒一行；窄视口工具栏 flex-wrap 成两行
+     （高度≈76px）即与图例叠压。改图例入正常流叠放容器，跟随工具栏实际高度。 */
+  .graph-topstack{position:absolute;top:12px;left:14px;right:14px;z-index:3;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+  .graph-topstack .graph-toolbar{position:static;top:auto;left:auto;right:auto}
+  .graph-legend-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;pointer-events:none}
+  .graph-legend-row>*{pointer-events:auto}
+  /* 窄视口：统计 chip 允许缩行，操作提示让位（title 保留信息） */
+  @media (max-width:900px){ .graph-hint{display:none} .graph-stats{font-size:11px} }
   .graph-tool-btn{border:1px solid var(--line);background:rgba(255,255,255,.82);border-radius:8px;padding:4px 10px;font-size:12px;color:#475569;cursor:pointer;font-family:inherit}
   .graph-tool-btn:hover{border-color:#6366f1;color:#1e293b}
   .graph-tool-btn.on{outline:2px solid #6366f1;color:#1e293b}
@@ -948,18 +957,20 @@ async function renderGraph(el) {
     graphFilter.kind = null;
     el.innerHTML = `<div class="graph-page">
       <div class="graph-main" id="graph-main">
-        <div class="graph-toolbar">
-          <span class="mono-sm" style="background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:8px;padding:4px 10px">${nodes.length} 实体 · ${edges.length} 实体间关联 · ${d.totalMemoryLinks ?? 0} 记忆链接<span id="graph-hidden-note" style="color:var(--ink2)"></span></span>
-          <span style="flex:1"></span>
-          <button class="graph-tool-btn" id="gt-fit" title="缩放平移以容纳全部节点">⤢ 适应屏幕</button>
-          <button class="graph-tool-btn" id="gt-weak" title="显示/隐藏非 top-5 边（默认每节点只留最强 5 条边≈600/2967：稠密图 hairball 的标准解法，per-node top-k 惯例）">⋯ 弱边</button>
-          <button class="graph-tool-btn on" id="gt-arrow" title="显示/隐藏方向箭头">➤ 箭头</button>
-          <button class="graph-tool-btn" id="gt-relayout" title="清除所有手动拖放位置，整体重新布局">↻ 重新布局</button>
-          <span class="mono-sm" style="background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:8px;padding:4px 10px;color:var(--ink2)">滚轮缩放 · 拖拽停留 · 点击节点看详情</span>
-        </div>
-        <div style="position:absolute;top:52px;left:14px;right:14px;z-index:3;display:flex;flex-wrap:wrap;gap:6px;align-items:center;pointer-events:none">
-          <span style="font-size:12px;color:var(--ink2);background:rgba(255,255,255,.82);border-radius:6px;padding:2px 6px;pointer-events:auto">图例（点击过滤）：</span>
-          ${kinds.map(k => `<span class="pill graph-legend-pill" data-kind="${esc(k)}" onclick="toggleGraphFilter('${esc(k)}')" title="点击过滤 ${esc(k)}" style="cursor:pointer;pointer-events:auto;background:${(KIND_COLOR[k]||'#64748b')}18;color:${KIND_COLOR[k]||'#64748b'}">● ${esc(k)}</span>`).join('')}
+        <div class="graph-topstack">
+          <div class="graph-toolbar">
+            <span class="mono-sm graph-stats" style="background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:8px;padding:4px 10px">${nodes.length} 实体 · ${edges.length} 实体间关联 · ${d.totalMemoryLinks ?? 0} 记忆链接<span id="graph-hidden-note" style="color:var(--ink2)"></span></span>
+            <span style="flex:1"></span>
+            <button class="graph-tool-btn" id="gt-fit" title="缩放平移以容纳全部节点">⤢ 适应屏幕</button>
+            <button class="graph-tool-btn" id="gt-weak" title="显示/隐藏非 top-5 边（默认每节点只留最强 5 条边≈600/2967：稠密图 hairball 的标准解法，per-node top-k 惯例）">⋯ 弱边</button>
+            <button class="graph-tool-btn on" id="gt-arrow" title="显示/隐藏方向箭头">➤ 箭头</button>
+            <button class="graph-tool-btn" id="gt-relayout" title="清除所有手动拖放位置，整体重新布局">↻ 重新布局</button>
+            <span class="mono-sm graph-hint" style="background:rgba(255,255,255,.82);border:1px solid var(--line);border-radius:8px;padding:4px 10px;color:var(--ink2)">滚轮缩放 · 拖拽停留 · 点击节点看详情</span>
+          </div>
+          <div class="graph-legend-row">
+            <span style="font-size:12px;color:var(--ink2);background:rgba(255,255,255,.82);border-radius:6px;padding:2px 6px;pointer-events:auto">图例（点击过滤）：</span>
+            ${kinds.map(k => `<span class="pill graph-legend-pill" data-kind="${esc(k)}" onclick="toggleGraphFilter('${esc(k)}')" title="点击过滤 ${esc(k)}" style="cursor:pointer;pointer-events:auto;background:${(KIND_COLOR[k]||'#64748b')}18;color:${KIND_COLOR[k]||'#64748b'}">● ${esc(k)}</span>`).join('')}
+          </div>
         </div>
         <canvas id="graph-canvas" style="position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab"></canvas>
       </div>
@@ -1047,7 +1058,9 @@ function startD3Graph(canvas, nodes, edges) {
       if (!n._main || n.x == null) return;
       mainR = Math.max(mainR, Math.hypot(n.x - w / 2, n.y - h / 2));
     });
-    const r = Math.max(180, Math.min(mainR + 90, Math.min(w, h) / 2 - 40));
+    // 🔴 2026-11-23 二轮：下限 180 在窄视口（短边 332）超过短边一半⇒环出界；
+    // 下限改短边 1/4（窄视口 83），宽视口仍 180 起
+    const r = Math.max(Math.min(180, Math.min(w, h) / 4), Math.min(mainR + 90, Math.min(w, h) / 2 - 40));
     // 按分量分组：同分量节点共享一个环位（质心落环），分量间均分角度
     const comps = [...new Set(nodes.filter(n => !n._main).map(n => n._comp))];
     comps.forEach((cid, ci) => {
@@ -1149,7 +1162,10 @@ function startD3Graph(canvas, nodes, edges) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     pool.forEach(n => { x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y); x1 = Math.max(x1, n.x); y1 = Math.max(y1, n.y); });
     const bw = Math.max(x1 - x0, 1), bh = Math.max(y1 - y0, 1);
-    const pad = 90;
+    // 🔴 2026-11-23 二轮：pad 固定 90 在窄视口（侧栏占位后主区仅 332px）吃掉 54%
+    // 宽度⇒主簇被压成芝麻、45 标签挤一团。改比例 pad（短边 12%，夹 [24,90]），
+    // 宽视口行为不变（90），窄视口主簇可用区域从 46% 提到 76%。
+    const pad = Math.max(24, Math.min(90, Math.min(w, h) * 0.12));
     const tw = w - pad * 2, th = h - pad * 2;
     const sc = Math.min(tw / bw, th / bh);
     const mcx = (x0 + x1) / 2, mcy = (y0 + y1) / 2;
@@ -1166,7 +1182,8 @@ function startD3Graph(canvas, nodes, edges) {
       n.x = a.x + Math.cos(ang) * 42; n.y = a.y + Math.sin(ang) * 42;
     });
     // 非主分量（孤立点/小分量）落主簇外围环（贴视口内边，不撑包围盒）
-    const ringR = Math.min(w, h) / 2 - 55;
+    // 🔴 2026-11-23 二轮：55 固定边距窄视口占比过大，改短边 8%（夹 [16,55]）
+    const ringR = Math.min(w, h) / 2 - Math.max(16, Math.min(55, Math.min(w, h) * 0.08));
     const comps = [...new Set(nodes.filter(n => !n._main).map(n => n._comp))];
     comps.forEach((cid, ci) => {
       const members = nodes.filter(n => n._comp === cid && !n._main);
@@ -1214,11 +1231,44 @@ function startD3Graph(canvas, nodes, edges) {
   // 🔴 2026-11-23：fit 基准倍率——标签渐进档相对它判（绝对阈值被 fit k=4 击穿）
   let baseK = 1;
   // top-degree 标签白名单（前 45 个，约 27%——稠密图再低就失去导航性）
-  const topLabelIdx = new Set(nodes.map((n, i) => [i, deg[i]]).sort((a, b) => b[1] - a[1]).slice(0, 45).map(x => x[0]));
-  nodes.forEach((n, i) => { n._labelTop = topLabelIdx.has(i); });
-  // 🔴 2026-11-23 中档白名单（top 135≈34%）：zoomK>1.6 渐进档用，替代原「>1.6 全显」
-  const midLabelIdx = new Set(nodes.map((n, i) => [i, deg[i]]).sort((a, b) => b[1] - a[1]).slice(0, 135).map(x => x[0]));
-  nodes.forEach((n, i) => { n._labelMid = midLabelIdx.has(i); });
+  // 🔴 2026-11-23 二轮：标签配额按**视口带宽**定（固定 45/135 是宽视口口径，
+  // 窄视口主簇仅 332px 宽时 45 标签仍挤成雾）。配额=每行容量×行数，夹 [12,45]；
+  // 配额只是上限，碰撞剔除（rebuildLabelWhitelist）才是防雾终判。宽视口行为不变。
+  function labelQuota() {
+    const { width: w, height: h } = box();
+    // 🔴 标签沿主簇**水平带宽**排布（力导主簇近似圆/方形，宽度是瓶颈），
+    // 按面积算会高估（窄高视口面积大但宽度小）。配额=可用宽度/单标签宽×行数容量。
+    const usableW = Math.max(0, w - 60);
+    const perRow = Math.max(2, Math.floor(usableW / 55)); // 每行容几个不叠标签
+    const rows = Math.max(2, Math.min(6, Math.floor((h - 140) / 120)));
+    const top = Math.max(12, Math.min(45, perRow * rows));
+    const mid = Math.max(top * 3, Math.min(135, top * 3));
+    return { top, mid };
+  }
+  function rebuildLabelWhitelist() {
+    const { top, mid } = labelQuota();
+    const ranked = nodes.map((n, i) => [i, deg[i]]).sort((a, b) => b[1] - a[1]);
+    // 🔴 2026-11-23 二轮：配额只是上限，**碰撞剔除**才是防雾终判——
+    // 按度排序贪心放置，标签屏幕矩形（宽≈字数×10+8，高 12，锚点节点下方）
+    // 与已放置矩形相交即跳过。布局冻结态坐标已知，可确定性计算；
+    // 宽视口 45 个基本不碰撞（行为不变），窄视口自动降到不叠的最大子集。
+    const placed = [];
+    const collide = (r) => placed.some(p => r.left < p.right && p.left < r.right && r.top < p.bottom && p.top < r.bottom);
+    const topSet = new Set(), midSet = new Set();
+    for (const [i] of ranked) {
+      if (topSet.size >= top && midSet.size >= mid) break;
+      const n = nodes[i];
+      if (n.x == null) continue;
+      const lw = (n.name || "").length * 10 + 8, lh = 13;
+      const r = { left: n.x - lw / 2, right: n.x + lw / 2, top: n.y + 4, bottom: n.y + 4 + lh };
+      if (collide(r)) continue;
+      placed.push(r);
+      if (topSet.size < top) topSet.add(i);
+      if (midSet.size < mid) midSet.add(i);
+    }
+    nodes.forEach((n, i) => { n._labelTop = topSet.has(i); n._labelMid = midSet.has(i); });
+  }
+  rebuildLabelWhitelist();
   // 🔴 2026-10-21 per-node top-k 边（visualcomplexity 航空图惯例：每节点只留最强 k 条边）——
   // 全局阈值救不了稠密图（158 节点 w≥3 仍 1408 边=hairball）；top-k 保每节点最强关系+
   // 连通性，边数从 1408 降到 ~600，结构不失真。k=5。
@@ -1280,14 +1330,17 @@ function startD3Graph(canvas, nodes, edges) {
       // 🔴 2026-10-21 小龙指出：类别筛选时该类节点应全显名字+保底——person 仅 ~30 个，
       // 全显不致雾；可见节点≤60 时全部显示（保底），默认全图 169 个才走 top-degree
       // 🔴 2026-11-23 小龙截图「一下把所有点名字都显示出来」根因订正：
-      // ① 保底阈值 60 是 169 节点时代定的，现 400 节点 person=132，「该类全显」
-      //    前提（小类不致雾）已不成立 ⇒ 类别全显收紧为 visibleCount≤60；
-      // ② zoomK>1.6 全显在 fit k=4 默认视图下恒真 ⇒ 400 标签全开＝灰雾。
+      // zoomK>1.6 全显在 fit k=4 默认视图下恒真 ⇒ 400 标签全开＝灰雾。
       //    🔴 绝对 zoom 阈值不可靠：fit 自动把 k 顶到 scaleExtent 上限 4，
       //    「放大才全显」在默认视图即触发。改**相对基准**：记录 fit 完成时的
       //    baseK，用户真放大（k>baseK×1.5）才进中档（top135），×2.5 才全显。
+      // 🔴 2026-11-23 二轮（小龙：筛选后名称过少，且 tool 全显/project 只显几个＝不一致）：
+      //    一轮把类别全显误收紧为 ≤60，推翻了 10-21 小龙裁定「筛选即聚焦，该类应全显名字」。
+      //    正解＝**按视图态分治**：类别筛选态＝用户显式聚焦，该类全显（132 个散布全图不叠雾，
+      //    与默认 400 挤主簇不同）；默认全图态才走 top-degree 防雾。两态判据分离，禁一刀切。
       .attr('opacity', n => (active && (n === active || (nbrs && nbrs.has(n)))) ? 1
         : !visible(n) ? 0
+        : graphFilter.kind ? 1
         : (visibleCount <= 60 || n._labelTop
            || zoomK > baseK * 2.5 || (zoomK > baseK * 1.5 && n._labelMid)) ? 1 : 0);
   }
@@ -1372,7 +1425,9 @@ function startD3Graph(canvas, nodes, edges) {
     const ys = use.map(n => n.y).sort((a, b) => a - b);
     const lo = Math.floor(xs.length * 0.05), hi = Math.max(0, xs.length - 1 - lo);
     const x0 = xs[lo], x1 = xs[hi], y0 = ys[lo], y1 = ys[hi];
-    const bw = Math.max(x1 - x0, 80), bh = Math.max(y1 - y0, 80), pad = 70;
+    // 🔴 2026-11-23 二轮：fit pad 同 clampLayout 改比例（窄视口固定 70 吃掉 42% 宽度）
+    const bw = Math.max(x1 - x0, 80), bh = Math.max(y1 - y0, 80);
+    const pad = Math.max(20, Math.min(70, Math.min(w, h) * 0.10));
     const k = Math.min(4, Math.max(0.25, Math.min((w - pad * 2) / bw, (h - pad * 2) / bh)));
     baseK = k; // 🔴 2026-11-23：fit 完成即更新基准（标签渐进档相对它判）
     const t = d3.zoomIdentity.translate(w / 2 - (x0 + x1) / 2 * k, h / 2 - (y0 + y1) / 2 * k).scale(k);
@@ -1413,12 +1468,16 @@ function startD3Graph(canvas, nodes, edges) {
   const relayoutBtn = document.getElementById('gt-relayout');
   if (relayoutBtn) relayoutBtn.onclick = () => {
     nodes.forEach(n => { n._dragged = false; n.fx = null; n.fy = null; });
-    sim.alpha(0.6).restart();
+    // 🔴 2026-11-23 二轮：显式 alphaTarget(0)——drag start 设过 0.22，若 drag end
+    // 未正常触发（如指针移出窗口）alphaTarget 残留 >0，sim 永不收敛、end 事件永不触发，
+    // relayout 后的 clamp+fit 全被跳过（实测 zoomK 停在 12、标签 400 全显残留）。
+    sim.alphaTarget(0).alpha(0.6).restart();
     // 🔴 重布局收敛后再收束+渲染+fit（确定性包围盒）
     sim.on('end.clamp', () => {
       sim.on('end.clamp', null);
       placeIsolated();
       clampLayout();
+      rebuildLabelWhitelist(); // 🔴 重布局后坐标变了，碰撞剔除须重算
       renderGraph();
       fitToScreen(false, true);
     });
@@ -1435,6 +1494,8 @@ function startD3Graph(canvas, nodes, edges) {
     // 自动 fit 一律主分量（默认视图策略）；「适应屏幕」按钮才是全节点（用户显式选择）
     rszT = setTimeout(() => {
       placeIsolated();
+      clampLayout(); // 🔴 二轮：归一化 pad 依赖视口，resize 后须重算（原只 placeIsolated 漏了主簇）
+      rebuildLabelWhitelist(); // 🔴 碰撞剔除用冻结坐标，必须在 clampLayout 之后
       renderGraph();
       fitToScreen(false, true);
     }, 180);
