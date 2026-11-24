@@ -8,9 +8,10 @@
 - [1. 主通道与子命令](#1-主通道与子命令)
 - [2. task_append：HTTP 面没有的路由](#2-task_appendhttp-面没有的路由)
 - [3. 🔴 禁止用 --help 试探子命令](#3-️-禁止用---help-试探子命令)
-- [4. CLI-first 降级链（MCP 不可用时）](#4-cli-first-降级链mcp-不可用时)
+- [4. CLI-first 降级链（MCP 不可用时）](#4-cli-first-降级链mcp-不可用时)（含 4b 运行期「不可用」判定三类分流 / 4c 维护节奏与降级）
 - [5. recall 返回结构契约（P0）](#5-recall-返回结构契约p0)
 - [6. remember 覆盖事故全记录（P0）](#6-remember-覆盖事故全记录p0)
+- [7. CLI 通道：长文本引号陷阱](#7-cli-通道长文本引号陷阱2026-09-06-实测修复-数据损坏级)
 
 ## 1. 主通道与子命令
 
@@ -46,6 +47,31 @@ bash ~/.leafmem/leafmem-cli.sh task-append <taskId> <content> [rollingSummary] [
 4. 最后降级 `conversation_search`。
 5. **召回失败仍不阻塞后续动作，但删除类动作必须更保守。**
 
+### 4b. 🔴 运行期「不可用」判定（禁跳步；2026-11-25 从 SOUL 迁入，判据逐字保留）
+
+**先分类错误，再决定是不是「服务不可用」**——三类的处置完全不同，混判会导致误降级或无谓重试：
+
+| 错误形态 | 判定 | 处置（禁跳步） |
+|---|---|---|
+| `fetch failed` / `502` / `timeout` / `ENETDOWN` | **真不可用** | **等 60s 重试，共 3 次** → 仍失败降级 `conversation_search`／`~/.leafmem/mirror/` → 记当日日志 → 🔴 **恢复后必须补写 durable**（降级期间的结论不补写＝永久丢失） |
+| `must be array` / `Expected object` | **参数序列化问题，不是服务故障** | 自查参数类型（`tags` 用数组语法、`importance`/`confidence` 传数字）；禁据此判服务down、禁重试 |
+| ToolSearch 查不到 `mcp__leafmem__*` | **正常现象**（deferred 索引在自动化会话寻址失效） | 严禁据此判「不可用」；直接走 CLI。护栏脚本 `~/WorkBuddy/scripts/check_mcp_defer_loading.sh` |
+
+- 🔴 **「恢复后补写 durable」是动作对象明确的硬要求**，不是「记一下」——降级期间产生的结论/教训必须在服务恢复后用 `remember`/`update` 落库。
+- **CLI 引号陷阱**：`~/.leafmem/leafmem-cli.sh` 的参数转发须为 `${@+"$@"}`，**本地与上游模板两处都改**（升级会被 `installLeafmemCli()` 覆盖）；写完回读校验。
+
+### 4c. 维护节奏与降级（2026-11-25 从 SOUL 迁入，判据逐字保留）
+
+| 项 | 判据/动作 |
+|---|---|
+| 深度整理节奏 | **每周一 04:00**（自动化 `leafmem-canary-weekly`，**以 rrule 为准**；SOUL 旧记 03:55 已废，DB 回读 next_run 2026-11-30 04:00） |
+| MCP 超时 | **5s** 无响应 → 降级 `conversation_search` |
+| 向量模型 | **BGE-M3 不可用 → hash 降级**（不阻断召回，但相似度口径变化须在报告标注） |
+| console Sync | **＝安全导入，不覆盖 SOUL/USER/MEMORY**（身份文件只能由人/宿主写） |
+| 写记忆模板 | `outputs/项目/leafmem-productization/references/hindsight/research/memory-writing-standard.md` |
+
+**四条动作阈值**（SKILL.md MUST 保留一行版，此处为完整版）：① recall 降噪——同主题先 `update` 不新建 ② **同一坑踩 ≥2 次即升 importance**（outcome salience 加权，与时间无关）③ `commit` 返 `maintenanceRequest` **立即** `memory_organize(action=apply)` ④ **单回合 tool calls ≥8 就写当日日志**（防上下文压缩丢过程）。
+
 ## 5. recall 返回结构契约（P0）
 
 🔴 **两次踩坑，必须照抄**：返回顶层 keys =
@@ -67,7 +93,9 @@ bash ~/.leafmem/leafmem-cli.sh task-append <taskId> <content> [rollingSummary] [
   **根治＝下沉到最内层 `src/core/memory.ts` 的 `remember()`**：MCP / HTTP（CLI）/ batch / 摄入脚本**四条写入通道都汇聚到 core remember()**（同 §B2 enrichment 的放置原则，见 memory.ts 内注释）。在四个合并分支（evaluator 的 ignore/update/contradict ＋ legacy threshold-dedupe）写回前统一调 `markMergedOver()`：给被合并记录打 `metadata.mergedOver`（`at`/`mode`/`incomingKind`/`incomingSource`）并向 stderr 打 `OVERWRITE WARNING`。`mergedOver` 随响应返回，**任何客户端（含 MCP）都能机械判定「新建 vs 合并」**；且它能捕获「同一天内覆盖今日新建条目」这种 `createdAt` 启发式的盲区。
 - ⑤ **分层防线（三层，缺一不可）**：**L0（权威）core 层 `metadata.mergedOver` + stderr 警告**——最内层、四通道全覆盖、确定性判据，是真正的防线；**L1 CLI 就近提示**——壳层解析响应，优先读 L0 的 `mergedOver`、回退 `createdAt` 早于今日，命中即向 stderr 打 `LEAFMEM_OVERWRITE_WARNING`（客户端就近可见，不改 stdout/退出码）；**L2 自动化 prompt 侧**「摘要必须输出 `[leafmem] id=<前8位> createdAt=<日期>` 行」＝产物侧可 grep 的汇报判据（M10，缺行＝漏核，raw 任务 prompt ①b 已固化）；**L3 本技能四条写入纪律（a-d）**。恢复流程：先从 `~/.workbuddy/memory/<被覆盖日期>.md` 重建原文 `update` 回填（`createdAt` 不变、不重生），再把新内容差异化措辞＋唯一日期 tags 另立新条目。
 
-> 四条机械纪律（🔴 MUST）见 SKILL.md 步骤 1 正文，此处不重复。## CLI 通道：长文本引号陷阱（2026-09-06 实测修复，🔴 数据损坏级）
+> 四条机械纪律（🔴 MUST）见 SKILL.md 步骤 1 正文，此处不重复。
+
+## 7. CLI 通道：长文本引号陷阱（2026-09-06 实测修复，🔴 数据损坏级）
 
 `~/.leafmem/leafmem-cli.sh` 曾有 4 处未加引号的 `${@:-}`（recall/remember/list/update 向 Python 传参），shell 词分割会拆碎 `--content "长文本 含空格"`，Python 只取首词 → **含空格长文本静默截断，无报错**。
 

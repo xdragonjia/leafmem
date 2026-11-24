@@ -1,6 +1,6 @@
 ---
 name: leafmem-maintenance
-version: "1.9.2"
+version: "1.10.0"
 agent_created: true
 author: xiaoxia
 description: >
@@ -24,7 +24,7 @@ description: >
 
 **关键词**：leafmem 维护 ｜ 记忆整理 ｜ 每周健康检查 ｜ 深度整理 ｜ 记忆治理 ｜ 周度观察 ｜ consolidation
 
-**意图**：对 LeafMem 记忆库执行周期性质量维护与周度趋势观察（由每周自动化任务调用，或手动触发）
+**意图**：LeafMem 记忆库周期性质量维护与周度趋势观察（每周自动化调用或手动触发）
 
 **排除**：
 
@@ -34,7 +34,7 @@ description: >
 
 ## `<identity_note>` 身份备注
 
-与 ops/consolidation.js 的关系：consolidation.js 是旧版 LLM 去重脚本（硬依赖 DEEPSEEK_API_KEY，2026-08-10 key 移除后已不可运行，仅存档于仓库作参考）。本技能是它的现行替代——语义级精修（整合/蒸馏/画像）由宿主模型通过 MCP 完成，免费；supports 断链清理已由 memory.forget() 内置级联覆盖。
+与 ops/consolidation.js 的关系：该旧版 LLM 去重脚本已不可运行（硬依赖 DEEPSEEK_API_KEY，2026-08-10 移除），仅存档参考。本技能是现行替代：语义精修由宿主模型经 MCP 完成（免费）；supports 断链清理已由 memory.forget() 级联覆盖。
 
 ## 工作流（workflow）
 
@@ -43,17 +43,19 @@ description: >
 执行任何维护动作前，先召回历史维护教训，避免重蹈覆辙
 
 - **动作**：mcp__leafmem__memory_recall(action="recall", message="leafmem 维护 整理 误删 教训")
-- **分支**：若 MCP 不可用 → 按 CLI-first（2026-09-04）：首选 `bash ~/.leafmem/leafmem-cli.sh recall "..."`（HTTP，launchd 守护；自动化会话 mcp__leafmem__* 恒 absent 属预期）→ 不可达先查 `launchctl list | grep leafmem` → 最后 conversation_search；召回失败仍不阻塞，但删除动作必须更保守
+- **分支**：MCP 不可用 → CLI-first：`bash ~/.leafmem/leafmem-cli.sh recall "..."`（HTTP，launchd 守护）→ 不可达查 `launchctl list | grep leafmem` → 最后 conversation_search；召回失败不阻塞，但删除动作更保守
 
-**📖 按需读** `references/cli-write-channel.md`（task-append 子命令 / CLI-first 降级链 / recall 返回契约 / remember 覆盖事故全记录）——**要写记忆或 recall 结果异常时必读**，只做只读观测不必读。
+**📖 按需读** `references/cli-write-channel.md`（task-append / CLI-first 降级链＋**§4b 不可用判定三类分流**＋§4c 节奏 / recall 契约 / remember 覆盖事故 / §7 引号陷阱）——**写记忆或 recall 异常时必读**，只读观测不必读。
+
+🔴 **报错先分类再处置**（三类分流表＋阈值＋恢复补写要求全文见 §4b，禁跳步）：网络类＝真不可用（重试后降级）／参数类＝**不是服务故障**（自查类型禁重试）／ToolSearch absent＝**正常现象**（走 CLI，严禁判不可用）。
 
 **🔴 四条写入硬纪律（name=remember_overwrite_hazard，severity=P0；纪律本体在此，事故记录见上方指针）**：
 (a) **追加型教训一律用 `update --content <old + 新增>`**（先 `get` 取原文，拼接后整段回写），**不要**用 `remember` 期望它「新建一条相近记录」；
-(b) **`remember` 之后必须立刻 `get` 返回的 id 并核对 `createdAt`** —— 若早于今天即说明命中并覆盖了既有条目（`remember` 是「写入即可能覆盖」的非幂等操作，**同 kind+同 tags+同模板**即触发，与「我认为主题不同」的主观判断无关；且 `summary`/`tags`/`kind`/`importance`/`confidence` **一并被覆盖**），须立即恢复原文再决定是否拆分另建（core 已自动打 `mergedOver` 标记告警，见指针 §6）；
+(b) **`remember` 后必须立刻 `get` 该 id 核对 `createdAt`** —— 早于今天＝命中并覆盖了既有条目（非幂等：**同 kind+同 tags+同模板**即触发，与「我认为主题不同」无关；`summary`/`tags`/`kind`/`importance`/`confidence` **一并被覆盖**），须立即恢复原文再决定拆分另建（core 自动打 `mergedOver` 告警，见 §6）；
 (c) `remember` 仅在**已用正确口径 recall 确认无同主题条目**时使用；
 (d) 恢复原文的前提是**手上有原文**：写记忆前先 `get` 留存，或确认该条目内容已在当前上下文中。
 
-**🔴 读通道口径（name=recall_return_contract，severity=P0，两次踩坑）**：recall 结果的记忆条目在 **`hits[].record`**；❌ 禁用 `d.get('memories')/d.get('results')/d.get('items')` —— 这三个键都不存在，会静默落空打印「命中 0」，**进而驱动一次破坏性 `remember` 覆盖**（09-24 实证：覆盖了 principle `9c2cd747` 的 4,499 字符六代谱系）。**自检：先 `list(d.keys())` 断言含 `hits`；命中 0 走「空结果三查」，三查未过不得判为「无相关记忆」。**
+**🔴 读通道口径（name=recall_return_contract，severity=P0）**：条目在 **`hits[].record`**；❌ 禁用 `d.get('memories')/d.get('results')/d.get('items')`（三键都不存在，静默落空打印「命中 0」**进而驱动破坏性 `remember` 覆盖**，事故全记录见 §6）。**自检：先 `list(d.keys())` 断言含 `hits`；命中 0 走「空结果三查」，未过不得判「无相关记忆」。**
 
 **🔴 单条 content 硬上限 6,000 字符**，超限报 `memory content too long`；接近上限走**步骤 5b 拆分**，不要继续追加。
 
@@ -114,21 +116,21 @@ description: >
 - **合并**：宿主模型按「整合九规则」整合（见 constraints）
 - **写入**：memory_write(action="remember", kind="lesson", importance=0.7, tags=[主题], content=模板文本)
 - **删除**：写入成功后才逐条删除原碎片
-- **验证**：用 2-3 个主题查询 recall，新记忆 score ≥ 0.6；抽查无 LLM 自造数字、无近重复、无悬空代词，不达标该簇重做
+- **验证**：2-3 个主题查 recall，新记忆 score ≥ 0.6；抽查无 LLM 自造数字/近重复/悬空代词，不达标该簇重做
 
 ### 步骤 5b：长谱系条目拆分（content 逼近单条 6,000 上限）
 
 把 content 逼近单条 6,000 上限的「合并磁石」条目做**无损拆分**：核心留在本条，谱系/案例外置为 kind=lesson 原子条目，两向互引 id。
 
-- **触发**：`scripts/weekly_scan.py` 报 content>4000；其中 ≥5,500 者为高危（余量 <10%，任何一次追加都可能撞上限）。
-- **🔴 先判「该不该拆」**（10-20）：`合法长文` 只是长度事实；仅 ≥5,500 或一题多族磁石才拆，单主题与过时 runbook（加 `已被替代` 后降权）不拆；基线 7 条与判据全表见 reference。
+- **触发**：`scripts/weekly_scan.py` 报 content>4000；**≥5,500 为高危**（余量 <10%，一次追加即可能撞上限）。
+- **🔴 先判「该不该拆」**：`合法长文` 只是长度事实；仅 ≥5,500 或一题多族磁石才拆，单主题与过时 runbook（加 `已被替代` 降权）不拆；基线 7 条与全表见 reference。
 - **📖 触发即必读** `references/step5b-long-entry-split.md`（完整执行序列：覆盖度扫描判定表 → 外置 metadata 字段 → 父条目回写参数 → 验证收尾）。**不执行覆盖度扫描就外置＝制造重复；不回写父条目＝谱系断链。**
 
 **🔴 四条硬门禁（纪律本体在此，执行细节在 reference）**：
 1. **覆盖度扫描前置**：原文每个语义段取 1–2 个特征串跑全库 `SELECT id ... WHERE content LIKE '%串%'`；命中**只含本条** ⇒ 必须外置，命中**含他人** ⇒ 索引指向既有 id **不复制**（复制＝制造重复）。
-2. **`parentId` 必须取完整 36 位 UUID**，🔴 禁用 8 位短前缀 —— 10-11 首跑写错一组（记成 `62d1`，真值 `c6d1`，仅一字之差），与步骤 6 的 supports 短 id 事故同源。
-3. **写后必核 `createdAt` 为当日**：早于今日 ⇒ 命中覆盖了既有条目，立即按步骤 3 存档恢复原文。父条目回写 `--metadata` 自引擎 0.3.27 起默认浅合并（`recallCount`/`lastRecalledAt` 不再被冲掉），但**只传要改的键**仍是最稳做法；`--tags` 传原 tags 并集（tags 仍是整体替换语义）。
-4. **零丢失硬门禁**：回写后对原文每个语义段做**全库** `LIKE` 复扫，`ORPHANS` 必须 = 0；出现孤儿 ⇒ 回补进对应子条目后再复验，**不得只改父条目**。🔴 **判据：只查索引池不算取证，必须全库扫描** —— 10-11 首跑只查索引池判了 4 个孤儿，全库扫描确认是**真丢失**（`史/理/硬/路`、`歷/處/網`、`is ambiguous`、`29/29` 全库 0 命中），回补后才归零。
+2. **`parentId` 必须取完整 36 位 UUID**，🔴 禁用 8 位短前缀（10-11 首跑写错一组，与步骤 6 supports 短 id 事故同源）。
+3. **写后必核 `createdAt` 为当日**：早于今日 ⇒ 覆盖了既有条目，立即按步骤 3 存档恢复原文。父条目回写 `--metadata` 自 0.3.27 起浅合并（`recallCount`/`lastRecalledAt` 不再被冲掉），但**只传要改的键**最稳；`--tags` 传原 tags 并集（tags 仍整体替换）。
+4. **零丢失硬门禁**：回写后对原文每个语义段做**全库** `LIKE` 复扫，`ORPHANS` 必须 = 0；出现孤儿 ⇒ 回补进对应子条目再复验，**不得只改父条目**。🔴 **只查索引池不算取证，必须全库扫描**（10-11 实证：索引池判 4 孤儿，全库确认真丢失，明细见 reference）。
 
 - **收尾**：拆分属写入动作 ⇒ 完成后必须重跑步骤 9 镜像同步，并核三源一致（DB = FTS = Mirror）。
 
@@ -170,9 +172,9 @@ description: >
 
 导出全量记忆到本地镜像，供 MCP 降级兜底
 
-- **动作**：node `~/projects/leafmem/ops/mirror-sync.js`（默认写 ~/.leafmem/mirror，可 --mirror-dir 覆盖）。🔴 **安装目录口径 ＝ `~/projects/leafmem`**；旧文所记 `npm root -g`/@xdragonjia/leafmem 下**无 ops/ 与任何脚本**（2026-10-11 实测，按旧路径执行会报"脚本缺失"）。
-- **规则**：🔴 执行顺序：镜像必须是**全部写入动作完成之后**的收尾步骤。LeafMem commit（收尾留痕）本身会写入 1 条 session 记录，先跑镜像会留下 1 条差——2026-09-21 实测 1832→1833，重跑后三方一致。凡镜像之后再有任何写入（含 commit / task_append / remember），必须重跑本步骤
-- **检查**：收尾核对须三源同数：`DB = FTS = Mirror 记录数`，并由 `memory_items_fts - memory_items = 0` 佐证 FTS 无滞
+- **动作**：node `~/projects/leafmem/ops/mirror-sync.js`（默认写 ~/.leafmem/mirror，可 --mirror-dir 覆盖）。🔴 **安装目录口径＝`~/projects/leafmem`**；`npm root -g`/@xdragonjia/leafmem 下**无 ops/ 与脚本**（2026-10-11 实测，按旧路径必报「脚本缺失」）。
+- **规则**：🔴 镜像必须是**全部写入动作完成之后**的收尾步骤——commit 本身写 1 条 session 记录，先跑镜像会差 1 条（2026-09-21 实测 1832→1833）。镜像后再有任何写入（commit / task_append / remember）必须重跑本步骤
+- **检查**：三源同数 `DB = FTS = Mirror 记录数`，并由 `memory_items_fts - memory_items = 0` 佐证 FTS 无滞
 
 ### 步骤 10：周度观察（只读，2026-09-03 并入）
 
@@ -236,6 +238,7 @@ description: >
 - MUST 删除走 MCP 且写入成功后才删原条
 - MUST 整合产物用标准模板：# 一句话结论 + 场景/内容/动作/来源
 - MUST scope 铁律：默认 agent:workbuddy，write 不传 scopeType/scopeId
+- MUST 🔴 **维护动作四阈值**：recall 降噪（同主题先 update）／**同一坑 ≥2 次即升 importance**／`commit` 返 `maintenanceRequest` **立即** apply／**单回合 tool calls ≥8 写当日日志**。节奏与降级（周一 04:00 整理／MCP 超时 5s／BGE-M3→hash／console Sync 不覆盖身份文件／写记忆模板）→ `references/cli-write-channel.md` §4c
 
 **SHOULD**：
 
@@ -247,7 +250,7 @@ description: >
 
 ## CLI 通道：长文本引号陷阱（🔴 数据损坏级）
 
-含空格长文本静默截断的成因、`${@+"$@"}` 修法、两处必改位置与回读校验 → `references/cli-write-channel.md` §引号陷阱。
+含空格长文本静默截断的成因、`${@+"$@"}` 修法、两处必改位置与回读校验 → `references/cli-write-channel.md` §7 引号陷阱。
 
 ## `<error_handling>` 异常处理
 
@@ -259,7 +262,7 @@ description: >
 
 **fallback_strategy 降级策略**：
 
-- **MCP 不可用**：① 等待 60 秒重试一次；② 仍失败则只执行只读步骤（健康检查/检测报告），删除/整合全部跳过并在报告标注
+- **MCP 不可用**（🔴 先按 `references/cli-write-channel.md` §4b 分类错误，`must be array`/ToolSearch 查不到**不算不可用**）：① **等 60s 重试，共 3 次**；② 仍失败先走 CLI-first 降级链（CLI → `launchctl list` → `conversation_search`／`~/.leafmem/mirror/`），只执行只读步骤（健康检查/检测报告），删除/整合全部跳过并在报告标注；③ 记当日日志，🔴 **服务恢复后必须补写降级期间产生的 durable**（不补写＝永久丢失）
 - **存档不一致**：① 重新导出一次；② 仍不一致则中止全部删除类步骤，只留健康检查报告
 - **超时（>10 分钟）**：① 把剩余碎片簇截断到前 10 簇，其余留到下周
 
