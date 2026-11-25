@@ -1,6 +1,6 @@
 ---
 name: leafmem-maintenance
-version: "1.10.0"
+version: "1.11.0"
 agent_created: true
 author: xiaoxia
 description: >
@@ -11,8 +11,6 @@ description: >
 ---
 
 > 📜 **变更历史**：见 `CHANGELOG.md`（本技能全部版本的变更叙事与教训溯源；正文只写当前有效的规范）
-
-> **元信息**：date = 2026-09-03 ｜ type = operations ｜ agent_created = true ｜ author = xiaoxia
 
 ## 身份（identity）
 
@@ -26,15 +24,11 @@ description: >
 
 **意图**：LeafMem 记忆库周期性质量维护与周度趋势观察（每周自动化调用或手动触发）
 
-**排除**：
-
-- WeKnora 知识库的维护（用 weknora-rag）
-- 每日只读健康巡检（由「每日健康哨兵」自动化负责，模板 ops/automations/daily-sentinel.md）
-- 宿主安装/配置（用安装器或 INSTALL-KUNLUNXIAOZHI.md）
+**排除**：见 frontmatter `description` 末行（WeKnora 维护 / 每日只读巡检 / 宿主安装配置），三者均不在本技能范围。
 
 ## `<identity_note>` 身份备注
 
-与 ops/consolidation.js 的关系：该旧版 LLM 去重脚本已不可运行（硬依赖 DEEPSEEK_API_KEY，2026-08-10 移除），仅存档参考。本技能是现行替代：语义精修由宿主模型经 MCP 完成（免费）；supports 断链清理已由 memory.forget() 级联覆盖。
+`ops/consolidation.js` 已退役（判据见表末「历史脚本」行）。本技能是现行替代：语义精修由宿主模型经 MCP 完成（免费）；supports 断链清理已由 memory.forget() 级联覆盖。
 
 ## 工作流（workflow）
 
@@ -49,11 +43,12 @@ description: >
 
 🔴 **报错先分类再处置**（三类分流表＋阈值＋恢复补写要求全文见 §4b，禁跳步）：网络类＝真不可用（重试后降级）／参数类＝**不是服务故障**（自查类型禁重试）／ToolSearch absent＝**正常现象**（走 CLI，严禁判不可用）。
 
-**🔴 四条写入硬纪律（name=remember_overwrite_hazard，severity=P0；纪律本体在此，事故记录见上方指针）**：
+**🔴 五条写入硬纪律（name=remember_overwrite_hazard，severity=P0；纪律本体在此，事故记录见上方指针）**：
 (a) **追加型教训一律用 `update --content <old + 新增>`**（先 `get` 取原文，拼接后整段回写），**不要**用 `remember` 期望它「新建一条相近记录」；
 (b) **`remember` 后必须立刻 `get` 该 id 核对 `createdAt`** —— 早于今天＝命中并覆盖了既有条目（非幂等：**同 kind+同 tags+同模板**即触发，与「我认为主题不同」无关；`summary`/`tags`/`kind`/`importance`/`confidence` **一并被覆盖**），须立即恢复原文再决定拆分另建（core 自动打 `mergedOver` 告警，见 §6）；
 (c) `remember` 仅在**已用正确口径 recall 确认无同主题条目**时使用；
 (d) 恢复原文的前提是**手上有原文**：写记忆前先 `get` 留存，或确认该条目内容已在当前上下文中。
+(e) 🔴 **「必须新建」场景一律带 `--no-dedupe`**（2026-11-25 第4例后立）：跨日跑次记录／覆盖事故恢复后另立／同主题不同日期的经验条——CLI `remember … --no-dedupe` 透传 `dedupe:false`，core 跳过模糊合并必新建。**日期锚+tags+措辞差异化是预防辅助不是保证**（相似度只比 content embedding，11-25 实证三防线全在位仍二次命中同条）；(b) 写后核仍必做，二者不可互替。
 
 **🔴 读通道口径（name=recall_return_contract，severity=P0）**：条目在 **`hits[].record`**；❌ 禁用 `d.get('memories')/d.get('results')/d.get('items')`（三键都不存在，静默落空打印「命中 0」**进而驱动破坏性 `remember` 覆盖**，事故全记录见 §6）。**自检：先 `list(d.keys())` 断言含 `hits`；命中 0 走「空结果三查」，未过不得判「无相关记忆」。**
 
@@ -104,7 +99,7 @@ description: >
 - **性质**：`remember()` 0.85 模糊合并吞同模板日志节的痕迹，无报错/告警且 `exact_dups`/`near_dups` 均抓不到。处置＝正文权威只修 metadata、无孪生禁删；增量已由 `looksStructuralChunk()` 汇聚点拦截。根因链/SQL/PATCH 必带 `?scope=` → `references/step4bc-dedup-and-kind-gates.md` §4d。
 
 ### 步骤 4d：🔴 模式三件套巡检
-`python3 scripts/pattern_compliance.py --out runs/pattern_compliance_<date>.json`（自检 5/5）。补 metadata 直接 govern(update) 即可——**引擎 ≥0.3.27 默认浅合并**（键值 null=删键；整包替换须显式 `metadataMode:"replace"`，维护场景禁用），11-19 裸写覆盖事故已在引擎层根治，不再依赖「先 get 合并」自觉。全库 principle 149 条已覆盖＋聚类新提炼 2 条。判据展开/三件套定义/存量处置→`references/pattern-triad.md`。
+`python3 scripts/pattern_compliance.py --out runs/pattern_compliance_<date>.json`（自检 5/5）。补 metadata 直接 govern(update) 即可——**引擎 ≥0.3.27 默认浅合并**（键值 null=删键；整包替换须显式 `metadataMode:"replace"`，维护场景禁用），11-19 裸写覆盖事故已在引擎层根治，不再依赖「先 get 合并」自觉。判据展开/三件套定义/存量处置→`references/pattern-triad.md`。
 
 ### 步骤 5：碎片簇整合
 
@@ -247,10 +242,6 @@ description: >
 ## 示例（examples）
 
 **📖 按需读** `references/examples.md` —— 碎片整合正例、前缀聚类误删反例。执行只需记一句：**先存档 → 写入成功 → 再删原条**。
-
-## CLI 通道：长文本引号陷阱（🔴 数据损坏级）
-
-含空格长文本静默截断的成因、`${@+"$@"}` 修法、两处必改位置与回读校验 → `references/cli-write-channel.md` §7 引号陷阱。
 
 ## `<error_handling>` 异常处理
 

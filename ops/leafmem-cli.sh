@@ -118,6 +118,12 @@ while i < len(a):
         d["source"] = a[i+1]; i += 2
     elif k == "--metadata" and i + 1 < len(a):
         d["metadata"] = json.loads(a[i+1]); i += 2
+    elif k == "--no-dedupe":
+        # 🔴 2026-11-25 加（复盘实证：日期锚+tags 仍被 threshold-dedupe 合并——
+        #    11-25 B89 恢复原文后重写仍命中 b6d76014，相似度只看 content 向量，
+        #    tags/summary 不参与。跨日跑次/事故另立等「必须新建」场景用本开关，
+        #    透传 HTTP dedupe:false（routes-memory.ts:133 已支持），core 跳过模糊合并。
+        d["dedupe"] = False; i += 1
     else:
         i += 1
 print(json.dumps(d, ensure_ascii=False))
