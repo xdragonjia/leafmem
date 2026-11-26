@@ -1,6 +1,6 @@
 ---
 name: leafmem-maintenance
-version: "1.11.0"
+version: "1.12.1"
 agent_created: true
 author: xiaoxia
 description: >
@@ -121,11 +121,7 @@ description: >
 - **🔴 先判「该不该拆」**：`合法长文` 只是长度事实；仅 ≥5,500 或一题多族磁石才拆，单主题与过时 runbook（加 `已被替代` 降权）不拆；基线 7 条与全表见 reference。
 - **📖 触发即必读** `references/step5b-long-entry-split.md`（完整执行序列：覆盖度扫描判定表 → 外置 metadata 字段 → 父条目回写参数 → 验证收尾）。**不执行覆盖度扫描就外置＝制造重复；不回写父条目＝谱系断链。**
 
-**🔴 四条硬门禁（纪律本体在此，执行细节在 reference）**：
-1. **覆盖度扫描前置**：原文每个语义段取 1–2 个特征串跑全库 `SELECT id ... WHERE content LIKE '%串%'`；命中**只含本条** ⇒ 必须外置，命中**含他人** ⇒ 索引指向既有 id **不复制**（复制＝制造重复）。
-2. **`parentId` 必须取完整 36 位 UUID**，🔴 禁用 8 位短前缀（10-11 首跑写错一组，与步骤 6 supports 短 id 事故同源）。
-3. **写后必核 `createdAt` 为当日**：早于今日 ⇒ 覆盖了既有条目，立即按步骤 3 存档恢复原文。父条目回写 `--metadata` 自 0.3.27 起浅合并（`recallCount`/`lastRecalledAt` 不再被冲掉），但**只传要改的键**最稳；`--tags` 传原 tags 并集（tags 仍整体替换）。
-4. **零丢失硬门禁**：回写后对原文每个语义段做**全库** `LIKE` 复扫，`ORPHANS` 必须 = 0；出现孤儿 ⇒ 回补进对应子条目再复验，**不得只改父条目**。🔴 **只查索引池不算取证，必须全库扫描**（10-11 实证：索引池判 4 孤儿，全库确认真丢失，明细见 reference）。
+**🔴 四条硬门禁（一句版；执行细节与实证全在 reference）**：①覆盖度扫描前置（命中只含本条→外置；含他人→索引指向不复制）②parentId 完整 36 位 UUID 禁短前缀 ③写后必核 createdAt 当日，早于今日＝覆盖事故立即恢复；metadata 只传要改的键、tags 传并集 ④零丢失：全库 LIKE 复扫 ORPHANS=0，孤儿回补子条目，禁只查索引池。
 
 - **收尾**：拆分属写入动作 ⇒ 完成后必须重跑步骤 9 镜像同步，并核三源一致（DB = FTS = Mirror）。
 
@@ -147,10 +143,10 @@ description: >
 - **动作**：memory_recall(action="search", kind="preference") 拉全部 preference；memory_recall(action="active_get", kind="profile") 读当前画像
 - **动作**：宿主模型比对差异，**只输出需要更新的分节**（"## 分节标题\n新内容" markdown）；memory_write(action="active_distill", kind="profile", content=更新分节)
 - **动作**：🔴 通道：自动化会话用 `scripts/leafmem_mcp_call.py memory_write '{"action":"active_distill","kind":"profile","content":"..."}'`（`active_distill` 仅 `src/mcp/handler.ts` 实现，HTTP 不暴露；该脚本拉临时 stdio 与常驻服务共享 sqlite）。
-- **动作**：🔴 **scope 必须走查询串 `?scope=agent:workbuddy`**：传 `?scopeType=agent&scopeId=workbuddy` 或省略会返回**空快照**（`profile.present=false`/`principles=0`，酷似数据丢失实为口径错）。判据：`stats.principleCount` 与步骤 2 计数不一致即先怀疑 scope 形态。
+- **动作**：🔴 scope 必须走查询串 `?scope=agent:workbuddy`（其他形态＝静默空快照，症状表→ `references/mcp-channels.md` §5）；principleCount 与步骤 2 不一致先怀疑 scope 形态。
 - **动作**：🔴 节奏：周度观察的 [WARN]「画像超过 14 天未刷新」即本步骤的触发信号（2026-09-14 实测命中）。周维护时先跑 observation（步骤 10），再据此决定是否刷新画像。
 
-**🔴 分节合并语义**：引擎按分节标题合并——同名分节被替换、新分节追加、**未提到的分节原样保留**。宿主永远不要输出全文覆写，避免误删其他分节。
+**🔴 分节合并语义**：同名替换/新增追加/未提保留——**禁全文覆写**；content 必须以 `## ` 开头否则静默未写入（细则→ `references/mcp-channels.md`）。
 
 **备注**：console「用户画像」卡片=profile 快照，govern(update) 改 preference **不自动反映**；`memory_organize(action=profile)` 需付费 inferencer（本机 no_inferencer）⇒「画像没更新」走本步骤宿主版 active_distill。
 
@@ -199,10 +195,16 @@ description: >
 
 **备注**：🔴 只加确有所指的专名，不加通用词； MCP stdio 进程的词表在进程启动时加载，宿主重启后生效，launchd 后台服务可 launchctl kickstart -k 即时生效
 
+### 步骤 10b：🔴 dreaming 记忆校验（2026-11-26 新增，B98-R1）
+
+记忆漂移＝错误决策的放大器。每周对高重要性记忆做证据源核对：`python3 scripts/dreaming_check.py --sample 20`（只读，人群守卫 <50 exit 2）→ 漂移候选由宿主对照证据源裁决 → govern(update) 顶部订正（旧文保留标失效，禁删）。🔴 missing path ≠ 记忆错误（可能合法迁移）。
+**汇报行（无条件）**：「dreaming校验：已执行（抽N条/候选M条/订正K条）」或「未执行＋原因」，缺行＝漏跑。
+**📖 执行即必读** `references/step10b-dreaming.md`（裁决细则/边界/首跑实证）。
+
 ### 步骤 11b：🔴 模式复用观察（2026-11-19 新增，周度「提炼有效性」最终证据）
 
 - **动作**：grep 当周对话日志与任务 memory.md 中模式短语出现次数，得 **pattern_reuse_count**（新任务显式引用既往命名模式次数）。
-- **判据**：连续两周为 0 ⇒ 提炼空转，改提炼方式（命名过抽象/情境词漂移）**禁加复盘时长**；报告写「本周模式复用 N 次」，当周无新任务标 N/A。与日终复盘「模式提炼率」对账：那边管过程（命名率/归族率），这边管结果（复用），过程高而结果 0 ⇒ 命名不可检索。
+- **判据**：连续两周为 0 ⇒ 提炼空转，改提炼方式（命名过抽象/情境词漂移）**禁加复盘时长**；报告写「本周模式复用 N 次」，无新任务标 N/A。与日终「模式提炼率」对账（过程 vs 结果）→ `references/pattern-triad.md`。
 
 ### 步骤 12：报告与留痕
 
@@ -280,6 +282,7 @@ description: >
 |---|---|---|
 | `references/cli-write-channel.md` | 写入通道／CLI 降级链／recall 契约／remember 覆盖事故 | 1 |
 | `references/step5b-long-entry-split.md` | 长条目拆分执行序列＋判定表＋基线 | 5b |
+| `references/step10b-dreaming.md` | dreaming 裁决细则＋边界＋首跑实证 | 10b |
 | `references/mcp-channels.md` | 自动化 MCP 通道／鉴权／scope 空快照 | 7、8 |
 | `references/examples.md` | 整合正例／前缀聚类反例 | 5 |
 | `references/step4bc-dedup-and-kind-gates.md` | 4b/4c 根因链＋执行器对照＋门禁命令＋负例 5 例 | 4b、4c |
@@ -287,6 +290,7 @@ description: >
 | `scripts/stale_task_sweep.py` | 残留任务扫描（只读；exit 2＝有超龄/非法状态） | 2b |
 | `scripts/archive_dump.py` | 全量存档导出（步骤 3 检查点实现） | 3 |
 | `scripts/weekly_scan.py` | 周维护量化扫描（六类信号，含 1b 双执行器同文，只读） | 4、5、5b |
+| `scripts/dreaming_check.py` | dreaming 漂移候选生成（只读抽样+路径核对，--self-test 4例） | 10b |
 | `scripts/leafmem_mcp_call.py` | MCP stdio 调用（HTTP 面未暴露的动作） | 7、8 |
 | `ops/mirror-sync.js` | 镜像同步（🔴 安装目录 `~/projects/leafmem`） | 9 |
 | `ops/observation.py` | 周度观察采集（约 20 指标，零 LLM） | 10 |

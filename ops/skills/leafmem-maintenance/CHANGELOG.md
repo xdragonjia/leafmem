@@ -1,3 +1,29 @@
+## [1.12.1] - 2026-11-26（复验轮：dreaming 判据三缺陷修复＋全量 11 条裁决闭环）
+
+### Fixed
+- dreaming_check 判据三缺陷（全量复验抓出，抽样首跑未暴露）：①已裁决记忆重复报候选→只核订正块「现行＝」指向路径 ②占位/模板路径（{id}/YYYYMMDD/...）误报→过滤 ③中文顿号并列整串当路径→截断。自测 4/4→8/8（新增 4 负例含「豁免过宽」对照）。
+- 方法论教训入 reference：抽样首跑绿≠判据正确；「必中旧数据」验证是抓出①的直接手段。
+
+### 实证
+- 全量 1,636 条复验：判据修复后真实候选 11 → 逐条证据源核实 → 迁移5/退役2/预期终点4 三类裁决，govern update 顶部订正原文保留，写后核 11/11；复跑候选 11→0。
+
+## [1.12.0] - 2026-11-26（B98-R1：dreaming 记忆校验通道，吸收 Anthropic Dreaming 机制）
+
+### Added
+- **步骤 10b dreaming 记忆校验**：每周对高重要性记忆（lesson/principle/decision，importance≥0.85，人群 1,636）确定性抽 20 条，核对正文引用的本机路径存在性；漂移候选由宿主对照证据源裁决后 govern(update) 订正（旧文保留标失效），禁直接删。来源＝Personal Agent 调研 R1（Anthropic 11-6 研究：错记忆可致长任务全败；对照 transcript 校验纠错）。
+- `scripts/dreaming_check.py`：只读、seed=ISO周号确定性抽样、人群守卫 <50 exit 2、--self-test 4 例。
+- 无条件汇报行「dreaming校验：已执行（抽N/候选M/订正K）」，接入 leafmem-canary-weekly prompt（M10 三段式）。
+
+### Fixed（首版自测抓出，当轮修）
+- 路径正则 `~/` 形态被「反引号紧贴+字符类排除反引号」静默吞掉 → 只认 /Users/ 绝对形态（记忆写作纪律本就要求绝对路径）。
+- macOS tempfile 落 /var/folders 不匹配 /Users/ 前缀致自测空提取假 FAIL → 负例目录自建在 HOME 下，用后即清。
+
+### 实证
+- 首跑抽 20 命中 1 条真实漂移：id=edb2f9ce（lark-cli 5-18 旧 npm 路径，node 22.12.0→22.22.2-6、npm 版→Go 二进制 /Users/dragon/bin/lark-cli、mavis 目录已不存在），已 govern update 顶部订正＋旧文保留，recallCount 等 metadata 零漂移。
+
+### Changed（体积治理）
+- 正文体积治理：步骤 5b 四门禁/步骤 7 scope 与分节细则/11b 对账解释压缩为一句版＋档案指针（细则档案早已承载，属去双写非删纪律）；cl100k 10,629→9,920，P1 清零。
+
 ## [1.11.0] - 2026-11-25（remember 覆盖第4例：--no-dedupe「必须新建」开关 + 纪律(e)）
 
 ### Added
