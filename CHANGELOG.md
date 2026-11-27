@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **hook 近期语境提取 v2.1——语境质量治理（2026-11-27，E1 复验+聚合器兼容验收驱动）**：A2 双臂复验（同 24 篇/16 探针）实测：桥语境使隐式召回 9/10→10/10（追平 VCP），但**无关语境拖到 6/10**——而真实 transcript 尾读常全是 assistant 过程性碎语（0 条用户话题）＝常态污染。v2.1 三修：①user 实质发言优先且必保（≤3 条话题锚，assistant 仅补位；首版 slice(-4) 会把 user 锚全截掉，已修）②assistant 须 ≥40 字且非过程性叙述开头 ③当前 prompt 防复读+去重。验收：部署版函数隔离执行正例 2/负例 2 全过；生产聚合器端到端四路到齐 2.34s；50.7MB 最大 transcript 1.70s（9s 子预算内）；injection_audit UPS 门禁 PASS；双写一致 e9daf0eef3b4。
 - **hook 近期语境提取——上下文引力通道补齐（2026-11-27，VCP 借鉴 E1 实验驱动）**：UserPromptSubmit 的 recall 此前只带当前 prompt，`recentMessages` 依赖宿主注入而 WorkBuddy 不提供该字段——`buildRecallQuery` 的「当前话+近期语境」融合通道静默为空。新增 `extractRecentMessages()`：宿主已提供则优先；否则从 `transcript_path` 尾读最近 ≤4 条 user/assistant 消息（剥离 system-reminder、提取 user_query、各截 300 字），fail-open 退回单 prompt。依据＝VCP RiverMemo vs LeafMem 同款管线同语料对照（24 篇合成日记/16 探针/同 BGE-M3 向量）：隐式召回 10/10 vs 9/10、MRR 0.808 vs 0.725，差异集中在远距离语义探针——语境融合是已验证的低成本增益点。验收：真实 payload 触发注入 5850 字符、提取正例 4 条/负例 fail-open、node --check 过；上游 ops/hooks 与 ~/.leafmem/hooks 双写一致。
 
 ### Changed

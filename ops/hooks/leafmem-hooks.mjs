@@ -550,20 +550,29 @@ function sanitizeCapturedText(text) {
 /**
  * VCP 借鉴 E1（2026-11-27）：UserPromptSubmit 的 recall 此前只带当前 prompt，
  * recentMessages 依赖宿主注入（WorkBuddy 不提供该字段）——上下文引力通道静默为空。
- * 本函数从 transcript_path 尾读最近 user/assistant 消息（各截 300 字，合计 ≤4 条），
+ * 本函数从 transcript_path 尾读最近消息（各截 300 字，合计 ≤4 条），
  * 让 buildRecallQuery 的「当前话+近期语境」融合真正生效（隐式联想召回）。
  * fail-open：任何异常返回 undefined，recall 退回单 prompt 行为。
+ *
+ * v2（2026-11-27 E1 复验驱动）：A2-noise 臂实测无关语境把隐式召回 9/10 拖到 6/10，
+ * 且真实 transcript 尾读常全是 assistant 过程性碎语（0 条用户话题）＝常态污染。
+ * 修法＝①user 实质发言优先（话题锚），assistant 仅在不足时补且须过实质门槛
+ * （≥40 字、非过程性叙述开头）；②当前 prompt 若已出现在尾部则跳过（防自我复读）。
  */
 async function extractRecentMessages(payload) {
   if (Array.isArray(payload.recentMessages) && payload.recentMessages.length) {
     return payload.recentMessages; // 宿主已提供则优先
   }
   if (typeof payload.transcript_path !== "string") return undefined;
+  const currentPrompt = typeof payload.prompt === "string" ? payload.prompt.trim() : "";
+  // assistant 过程性叙述特征（开头命中即弃）：这些是工具编排话不是话题语境
+  const procedural = /^(我(先|来|现在|已|将|会|正在)|记忆召回完成|命令被|必中查询|接下来|现在(开始|补|跑)|好的|收到|让我|已(收到|完成|备份)|补充|最新|初步|正在)/;
   try {
     const text = await readFile(payload.transcript_path, "utf8");
     const lines = text.split("\n").filter((l) => l.trim());
-    const out = [];
-    for (let i = lines.length - 1; i >= 0 && out.length < 4; i--) {
+    const users = [];
+    const assistants = [];
+    for (let i = lines.length - 1; i >= 0 && users.length + assistants.length < 12; i--) {
       let rec;
       try { rec = JSON.parse(lines[i]); } catch { continue; }
       if (rec.type !== "message") continue;
@@ -577,8 +586,19 @@ async function extractRecentMessages(payload) {
       const uq = t.match(/<user_query>([\s\S]*?)<\/user_query>/);
       if (uq) t = uq[1].trim();
       if (!t || t.startsWith("<")) continue;
-      out.unshift(t.slice(0, 300));
+      if (currentPrompt && t.slice(0, 300) === currentPrompt.slice(0, 300)) continue; // 防自我复读
+      if (role === "user") {
+        if (users.length < 4) users.unshift(t.slice(0, 300));
+      } else if (t.length >= 40 && !procedural.test(t)) {
+        if (assistants.length < 4) assistants.unshift(t.slice(0, 300));
+      }
     }
+    // user 话题锚优先且必保：先取最近 ≤3 条 user，再用 assistant 实质发言补到 4。
+    // （不可用 slice(-4)：assistant 满 4 时会把 user 锚全部截掉——v2 首版实测缺陷）
+    const pickedUsers = [...new Set(users)].slice(-3);
+    const seenU = new Set(pickedUsers);
+    const pickedAsst = assistants.filter((t) => !seenU.has(t));
+    const out = [...pickedUsers, ...pickedAsst.slice(0, 4 - pickedUsers.length)];
     return out.length ? out : undefined;
   } catch {
     return undefined;
