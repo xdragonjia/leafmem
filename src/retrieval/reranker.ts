@@ -80,14 +80,16 @@ export class CrossEncoderReranker {
    * Rerank documents against a query.
    * Returns null on any failure — callers MUST fall back to the original order.
    */
-  async rerank(query: string, documents: string[]): Promise<RerankResult | null> {
+  async rerank(query: string, documents: string[], signal?: AbortSignal): Promise<RerankResult | null> {
+    if (signal?.aborted) throw signal.reason ?? new Error("The operation was aborted", { cause: "AbortError" });
     const trimmedQuery = query.trim();
     const docs = documents.map((doc) => doc.trim()).filter((doc) => doc.length > 0);
     if (!trimmedQuery || docs.length === 0) {
       return null;
     }
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
+    const timer = setTimeout(() => controller.abort(new Error("rerank timeout")), this.config.timeoutMs);
+    const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     try {
       const response = await fetch(this.config.url, {
         method: "POST",
@@ -102,7 +104,7 @@ export class CrossEncoderReranker {
           top_n: Math.min(docs.length, this.config.topK),
           return_documents: false,
         }),
-        signal: controller.signal,
+        signal: combined,
       });
       if (!response.ok) {
         // 🔴 2026-10-22：429/5xx 以前是静默 return null，导致"rerank 明明配了却没生效"
@@ -132,6 +134,7 @@ export class CrossEncoderReranker {
       this.lastFailure = null;
       return { scores, model: payload.model ?? this.config.model };
     } catch (error) {
+      if (signal?.aborted) throw error;
       const aborted = (error as { name?: string })?.name === "AbortError";
       this.noteFailure(aborted ? `timeout ${this.config.timeoutMs}ms` : String((error as Error)?.message ?? error));
       return null;

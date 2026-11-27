@@ -70,6 +70,8 @@ export type MemoryInput = {
 };
 
 export type MemorySearchOptions = {
+  /** Optional cooperative cancellation shared by every asynchronous recall stage. */
+  signal?: AbortSignal;
   scopes?: MemoryScope[];
   maxResults?: number;
   minScore?: number;

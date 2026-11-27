@@ -32,6 +32,7 @@ const recall = await memory.recall({
   query: "How should I answer this user?",
   scopes: [{ type: "user", id: "alice" }],
   maxChars: 1000,
+  signal: AbortSignal.timeout(1500),
 });
 
 await memory.update(record.id, { content: "Updated content" });
@@ -39,6 +40,10 @@ await memory.forget(record.id);
 ```
 
 `remember()` deduplicates by default. When an incoming record is merged, tags and metadata are merged, additional sources are kept in `metadata.sourceHistory`, and conflicting marker details are kept in `metadata.markerHistory`.
+
+### Cooperative cancellation
+
+`search()`, `recall()`, and `runtime.buildRecallContext()` accept an optional `signal`. The same signal reaches the configured embedding provider and reranker; cancellation prevents subsequent stages from starting and rejects with the abort reason. Synchronous SQLite work is not interruptible mid-statement, so cancellation is checked between stages. Omission preserves the previous behavior. `captureTurn()` intentionally does not accept this signal because capture is durable write work.
 
 ### Active Memory
 
@@ -113,6 +118,7 @@ const recall = await runtime.buildRecallContext({
   taskId: "release-flow",
   userMessage: "What did we decide about deployment?",
   maxChars: 1000,
+  signal: AbortSignal.timeout(1500),
 });
 
 await runtime.captureReflection({

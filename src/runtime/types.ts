@@ -15,6 +15,8 @@ export type MemoryTurnInput = {
   includeInactive?: boolean;
   /** E1：as-of 查询（"当时/8 月那会儿"），按 eventTime 切片 */
   asOf?: string;
+  /** Cancels all cooperative recall stages; captureTurn remains durable and does not use it. */
+  signal?: AbortSignal;
 };
 
 export type CapturedMemoryProposal = Omit<MemoryInput, "scope"> & {

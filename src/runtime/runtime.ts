@@ -82,6 +82,7 @@ export function createMemoryRuntime(params: {
 
   return {
     async buildRecallContext(turn: MemoryTurnInput) {
+      turn.signal?.throwIfAborted();
       const scopes = turn.scopes ?? [];
       const maxChars = turn.maxChars ?? options.maxRecallChars ?? 4_000;
       // B0.7 诊断：LEAFMEM_TIMING=1 时分阶段打点。recall 是 UserPromptSubmit 每轮必付的
@@ -100,6 +101,7 @@ export function createMemoryRuntime(params: {
         maxChars,
         includeInactive: turn.includeInactive,
         asOf: turn.asOf,
+        signal: turn.signal,
       });
       mark("palaceRecall");
       const retrievalRecall = await params.memory.retrieval.recall(turn.userMessage, {
@@ -107,14 +109,17 @@ export function createMemoryRuntime(params: {
         maxChars,
         includeInactive: turn.includeInactive,
         asOf: turn.asOf,
+        signal: turn.signal,
       });
       mark("retrievalRecall");
+      turn.signal?.throwIfAborted();
       const activeBlocks = (
         await Promise.all(scopes.map(async (scope) => await params.memory.active.formatRecall(scope)))
       )
         .map((block) => block.trim())
         .filter(Boolean);
       const activeLayer = activeBlocks.join("\n\n");
+      turn.signal?.throwIfAborted();
       mark("activeBlocks");
       const taskWindow = turn.taskId
         ? await params.memory.task.buildWindow({
@@ -125,6 +130,7 @@ export function createMemoryRuntime(params: {
           })
         : null;
       mark("taskWindow");
+      turn.signal?.throwIfAborted();
       const shouldBuildNavigation =
         retrievalRecall.hits.length > 0 ||
         Boolean(activeLayer) ||
@@ -150,6 +156,7 @@ export function createMemoryRuntime(params: {
       );
       const stableContext = [activeLayer, statusPageLayer, navigationLayer]
         .filter(Boolean).join("\n\n").trim();
+      turn.signal?.throwIfAborted();
       // 🔴 2026-10-21：A-MEM 链接邻居块经 layers.linked 跨后端保留（remote-embeddings
       // 模式 palaceLayer 取 retrieval 后端，memory.recall 的 dynamicContext 被丢）——
       // 在组合层显式并入，保证链接上下文不随后端选择丢失。

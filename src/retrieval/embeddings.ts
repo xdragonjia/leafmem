@@ -31,11 +31,11 @@ export class HashEmbeddingProvider implements MemoryEmbeddingProvider {
 
   constructor(private readonly dimensions: number = DEFAULT_HASH_DIMENSIONS) {}
 
-  async embedQuery(text: string): Promise<EmbeddingVector> {
+  async embedQuery(text: string, _signal?: AbortSignal): Promise<EmbeddingVector> {
     return embedTextHash(text, this.dimensions);
   }
 
-  async embedDocuments(texts: string[]): Promise<EmbeddingVector[]> {
+  async embedDocuments(texts: string[], _signal?: AbortSignal): Promise<EmbeddingVector[]> {
     return texts.map((text) => embedTextHash(text, this.dimensions));
   }
 }
@@ -75,11 +75,11 @@ class OpenAiEmbeddingProvider implements MemoryEmbeddingProvider {
     this.headers = config?.remote?.headers ?? {};
   }
 
-  async embedQuery(text: string): Promise<EmbeddingVector> {
-    return (await this.embedDocuments([text]))[0] ?? [];
+  async embedQuery(text: string, signal?: AbortSignal): Promise<EmbeddingVector> {
+    return (await this.embedDocuments([text], signal))[0] ?? [];
   }
 
-  async embedDocuments(texts: string[]): Promise<EmbeddingVector[]> {
+  async embedDocuments(texts: string[], signal?: AbortSignal): Promise<EmbeddingVector[]> {
     if (!this.apiKey) {
       throw new Error("OPENAI_API_KEY is required for the OpenAI embedding provider");
     }
@@ -96,6 +96,7 @@ class OpenAiEmbeddingProvider implements MemoryEmbeddingProvider {
         dimensions: this.dimensions,
         encoding_format: "float",
       }),
+      signal,
     });
     if (!response.ok) {
       throw new Error(`OpenAI embeddings request failed with ${response.status}`);
@@ -126,17 +127,18 @@ class GeminiEmbeddingProvider implements MemoryEmbeddingProvider {
     this.headers = config?.remote?.headers ?? {};
   }
 
-  async embedQuery(text: string): Promise<EmbeddingVector> {
-    return (await this.embed("RETRIEVAL_QUERY", [text]))[0] ?? [];
+  async embedQuery(text: string, signal?: AbortSignal): Promise<EmbeddingVector> {
+    return (await this.embed("RETRIEVAL_QUERY", [text], signal))[0] ?? [];
   }
 
-  async embedDocuments(texts: string[]): Promise<EmbeddingVector[]> {
-    return await this.embed("RETRIEVAL_DOCUMENT", texts);
+  async embedDocuments(texts: string[], signal?: AbortSignal): Promise<EmbeddingVector[]> {
+    return await this.embed("RETRIEVAL_DOCUMENT", texts, signal);
   }
 
   private async embed(
     taskType: "RETRIEVAL_QUERY" | "RETRIEVAL_DOCUMENT",
     texts: string[],
+    signal?: AbortSignal,
   ): Promise<EmbeddingVector[]> {
     if (!this.apiKey) {
       throw new Error("GEMINI_API_KEY is required for the Gemini embedding provider");
@@ -155,6 +157,7 @@ class GeminiEmbeddingProvider implements MemoryEmbeddingProvider {
         ...this.headers,
       },
       body: JSON.stringify({ requests }),
+      signal,
     });
     if (!response.ok) {
       throw new Error(`Gemini embeddings request failed with ${response.status}`);
@@ -182,15 +185,15 @@ class VoyageEmbeddingProvider implements MemoryEmbeddingProvider {
     this.headers = config?.remote?.headers ?? {};
   }
 
-  async embedQuery(text: string): Promise<EmbeddingVector> {
-    return (await this.embed("query", [text]))[0] ?? [];
+  async embedQuery(text: string, signal?: AbortSignal): Promise<EmbeddingVector> {
+    return (await this.embed("query", [text], signal))[0] ?? [];
   }
 
-  async embedDocuments(texts: string[]): Promise<EmbeddingVector[]> {
-    return await this.embed("document", texts);
+  async embedDocuments(texts: string[], signal?: AbortSignal): Promise<EmbeddingVector[]> {
+    return await this.embed("document", texts, signal);
   }
 
-  private async embed(inputType: "query" | "document", texts: string[]): Promise<EmbeddingVector[]> {
+  private async embed(inputType: "query" | "document", texts: string[], signal?: AbortSignal): Promise<EmbeddingVector[]> {
     if (!this.apiKey) {
       throw new Error("VOYAGE_API_KEY is required for the Voyage embedding provider");
     }
@@ -207,6 +210,7 @@ class VoyageEmbeddingProvider implements MemoryEmbeddingProvider {
         input_type: inputType,
         output_dimension: this.dimensions,
       }),
+      signal,
     });
     if (!response.ok) {
       throw new Error(`Voyage embeddings request failed with ${response.status}`);

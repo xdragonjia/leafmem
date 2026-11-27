@@ -102,8 +102,10 @@ export class RetrievalManager {
       asOf?: string;
       /** E4：新鲜度通道（T2） */
       freshnessBias?: boolean;
+      signal?: AbortSignal;
     } = {},
   ): Promise<RetrievalHit[]> {
+    options.signal?.throwIfAborted();
     const limit = Math.max(1, options.maxResults ?? DEFAULT_MAX_RESULTS);
     // When a cross-encoder reranker is configured, widen the candidate pool
     // so rerank can surface relevant hits that lexical/hash scoring buried.
@@ -125,7 +127,8 @@ export class RetrievalManager {
     // superseded 记录白付远程 rerank 配额（实测 siliconflow 连续 ~11 次即 429）。
     // 无 record 的命中（仅 snippet，来自外部后端）无法判定状态，fail-open 保留
     const visible = hits.filter((hit) => !hit.record || isSearchable(hit.record, options));
-    return await this.applyRerank(query, visible, limit);
+    options.signal?.throwIfAborted();
+    return await this.applyRerank(query, visible, limit, options.signal);
   }
 
   /**
@@ -143,7 +146,9 @@ export class RetrievalManager {
     query: string,
     hits: RetrievalHit[],
     limit: number,
+    signal?: AbortSignal,
   ): Promise<RetrievalHit[]> {
+    signal?.throwIfAborted();
     if (!this.reranker || hits.length < 3) {
       return hits.slice(0, limit);
     }
@@ -153,7 +158,7 @@ export class RetrievalManager {
     const documents = pool.map((hit) =>
       (hit.record ? buildSearchText(hit.record) : hit.snippet).slice(0, this.rerankDocChars),
     );
-    const result = await this.reranker.rerank(query, documents);
+    const result = await this.reranker.rerank(query, documents, signal);
     if (!result) {
       return hits.slice(0, limit);
     }
@@ -188,9 +193,12 @@ export class RetrievalManager {
       asOf?: string;
       /** E4：新鲜度通道（T2） */
       freshnessBias?: boolean;
+      signal?: AbortSignal;
     } = {},
   ): Promise<RetrievalRecallResult> {
+    options.signal?.throwIfAborted();
     const hits = await this.search(query, options);
+    options.signal?.throwIfAborted();
     return {
       query: query.trim(),
       hits,
@@ -223,8 +231,10 @@ export class RetrievalManager {
       includeInactive?: boolean;
       asOf?: string;
       freshnessBias?: boolean;
+      signal?: AbortSignal;
     },
   ): Promise<RetrievalHit[]> {
+    options.signal?.throwIfAborted();
     // Fast path: use vector store for ANN search if available
     if (this.vectorStore) {
       return this.searchVectorStore(query, options);
@@ -242,6 +252,7 @@ export class RetrievalManager {
       includeInactive: options.includeInactive,
       asOf: options.asOf,
       freshnessBias: options.freshnessBias,
+      signal: options.signal,
     });
     if (baseHits.length === 0) {
       return [];
@@ -260,7 +271,8 @@ export class RetrievalManager {
         }));
     }
 
-    const queryEmbedding = await provider.embedQuery(query);
+    const queryEmbedding = await provider.embedQuery(query, options.signal);
+    options.signal?.throwIfAborted();
     // 🔴 modelId 必须含**具体模型名**：只用 provider.id（如 "openai"）时，
     // 同一 provider 下换模型（bge-m3 → bge-large）缓存不会失效 ⇒ 混用不同向量空间，
     // 相似度计算失去意义。取不到 model 时降级为 "default"。
@@ -316,7 +328,8 @@ export class RetrievalManager {
       }
     }
     if (missing.length > 0) {
-      const fresh = await provider.embedDocuments(missing.map((item) => item.text));
+      const fresh = await provider.embedDocuments(missing.map((item) => item.text), options.signal);
+      options.signal?.throwIfAborted();
       missing.forEach((item, index) => {
         const vector = fresh[index];
         if (vector) {
@@ -385,10 +398,13 @@ export class RetrievalManager {
    */
   private async searchVectorStore(
     query: string,
-    options: { scopes?: MemoryScope[]; maxResults?: number; minScore?: number },
+    options: { scopes?: MemoryScope[]; maxResults?: number; minScore?: number; signal?: AbortSignal },
   ): Promise<RetrievalHit[]> {
+    options.signal?.throwIfAborted();
     const provider = (await this.embeddingProviderPromise) ?? new HashEmbeddingProvider();
-    const queryVector = await provider.embedQuery(query);
+    options.signal?.throwIfAborted();
+    const queryVector = await provider.embedQuery(query, options.signal);
+    options.signal?.throwIfAborted();
     const limit = options.maxResults ?? DEFAULT_MAX_RESULTS;
     const topK = Math.max(1, limit * 2);
     const filters = buildScopeFilters(options.scopes);

@@ -6,6 +6,7 @@ import type { EntityExtractor, EntityStore } from "../entity/types.js";
 import { MaintenanceManager } from "../maintenance/manager.js";
 import { RetrievalManager } from "../retrieval/manager.js";
 import type { VectorStore } from "../retrieval/vector-store.js";
+import type { MemoryEmbeddingProvider } from "../retrieval/types.js";
 import { openSqliteDatabase } from "../system/sqlite.js";
 import { TaskContextManager } from "../task/manager.js";
 import { InMemoryTaskContextStore, SqliteTaskContextStore } from "../task/store.js";
@@ -101,6 +102,8 @@ export type LeafMemOptions = {
   retrieval?: {
     backend?: "builtin" | "qmd";
     vectorStore?: VectorStore;
+    /** Optional provider used by the builtin remote-embedding retrieval path. */
+    embeddingProvider?: MemoryEmbeddingProvider;
     /** B0.6（2026-10-22）：文档向量持久缓存（跨进程）；缺失则纯内存缓存。 */
     vectorCache?: {
       getMany(ids: string[], modelId: string): Map<string, { updatedAt: string; modelId: string; vector: number[] }>;
@@ -307,6 +310,7 @@ export class LeafMem {
       backend: options.retrieval?.backend,
       vectorStore: options.retrieval?.vectorStore,
       embeddings: options.retrieval?.embeddings,
+      embeddingProvider: options.retrieval?.embeddingProvider,
       qmd: options.retrieval?.qmd,
       // 🔴 2026-10-22：新增可选能力必须在此显式透传。漏了这一行的后果是
       // vectorCache 恒为 null，而 fail-open 让整条链路**静默降级**（既不报错也不建表），
@@ -1084,6 +1088,7 @@ export class LeafMem {
   }
 
   async search(query: string, options: MemorySearchOptions = {}): Promise<MemorySearchHit[]> {
+    options.signal?.throwIfAborted();
     const normalizedQuery = query.trim();
     if (!normalizedQuery) {
       return [];
@@ -1094,6 +1099,7 @@ export class LeafMem {
     const queryVector = embedTextHash(expandedQuery, this.embeddingDimensions);
     const queryGrams = trigrams(expandedQuery);
     const records = await this.store.load();
+    options.signal?.throwIfAborted();
     // E1（2026-10-22）：先剔除非当前事实（superseded/archived）与 as-of 之后才成立的事实，
     // 再进入打分循环。放在这里而不是打分后，是为了让 rerank / FTS / entity 的配额都
     // 不浪费在注定不该出现的记录上（B0.7 实测 rerank 有远程配额，429 后会静默降级）。
@@ -1232,9 +1238,12 @@ export class LeafMem {
   }
 
   async recall(options: MemoryRecallOptions): Promise<MemoryRecallResult> {
+    options.signal?.throwIfAborted();
     const query = buildRecallQuery(options.query, options.recentMessages);
     const hits = await this.search(query, options);
+    options.signal?.throwIfAborted();
     this.recordRecallCounts(hits);
+    options.signal?.throwIfAborted();
     // 🔴 2026-10-21 A-MEM 借鉴：命中记忆的链接邻居作为**附加上下文块**注入
     // （不占 hits 配额——主命中 8 槽常满，填空位设计永不触发）。邻居是
     // 预组织的高相关子集（同主题/因果/取代前体），单独成块防淹没主结果。

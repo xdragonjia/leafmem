@@ -22,8 +22,8 @@ export type EmbeddingVector = number[];
 
 export interface MemoryEmbeddingProvider {
   readonly id: string;
-  embedQuery(text: string): Promise<EmbeddingVector>;
-  embedDocuments(texts: string[]): Promise<EmbeddingVector[]>;
+  embedQuery(text: string, signal?: AbortSignal): Promise<EmbeddingVector>;
+  embedDocuments(texts: string[], signal?: AbortSignal): Promise<EmbeddingVector[]>;
 }
 
 export type RetrievalManagerOptions = {
@@ -37,6 +37,7 @@ export type RetrievalManagerOptions = {
       includeInactive?: boolean;
       asOf?: string;
       freshnessBias?: boolean;
+      signal?: AbortSignal;
     }): Promise<MemorySearchHit[]>;
     list(options?: { scopes?: MemoryScope[]; limit?: number }): Promise<MemoryRecord[]>;
   };
