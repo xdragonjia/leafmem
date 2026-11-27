@@ -167,13 +167,14 @@ async function main() {
     }
     const prompt = sanitizeCapturedText(typeof payload.prompt === "string" ? payload.prompt : "");
     if (!prompt) return done(event, null);
+    const recentMessages = await extractRecentMessages(payload);
     const data = await postJson(
       base,
       headers,
       "/v1/recall",
       {
         message: prompt,
-        recentMessages: payload.recentMessages,
+        recentMessages,
         maxChars: 3000,
         context: { agentId: agent },
       },
@@ -546,6 +547,44 @@ function sanitizeCapturedText(text) {
  * Prefers explicit fields; falls back to parsing transcript_path (JSONL). On any
  * failure returns empty so we never commit garbage.
  */
+/**
+ * VCP 借鉴 E1（2026-11-27）：UserPromptSubmit 的 recall 此前只带当前 prompt，
+ * recentMessages 依赖宿主注入（WorkBuddy 不提供该字段）——上下文引力通道静默为空。
+ * 本函数从 transcript_path 尾读最近 user/assistant 消息（各截 300 字，合计 ≤4 条），
+ * 让 buildRecallQuery 的「当前话+近期语境」融合真正生效（隐式联想召回）。
+ * fail-open：任何异常返回 undefined，recall 退回单 prompt 行为。
+ */
+async function extractRecentMessages(payload) {
+  if (Array.isArray(payload.recentMessages) && payload.recentMessages.length) {
+    return payload.recentMessages; // 宿主已提供则优先
+  }
+  if (typeof payload.transcript_path !== "string") return undefined;
+  try {
+    const text = await readFile(payload.transcript_path, "utf8");
+    const lines = text.split("\n").filter((l) => l.trim());
+    const out = [];
+    for (let i = lines.length - 1; i >= 0 && out.length < 4; i--) {
+      let rec;
+      try { rec = JSON.parse(lines[i]); } catch { continue; }
+      if (rec.type !== "message") continue;
+      const role = rec.role;
+      if (role !== "user" && role !== "assistant") continue;
+      const parts = Array.isArray(rec.content) ? rec.content : [];
+      let t = parts.map((x) => (typeof x === "string" ? x : x?.text ?? "")).join(" ").trim();
+      if (!t) continue;
+      // 剥离宿主注入的 system-reminder 块，只留真实发言
+      t = t.replace(/<system-reminder[\s\S]*?<\/system-reminder>/g, "").trim();
+      const uq = t.match(/<user_query>([\s\S]*?)<\/user_query>/);
+      if (uq) t = uq[1].trim();
+      if (!t || t.startsWith("<")) continue;
+      out.unshift(t.slice(0, 300));
+    }
+    return out.length ? out : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function extractTurn(payload) {
   const assistantMessage =
     typeof payload.last_assistant_message === "string"

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **hook 近期语境提取——上下文引力通道补齐（2026-11-27，VCP 借鉴 E1 实验驱动）**：UserPromptSubmit 的 recall 此前只带当前 prompt，`recentMessages` 依赖宿主注入而 WorkBuddy 不提供该字段——`buildRecallQuery` 的「当前话+近期语境」融合通道静默为空。新增 `extractRecentMessages()`：宿主已提供则优先；否则从 `transcript_path` 尾读最近 ≤4 条 user/assistant 消息（剥离 system-reminder、提取 user_query、各截 300 字），fail-open 退回单 prompt。依据＝VCP RiverMemo vs LeafMem 同款管线同语料对照（24 篇合成日记/16 探针/同 BGE-M3 向量）：隐式召回 10/10 vs 9/10、MRR 0.808 vs 0.725，差异集中在远距离语义探针——语境融合是已验证的低成本增益点。验收：真实 payload 触发注入 5850 字符、提取正例 4 条/负例 fail-open、node --check 过；上游 ops/hooks 与 ~/.leafmem/hooks 双写一致。
+
 ### Changed
 - **update() metadata 默认合并，杜绝裸写覆盖（2026-11-20，事故驱动·安全语义下沉汇聚点）**：宿主两次 `update --metadata` 整包替换冲掉 `supports`/`eventTime`/`recallCount`（35 条 principle 证据链清零靠备份恢复）。原防线是纪律「先 get 合并再写」——对执行者自觉性的依赖被两次同型事故证伪。修法：`memory.update()` 默认浅合并既有键；键值 `null`＝删除该键；确需整包替换显式传 `metadataMode:"replace"`（该路径行为与改造前逐字一致）。MCP `memory_govern`、HTTP PATCH、platform、CLI（`--metadata-mode`）四通道全部透传；hermes/session-import 等自带 spread 的调用方幂等兼容。回归 `test/metadata-merge.test.ts` 10 例（含 replace 逃生门/null 删键/MCP 端到端），全量 352/352；真实服务三语义 curl 实证。
 
